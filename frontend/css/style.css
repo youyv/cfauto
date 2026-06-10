@@ -1,0 +1,97 @@
+      :root {
+        --bg-page: #f1f5f9; --bg-card: #ffffff; --bg-card-alt: #f8fafc; --bg-input: #ffffff;
+        --bg-header: #ffffff; --bg-toolbar: #f8fafc;
+        --text-primary: #1e293b; --text-secondary: #475569; --text-muted: #94a3b8;
+        --border-color: #e2e8f0; --border-light: #f1f5f9;
+        --shadow-color: rgba(0,0,0,0.08);
+        --table-header-bg: #f8fafc; --table-row-hover: #f8fafc;
+      }
+      [data-theme="dark"] {
+        --bg-page: transparent; --bg-card: rgba(15,23,42,0.75); --bg-card-alt: rgba(30,41,59,0.7); --bg-input: rgba(30,41,59,0.8);
+        --bg-header: rgba(15,23,42,0.8); --bg-toolbar: rgba(30,41,59,0.6);
+        --text-primary: #e2e8f0; --text-secondary: #cbd5e1; --text-muted: #94a3b8;
+        --border-color: rgba(71,85,105,0.5); --border-light: rgba(51,65,85,0.5);
+        --shadow-color: rgba(0,0,0,0.3);
+        --table-header-bg: rgba(30,41,59,0.8); --table-row-hover: rgba(51,65,85,0.4);
+      }
+      body { background: var(--bg-page); color: var(--text-primary); transition: background 0.4s, color 0.4s; }
+      [data-theme="dark"] body { background: transparent; }
+      #starfield { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: -1; background: #0f172a; display: none; }
+      [data-theme="dark"] #starfield { display: block; }
+      [data-theme="dark"] .bg-white, [data-theme="dark"] .project-card,
+      [data-theme="dark"] .bg-slate-100 {
+        background: var(--bg-card) !important; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+        border: 1px solid var(--border-color) !important;
+      }
+      [data-theme="dark"] header, [data-theme="dark"] .bg-white.rounded.shadow {
+        background: var(--bg-header) !important; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+      }
+      [data-theme="dark"] .bg-slate-50, [data-theme="dark"] .bg-gray-50 {
+        background: var(--bg-card-alt) !important;
+      }
+      [data-theme="dark"] .text-slate-800, [data-theme="dark"] .text-gray-700,
+      [data-theme="dark"] .text-slate-700, [data-theme="dark"] .text-gray-600 {
+        color: var(--text-primary) !important;
+      }
+      [data-theme="dark"] .text-gray-500, [data-theme="dark"] .text-gray-400,
+      [data-theme="dark"] .text-gray-300 {
+        color: var(--text-muted) !important;
+      }
+      [data-theme="dark"] .border-slate-200, [data-theme="dark"] .border-gray-100,
+      [data-theme="dark"] .border-gray-200 {
+        border-color: var(--border-color) !important;
+      }
+      [data-theme="dark"] .input-field {
+        background: var(--bg-input) !important; color: var(--text-primary) !important;
+        border-color: var(--border-color) !important;
+      }
+      [data-theme="dark"] .input-field::placeholder { color: var(--text-muted) !important; }
+      [data-theme="dark"] .compact-table th { background: var(--table-header-bg) !important; color: var(--text-muted) !important; }
+      [data-theme="dark"] .compact-table td { border-bottom-color: var(--border-light) !important; color: var(--text-secondary) !important; }
+      [data-theme="dark"] .compact-table tr:hover { background: var(--table-row-hover) !important; }
+      [data-theme="dark"] .bg-red-50    { background: rgba(127,29,29,0.2) !important; }
+      [data-theme="dark"] .bg-blue-50   { background: rgba(30,58,138,0.2) !important; }
+      [data-theme="dark"] .bg-green-50  { background: rgba(20,83,45,0.2) !important; }
+      [data-theme="dark"] .bg-purple-50 { background: rgba(88,28,135,0.15) !important; }
+      [data-theme="dark"] .bg-orange-50 { background: rgba(124,45,18,0.2) !important; }
+      [data-theme="dark"] .bg-indigo-50 { background: rgba(49,46,129,0.2) !important; }
+      [data-theme="dark"] .border-red-100   { border-color: rgba(127,29,29,0.3) !important; }
+      [data-theme="dark"] .border-blue-100  { border-color: rgba(30,58,138,0.3) !important; }
+      [data-theme="dark"] .border-green-100 { border-color: rgba(20,83,45,0.3) !important; }
+      [data-theme="dark"] .border-purple-100 { border-color: rgba(88,28,135,0.3) !important; }
+      [data-theme="dark"] .border-orange-100,.border-orange-200 { border-color: rgba(124,45,18,0.3) !important; }
+      [data-theme="dark"] .border-indigo-100 { border-color: rgba(49,46,129,0.3) !important; }
+      [data-theme="dark"] select, [data-theme="dark"] input[type="number"],
+      [data-theme="dark"] input[type="text"], [data-theme="dark"] input[type="password"] {
+        background: var(--bg-input) !important; color: var(--text-primary) !important;
+        border-color: var(--border-color) !important;
+      }
+      [data-theme="dark"] .shadow { box-shadow: 0 2px 8px var(--shadow-color) !important; }
+      /* Modal dark overrides */
+      [data-theme="dark"] #batch_deploy_modal > div > div:first-child,
+      [data-theme="dark"] #account_manage_modal > div,
+      [data-theme="dark"] #history_modal > div > div,
+      [data-theme="dark"] #sync_select_modal > div {
+        background: rgba(15,23,42,0.95) !important; backdrop-filter: blur(20px);
+        border: 1px solid var(--border-color) !important;
+      }
+      [data-theme="dark"] #batch_deploy_modal .p-4,
+      [data-theme="dark"] #account_manage_modal .p-4 {
+        color: var(--text-primary);
+      }
+      /* Theme toggle button */
+      .theme-toggle { cursor: pointer; font-size: 18px; width: 36px; height: 36px; border-radius: 50%; border: 2px solid var(--border-color);
+        display: flex; align-items: center; justify-content: center; transition: all 0.3s; background: var(--bg-card); }
+      .theme-toggle:hover { transform: scale(1.1); box-shadow: 0 0 12px rgba(139,92,246,0.4); }
+      /* Original styles */
+      .input-field { border: 1px solid #cbd5e1; padding: 0.25rem 0.5rem; width:100%; border-radius: 4px; font-size: 0.8rem; } 
+      .input-field:focus { border-color:#3b82f6; outline:none; }
+      .toggle-checkbox:checked { right: 0; border-color: #68D391; }
+      .toggle-checkbox:checked + .toggle-label { background-color: #68D391; }
+      .compact-table th, .compact-table td { padding: 8px; font-size: 13px; border-bottom: 1px solid #f1f5f9; white-space: nowrap; }
+      .compact-table th { background-color: #f8fafc; color: #64748b; font-weight: 600; text-align: left; }
+      ::-webkit-scrollbar { width: 6px; height: 6px; }
+      ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+      .animate-fade-in { animation: fadeIn 0.3s ease-out; }
+      @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+      @keyframes twinkle { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }

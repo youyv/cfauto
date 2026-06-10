@@ -1,0 +1,366 @@
+    <canvas id="starfield"></canvas>
+    <div class="max-w-7xl mx-auto space-y-4">
+      
+      <header class="bg-white px-4 py-3 md:px-6 md:py-4 rounded shadow flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+          <div class="flex-none">
+              <h1 class="text-xl font-bold text-slate-800 flex items-center gap-2">🚀 Worker 部署中控 <span class="text-xs bg-purple-600 text-white px-2 py-0.5 rounded ml-2">V10.10.0</span></h1>
+              <div class="text-[10px] text-gray-400 mt-1">安全加固 · 熔断轮换 · 子域名管理 · 星空主题</div>
+          </div>
+          <div id="logs" class="bg-slate-900 text-green-400 p-2 rounded text-xs font-mono hidden max-h-[80px] lg:max-h-[50px] overflow-y-auto shadow-inner w-full lg:flex-1 lg:mx-4 order-2 lg:order-none"></div>
+          
+          <div class="flex flex-wrap items-center gap-2 md:gap-3 bg-slate-50 p-2 rounded border border-slate-200 w-full lg:w-auto flex-none text-xs">
+               <button onclick="toggleTheme()" class="theme-toggle" id="theme_btn" title="切换主题">🌙</button>
+               <div class="w-px h-4 bg-gray-300 mx-0"></div>
+               <button onclick="openWorkbench()" id="btn_workbench" class="bg-slate-700 text-white px-2 py-1 rounded hover:bg-slate-800 font-bold">📋 工作台</button>
+               <button onclick="openBatchDeployModal()" class="bg-indigo-600 text-white px-2 py-1 rounded hover:bg-indigo-700 font-bold">✨ 批量部署</button>
+               <button onclick="accounts.some(a => (a.workers_cmliu && a.workers_cmliu.length > 0) || (a.workers_joey && a.workers_joey.length > 0)) ? showYxipModal() : alert('必须先部署至少一个支持的代理项目 (CMLiu 或 Joey) 才能使用反代落地部署功能！')" class="bg-yellow-500 text-white px-2 py-1 rounded hover:bg-yellow-600 font-bold shadow-sm">⚡ 反代落地部署</button>
+               <div class="w-px h-4 bg-gray-300 mx-1"></div>
+               
+               <div class="flex items-center gap-1">
+                  <span>自动:</span>
+                  <div class="relative inline-block w-8 align-middle select-none">
+                      <input type="checkbox" id="auto_update_toggle" class="toggle-checkbox absolute block w-4 h-4 rounded-full bg-white border-4 appearance-none cursor-pointer border-gray-300"/>
+                      <label for="auto_update_toggle" class="toggle-label block overflow-hidden h-4 rounded-full bg-gray-300 cursor-pointer"></label>
+                  </div>
+               </div>
+
+               <div class="flex items-center gap-1">
+                  <input type="number" id="auto_update_interval" value="30" class="w-8 text-center border rounded py-0.5"><span>分</span>
+               </div>
+               <div class="flex items-center gap-1">
+                  <span class="text-red-600 font-bold">熔断:</span>
+                  <input type="number" id="fuse_threshold" value="0" placeholder="0" class="w-8 text-center border border-red-300 bg-red-50 rounded py-0.5 font-bold text-red-600">
+               </div>
+               <button onclick="saveAutoConfig()" class="bg-slate-700 text-white px-2 py-1 rounded hover:bg-slate-800 font-bold ml-1">保存</button>
+          </div>
+      </header>
+      
+      <div id="layout_container" class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        <div id="section_accounts" class="lg:col-span-7 space-y-4">
+            <div class="bg-white p-4 rounded shadow flex-1">
+              <div class="flex justify-between items-center mb-3">
+                   <h2 class="font-bold text-gray-700 text-sm">📡 账号列表</h2>
+                   <div class="flex gap-2">
+                       <button onclick="loadStats()" id="btn_stats" class="text-[10px] bg-indigo-50 text-indigo-600 px-2 py-1 rounded font-bold hover:bg-indigo-100">🔄 刷新用量</button>
+                       <button onclick="resetFormForAdd()" class="text-[10px] bg-blue-50 text-blue-600 px-2 py-1 rounded">➕ 添加账号</button>
+                   </div>
+              </div>
+              
+              <div id="account_form" class="hidden bg-slate-50 p-3 mb-3 border rounded text-xs space-y-3">
+                 <div class="flex gap-2">
+                    <input id="in_alias" placeholder="备注 (Alias)" class="input-field w-1/3">
+                    <input id="in_id" placeholder="Account ID" class="input-field w-2/3">
+                 </div>
+                 <div class="flex gap-2">
+                    <input id="in_email" placeholder="Login Email" class="input-field w-1/2">
+                    <input id="in_gkey" type="password" placeholder="Global API Key" class="input-field w-1/2">
+                 </div>
+                 <div class="bg-purple-50 p-2 rounded border border-purple-100 flex gap-2 items-center">
+                    <span class="text-purple-700 font-bold w-20">预设域名:</span>
+                    <select id="in_zone_select" class="input-field w-full" onchange="updateZoneInfo()">
+                        <option value="">(请先填写API信息后点击读取)</option>
+                    </select>
+                    <input type="hidden" id="in_zone_name">
+                    <input type="hidden" id="in_zone_id">
+                    <button onclick="fetchZonesForAccount()" class="bg-purple-600 text-white px-2 py-1 rounded hover:bg-purple-700 flex-none w-20">☁️ 读取</button>
+                 </div>
+
+                 <div class="grid grid-cols-3 gap-2">
+                    <input id="in_workers_cmliu" placeholder="🔴 CMliu Worker (选填)" class="input-field bg-red-50">
+                    <input id="in_workers_joey" placeholder="🔵 Joey Worker (选填)" class="input-field bg-blue-50">
+                    <input id="in_workers_ech" placeholder="🟢 ECH Worker (选填)" class="input-field bg-green-50">
+                 </div>
+                 <div class="flex gap-2 pt-2">
+                    <button onclick="saveAccount()" id="btn_save_acc" class="flex-1 bg-slate-700 text-white py-1.5 rounded font-bold">💾 保存账号</button>
+                    <button onclick="deleteFromEdit()" id="btn_del_edit" class="hidden flex-none bg-red-100 text-red-600 px-3 py-1.5 rounded">🗑️</button>
+                    <button onclick="cancelEdit()" class="flex-none bg-gray-200 text-gray-600 px-3 py-1.5 rounded">❌</button>
+                 </div>
+              </div>
+              
+              <div id="account_list_container" class="overflow-x-auto min-h-[300px]">
+                  <table class="w-full compact-table">
+                      <thead>
+                          <tr><th>备注</th><th>预设域名</th><th>Worker</th><th>流量</th><th>占比</th><th class="text-right">操作</th></tr>
+                      </thead>
+                      <tbody id="account_body"></tbody>
+                  </table>
+              </div>
+            </div>
+        </div>
+  
+        <div id="section_projects" class="lg:col-span-5 space-y-4">
+            <div class="bg-white rounded shadow border-t-4 border-red-500 project-card">
+                <div class="bg-red-50 px-4 py-2 flex justify-between items-center border-b border-red-100">
+                    <div class="flex items-center gap-2"><span class="text-sm font-bold text-red-700">🔴 CMliu 配置</span><span id="badge_cmliu" class="text-[9px] px-1.5 py-0.5 rounded text-white bg-gray-400">Loading</span></div>
+                    <button onclick="openVersionHistory('cmliu')" class="text-[10px] bg-white border border-red-200 text-red-600 px-2 py-0.5 rounded hover:bg-red-50">📜 历史/收藏</button>
+                </div>
+                <div class="p-3">
+                    <div id="ver_cmliu" class="text-[10px] font-mono text-gray-500 mb-2 border-b border-gray-100 pb-2 space-y-1">Checking...</div>
+                    <details class="group bg-slate-50 rounded border mb-2">
+                        <summary class="bg-slate-100 px-2 py-1 text-xs font-bold text-gray-600 flex justify-between"><span>📝 变量列表</span><span>▼</span></summary>
+                        <div id="vars_cmliu" class="p-2 space-y-1 max-h-[200px] overflow-y-auto"></div>
+                    </details>
+                    <div class="flex gap-2 mb-2">
+                        <button onclick="addVarRow('cmliu')" class="flex-1 bg-dashed border text-gray-400 text-xs py-1 rounded hover:text-gray-600">➕ 变量</button>
+                        <button onclick="selectSyncAccount('cmliu')" class="flex-none bg-orange-50 text-orange-600 border border-orange-200 text-xs px-2 py-1 rounded">🔄 同步</button>
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="refreshUUID('cmliu')" class="flex-1 bg-gray-100 text-gray-600 text-xs py-1.5 rounded">🎲 刷 UUID</button>
+                        <button onclick="deploy('cmliu')" id="btn_deploy_cmliu" class="flex-[2] bg-red-600 text-white text-xs py-1.5 rounded font-bold hover:bg-red-700">🚀 部署更新</button>
+                    </div>
+                    <button onclick="fix1101('cmliu')" id="btn_fix1101_cmliu" class="w-full mt-2 bg-orange-500 text-white text-xs py-1.5 rounded font-bold hover:bg-orange-600">🔧 一键修复 1101</button>
+                </div>
+            </div>
+
+            <div class="bg-white rounded shadow border-t-4 border-blue-500 project-card">
+                <div class="bg-blue-50 px-4 py-2 flex justify-between items-center border-b border-blue-100">
+                    <div class="flex items-center gap-2"><span class="text-sm font-bold text-blue-700">🔵 Joey 配置</span><span id="badge_joey" class="text-[9px] px-1.5 py-0.5 rounded text-white bg-gray-400">Loading</span></div>
+                    <button onclick="openVersionHistory('joey')" class="text-[10px] bg-white border border-blue-200 text-blue-600 px-2 py-0.5 rounded hover:bg-blue-50">📜 历史/收藏</button>
+                </div>
+                <div class="p-3">
+                    <div id="ver_joey" class="text-[10px] font-mono text-gray-500 mb-2 border-b border-gray-100 pb-2 space-y-1">Checking...</div>
+                    <details class="group bg-slate-50 rounded border mb-2">
+                        <summary class="bg-slate-100 px-2 py-1 text-xs font-bold text-gray-600 flex justify-between"><span>📝 变量列表</span><span>▼</span></summary>
+                        <div id="vars_joey" class="p-2 space-y-1 max-h-[200px] overflow-y-auto"></div>
+                    </details>
+                    <div class="flex gap-2 mb-2">
+                        <button onclick="addVarRow('joey')" class="flex-1 bg-dashed border text-gray-400 text-xs py-1 rounded hover:text-gray-600">➕ 变量</button>
+                        <button onclick="selectSyncAccount('joey')" class="flex-none bg-orange-50 text-orange-600 border border-orange-200 text-xs px-2 py-1 rounded">🔄 同步</button>
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="refreshUUID('joey')" class="flex-1 bg-gray-100 text-gray-600 text-xs py-1.5 rounded">🎲 刷 UUID</button>
+                        <button onclick="deploy('joey')" id="btn_deploy_joey" class="flex-[2] bg-blue-600 text-white text-xs py-1.5 rounded font-bold hover:bg-blue-700">🚀 部署更新</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded shadow border-t-4 border-green-500 project-card">
+                <div class="bg-green-50 px-4 py-2 flex justify-between items-center border-b border-green-100"><span class="text-sm font-bold text-green-700">🟢 ECH 配置</span><span class="text-[9px] px-1.5 py-0.5 rounded text-white bg-green-500">Stable</span></div>
+                <div class="p-3">
+                    <div class="mb-2 p-2 bg-slate-50 border rounded text-xs"><div id="ech_proxy_selector_container" class="mb-2"></div><div id="vars_ech" class="space-y-1"></div></div>
+                    <div class="mb-2 p-2 bg-slate-50 border border-dashed border-green-300 rounded text-xs">
+                        <div class="flex items-center gap-2 mb-1">
+                            <div class="relative inline-block w-8 align-middle select-none">
+                                <input type="checkbox" id="ech_token_enabled" class="toggle-checkbox absolute block w-4 h-4 rounded-full bg-white border-4 appearance-none cursor-pointer border-gray-300" onchange="toggleEchToken()"/>
+                                <label for="ech_token_enabled" class="toggle-label block overflow-hidden h-4 rounded-full bg-gray-300 cursor-pointer"></label>
+                            </div>
+                            <span class="font-bold text-green-700">🔑 Token 鉴权</span>
+                            <span id="ech_token_status" class="text-gray-400 text-[10px]">(关闭 - 不填入)</span>
+                        </div>
+                        <input id="ech_token_input" type="text" placeholder="填写 Token 后开启开关才会生效" class="input-field w-full opacity-50 cursor-not-allowed" disabled/>
+                        <div class="flex items-center gap-2 mt-2 pt-2 border-t border-green-200">
+                            <input type="checkbox" id="ech_disable_workers_dev" class="w-4 h-4 text-red-600 border-gray-300 rounded cursor-pointer">
+                            <label for="ech_disable_workers_dev" class="font-bold text-gray-700 cursor-pointer">🚫 禁用默认 *.workers.dev 域名</label>
+                        </div>
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="deploy('ech')" id="btn_deploy_ech" class="w-full bg-green-600 text-white text-xs py-1.5 rounded font-bold hover:bg-green-700">🚀 部署配置</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="batch_deploy_modal" class="hidden fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50">
+        <div class="bg-white rounded-lg w-[600px] shadow-2xl overflow-hidden animate-fade-in">
+            <div class="bg-indigo-600 p-3 flex justify-between items-center text-white">
+                <h3 class="font-bold text-sm">✨ 批量部署</h3>
+                <button onclick="document.getElementById('batch_deploy_modal').classList.add('hidden')" class="hover:text-gray-200">×</button>
+            </div>
+            <div class="p-4 text-xs space-y-3">
+                <div class="grid grid-cols-2 gap-3">
+                    <div><label class="block text-gray-500 mb-1">Worker 名称</label><input id="bd_name" class="input-field font-bold text-indigo-700" placeholder="例如: new-proxy-01"></div>
+                    <div><label class="block text-gray-500 mb-1">选择模板</label><select id="bd_template" onchange="toggleBatchInputs()" class="input-field bg-gray-50"><option value="cmliu">🔴 CMliu (EdgeTunnel)</option><option value="joey">🔵 Joey (相信光)</option></select></div>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-3 items-end">
+                    <div><label class="block text-gray-500 mb-1">KV 空间名称</label><input id="bd_kv_name" class="input-field" placeholder="自动创建/使用同名 KV"></div>
+                    <div class="flex flex-col gap-2 pb-1">
+                         <div class="flex items-center gap-2">
+                            <input type="checkbox" id="bd_enable_kv" class="w-4 h-4 text-indigo-600 border-gray-300 rounded" checked>
+                            <label for="bd_enable_kv" class="font-bold text-gray-700">绑定 KV 存储</label>
+                         </div>
+                         <div class="flex items-center gap-2">
+                            <input type="checkbox" id="bd_use_saved_vars" class="w-4 h-4 text-green-600 border-gray-300 rounded" checked>
+                            <label for="bd_use_saved_vars" class="font-bold text-green-700">📦 采用已保存变量 (VARS)</label>
+                         </div>
+                    </div>
+                </div>
+
+                <div class="bg-slate-50 p-2 rounded border">
+                    <div class="flex items-center gap-2 mb-2">
+                         <input type="checkbox" id="bd_disable_workers_dev" class="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
+                         <label for="bd_disable_workers_dev" class="font-bold text-gray-700">🚫 禁用默认 *.workers.dev 域名</label>
+                    </div>
+                    <div class="border-t pt-2">
+                        <label class="block text-purple-700 font-bold mb-1">🌐 自定义域名 (自动绑定)</label>
+                        <div class="flex gap-1 items-center">
+                            <input id="bd_domain_prefix" class="input-field w-1/3" placeholder="仅输入前缀">
+                            <span class="text-gray-400">.</span>
+                            <span class="text-gray-500 text-xs italic">[使用账号预设域名]</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="bd_config_cmliu" class="bg-red-50 p-2 rounded border border-red-100">
+                    <label class="block text-red-700 font-bold mb-1">设置 ADMIN 密码</label>
+                    <input id="bd_admin_pass" class="input-field bg-white" placeholder="登录后台的密码">
+                </div>
+                <div id="bd_config_joey" class="hidden bg-blue-50 p-2 rounded border border-blue-100">
+                    <label class="block text-blue-700 font-bold mb-1">设置用户 UUID (u)</label>
+                    <div class="flex gap-2">
+                        <input id="bd_uuid" class="input-field bg-white font-mono" placeholder="UUID">
+                        <button onclick="document.getElementById('bd_uuid').value = crypto.randomUUID()" class="bg-blue-600 text-white px-2 rounded">🎲</button>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-gray-500 mb-1">选择目标账号</label>
+                    <div id="bd_account_list" class="max-h-[100px] overflow-y-auto border rounded p-2 bg-gray-50 grid grid-cols-2 gap-2"></div>
+                </div>
+                <div class="pt-2 border-t flex justify-end gap-2">
+                    <button onclick="document.getElementById('batch_deploy_modal').classList.add('hidden')" class="px-3 py-1.5 bg-gray-100 text-gray-600 rounded">取消</button>
+                    <button onclick="doBatchDeploy()" id="btn_do_batch" class="px-3 py-1.5 bg-indigo-600 text-white rounded font-bold hover:bg-indigo-700">🚀 开始部署</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="yxip_modal" class="hidden fixed inset-0 bg-black bg-opacity-60 flex justify-center items-start pt-[5vh] z-[60] overflow-y-auto">
+        <div class="bg-white rounded-lg shadow-2xl flex flex-col w-[90%] max-w-[800px] my-[5vh]">
+            <div class="bg-gradient-to-r from-yellow-500 to-yellow-600 p-4 rounded-t-lg flex justify-between items-center text-white shadow-sm">
+                <h3 class="font-bold text-lg flex items-center gap-2">⚡ 反代落地部署 (YXIP)</h3>
+                <button onclick="document.getElementById('yxip_modal').classList.add('hidden')" class="hover:bg-white/20 px-2 py-0.5 rounded transition-colors text-xl">×</button>
+            </div>
+            
+            <div class="p-5 overflow-y-auto">
+                <div class="mb-6">
+                    <h4 class="font-bold text-gray-700 border-b pb-2 mb-3 border-yellow-200">1. 操作目标配置</h4>
+                    <div class="bg-yellow-50 p-4 border border-yellow-100 rounded-lg">
+                        <label class="block text-sm font-bold text-gray-700 mb-2">更新策略类型：</label>
+                        <select id="yxip_type" class="input-field w-full mb-4 bg-white" onchange="toggleYxipAccountSelect()">
+                            <option value="joey">🚀 Joey 专属 (KV 模式): 写入目标账号项目绑定的核心配置库 (键 c)</option>
+                            <option value="joey_var">🪐 Joey 兼容 (变量模式): 写入中控面板供当前所有 Joey 项目统一使用的全局变量组 [yx]</option>
+                            <option value="cmliu">🌐 CMLiu 专属 (KV 模式): 写入目标账号项目绑定的自带节点列表库 (ADD.txt)</option>
+                        </select>
+
+                        <div id="yxip_cmliu_account_area" class="mt-3">
+                            <label class="block text-sm font-bold text-slate-700 mb-2">选择目标 CF 账号 (对应其绑定的项目):</label>
+                            <div id="yxip_account_list" class="max-h-[150px] overflow-y-auto border rounded p-3 bg-white grid grid-cols-1 md:grid-cols-2 gap-2 shadow-inner">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <h4 class="font-bold text-gray-700 border-b pb-2 mb-3 border-yellow-200 flex justify-between">
+                        <span>2. 节点筛选池要求</span>
+                        <div class="flex items-center gap-2 text-sm font-normal">
+                            <label>单地区上限:</label>
+                            <input type="number" id="yxip_limit" value="10" min="1" max="100" class="input-field bg-white py-1 w-[80px] text-center">
+                            <span>个</span>
+                        </div>
+                    </h4>
+                    
+                    <div class="flex gap-2 mb-3">
+                        <button onclick="yxipSelectAll()" class="px-3 py-1 bg-gray-100 border text-gray-700 shadow-sm hover:bg-gray-200 rounded text-sm transition-colors">全选</button>
+                        <button onclick="yxipSelectNone()" class="px-3 py-1 bg-gray-100 border text-gray-700 shadow-sm hover:bg-gray-200 rounded text-sm transition-colors">反选</button>
+                    </div>
+                    
+                    <div id="yxip_regions" class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2 text-sm max-h-[250px] overflow-y-auto p-2 border rounded bg-gray-50 shadow-inner">
+                        <div class="col-span-full text-center py-4 text-gray-400">正在获取全球节点数据...</div>
+                    </div>
+                </div>
+
+                <div class="mt-6 flex justify-end gap-3 pt-4 border-t border-gray-100">
+                    <button onclick="document.getElementById('yxip_modal').classList.add('hidden')" class="px-4 py-2 bg-gray-100 text-gray-600 rounded font-bold hover:bg-gray-200 transition-colors">取消</button>
+                    <button onclick="doYxipDeploy()" class="px-6 py-2 bg-gradient-to-r from-yellow-500 to-yellow-600 text-white rounded font-bold hover:from-yellow-600 hover:to-yellow-700 shadow-md transition-all flex items-center gap-2">
+                        <span id="yxip_btn_icon">⚡</span> 开始提取与部署
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="account_manage_modal" class="hidden fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50">
+        <div class="bg-white rounded-lg w-[650px] shadow-2xl max-h-[85vh] flex flex-col">
+            <div class="bg-slate-700 p-3 flex justify-between items-center text-white">
+                <h3 class="font-bold text-sm" id="manage_modal_title">📂 账号管理</h3>
+                <button onclick="document.getElementById('account_manage_modal').classList.add('hidden')" class="hover:text-gray-200">×</button>
+            </div>
+            <div class="p-2 border-b bg-gray-50 text-[10px] text-gray-500 space-y-1">
+                <div>⚠️ 警告：删除逻辑为 [解绑 Worker -> 删除 Worker -> 删除 KV]。</div>
+                <div class="flex items-center gap-2 bg-indigo-50 p-1.5 rounded border border-indigo-100">
+                    <span class="text-indigo-700 font-bold flex-none">🌐 子域名:</span>
+                    <span id="manage_subdomain_display" class="font-mono text-indigo-600 text-[11px]">加载中...</span>
+                    <span class="text-gray-400">.workers.dev</span>
+                    <button onclick="promptChangeSubdomain()" class="ml-auto flex-none bg-indigo-600 text-white px-2 py-0.5 rounded hover:bg-indigo-700 font-bold">✏️ 修改</button>
+                </div>
+            </div>
+            <div class="flex-1 overflow-y-auto p-4">
+                <div id="manage_loading" class="text-center py-4 text-gray-400">正在加载 Workers 列表...</div>
+                <table class="w-full compact-table hidden" id="manage_table">
+                    <thead><tr><th>Worker 名称</th><th>创建时间</th><th>修改时间</th><th class="text-right">操作</th></tr></thead>
+                    <tbody id="manage_list_body"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div id="history_modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
+        <div class="bg-white rounded-lg w-[450px] shadow-xl max-h-[85vh] flex flex-col overflow-hidden">
+            <div class="p-3 border-b bg-gray-50 flex justify-between items-center">
+                <h3 class="text-sm font-bold text-gray-700">📜 版本管理</h3>
+                <div class="flex gap-2">
+                    <button onclick="openFavoritesPanel()" class="text-xs bg-orange-100 text-orange-600 px-2 py-1 rounded font-bold border border-orange-200 hover:bg-orange-200">⭐ 查看收藏</button>
+                    <button onclick="document.getElementById('history_modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 text-lg">×</button>
+                </div>
+            </div>
+            
+            <div id="fav_panel_view" class="hidden flex-col h-full bg-orange-50">
+                <div class="p-2 border-b border-orange-200 flex justify-between items-center">
+                    <span class="text-xs font-bold text-orange-800">⭐ 我的收藏版本</span>
+                    <button onclick="closeFavoritesPanel()" class="text-[10px] bg-white border px-2 py-0.5 rounded">返回历史</button>
+                </div>
+                <div id="fav_full_list" class="flex-1 overflow-y-auto p-2 space-y-1"></div>
+            </div>
+
+            <div id="history_panel_view" class="flex flex-col h-full">
+                <div class="bg-gray-50 p-2 border-b flex justify-between items-center text-xs">
+                    <span>显示条数:</span>
+                    <input type="number" id="history_limit_input" value="10" class="w-12 text-center border rounded" onchange="refreshHistory()">
+                </div>
+                <div class="flex-1 overflow-y-auto bg-slate-50 p-2 space-y-3">
+                    <div>
+                        <div class="flex justify-between items-end px-1 mb-1">
+                            <div class="text-[10px] font-bold text-gray-500 uppercase tracking-wider">🕒 最近提交</div>
+                        </div>
+                        <div id="history_list" class="space-y-1 min-h-[100px]"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="sync_select_modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
+        <div class="bg-white rounded-lg p-4 w-80 shadow-xl max-h-[80vh] flex flex-col">
+            <h3 class="text-sm font-bold mb-3 text-gray-700">📥 选择同步源</h3>
+            <div id="sync_list" class="space-y-1 overflow-y-auto flex-1 mb-3"></div>
+            <button onclick="document.getElementById('sync_select_modal').classList.add('hidden')" class="w-full bg-gray-200 text-gray-600 text-xs py-1.5 rounded">取消</button>
+        </div>
+    </div>
+
+    <div id="workbench_modal" class="hidden fixed inset-0 z-50" style="pointer-events:none">
+        <div id="workbench_panel" class="bg-slate-900 rounded-xl shadow-2xl flex flex-col border border-slate-700" style="pointer-events:auto;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:700px;max-width:90vw;height:50vh;max-height:80vh;resize:both;overflow:hidden">
+            <div id="workbench_drag" class="flex justify-between items-center px-4 py-2 border-b border-slate-700 cursor-move select-none" style="cursor:move">
+                <h3 class="text-sm font-bold text-green-400 flex items-center gap-2">📋 工作台 <span id="wb_status" class="text-[10px] text-slate-500 font-normal"></span></h3>
+                <div class="flex gap-2">
+                    <button onclick="document.getElementById('workbench_log').innerHTML=''" class="text-[10px] text-slate-500 hover:text-slate-300 border border-slate-600 px-2 py-0.5 rounded">🗑️ 清空</button>
+                    <button onclick="closeWorkbench()" class="text-slate-400 hover:text-white text-lg leading-none">&times;</button>
+                </div>
+            </div>
+            <div id="workbench_log" class="flex-1 overflow-y-auto p-3 text-xs font-mono text-green-400 space-y-0.5">
+                <div class="text-slate-600">// 等待操作...</div>
+            </div>
+        </div>
+    </div>

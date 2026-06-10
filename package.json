@@ -1,0 +1,14 @@
+{
+  "name": "worker-pro-refactor",
+  "version": "10.10.0",
+  "description": "Worker 智能中控 — 前后端分离版",
+  "scripts": {
+    "build": "node build.js",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.2",
+    "wrangler": "^4.99.0"
+  }
+}
