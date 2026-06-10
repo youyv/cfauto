@@ -13,11 +13,11 @@ const TEMPLATES = {
         name: "CMliu - EdgeTunnel",
         ghUser: "cmliu",
         ghRepo: "edgetunnel",
-        ghBranch: "beta2.0",
+        ghBranch: "main",
         ghPath: "_worker.js",
         defaultVars: ["UUID", "PROXYIP", "DOH", "PATH", "URL", "KEY", "ADMIN"],
         uuidField: "UUID",
-        description: "CMliu (beta2.0) - 建议开启 KV"
+        description: "CMliu (beta2.1) - 建议开启 KV"
     },
     'joey': {
         name: "Joey - 少年你相信光吗",
