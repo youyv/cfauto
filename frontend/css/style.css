@@ -44,7 +44,7 @@
       }
 
       /* ── 基础 ── */
-      body { background: #f1f5f9; color: var(--text-primary); transition: background 0.5s, color 0.5s; }
+      body { background: linear-gradient(180deg, #f8fafc 0%, #eef1f5 60%, #e2e6ec 100%); color: var(--text-primary); transition: background 0.5s, color 0.5s; }
       [data-theme="dark"] body { background: transparent; }
 
       /* ── 星空 Canvas — 只画星星不画背景，body 负责底色 ── */
@@ -71,14 +71,13 @@
         box-shadow: var(--shadow-md), var(--shadow-glow);
         transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
       }
-      /* 卡片 hover — 微浮 + 折光 */
+      /* 卡片 hover — 微浮 + 柔和折光 */
       [data-theme="dark"] .bg-white:hover,
       [data-theme="dark"] .project-card:hover {
         transform: translateY(-2px);
         box-shadow: var(--shadow-lg),
-                    0 0 0 1px rgba(139,92,246,0.2),
-                    0 0 20px rgba(139,92,246,0.06) !important;
-        border-color: rgba(139,92,246,0.35) !important;
+                    0 0 0 1px rgba(139,92,246,0.08) !important;
+        border-color: rgba(139,92,246,0.18) !important;
       }
 
       /* ── 三级玻璃：嵌套容器 (bg-slate-50, bg-gray-50, bg-red-50 等) ── */
@@ -127,8 +126,10 @@
         transition: background 0.2s;
       }
       [data-theme="dark"] .compact-table tr:hover td {
-        background: var(--table-row-hover) !important;
+        background: rgba(51,65,85,0.2) !important;
       }
+      /* 浅色模式表格 hover */
+      .compact-table tr:hover td { background: #f1f5f9; }
 
       /* ── 彩色背景 ── */
       [data-theme="dark"] .bg-red-50    { background: rgba(127,29,29,0.25) !important; border-color: rgba(127,29,29,0.35) !important; }
