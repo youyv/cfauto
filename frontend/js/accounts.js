@@ -14,7 +14,7 @@ function renderTable() {
             <td class="font-medium">${a.alias}</td>
             <td>${zoneBadge}</td>
             <td><span class="text-xs bg-gray-100 text-gray-600 rounded px-1.5 py-0.5">${count} 个</span></td>
-            <td>${a.stats.total}</td>
+            <td>${a.stats.error?`<span class="text-red-500 cursor-help" title="${a.stats.error.replace(/"/g,'&quot;')}">⚠️ 0</span>`:a.stats.total}</td>
             <td><div class="flex items-center gap-2"><div class="w-12 bg-gray-200 rounded-full h-1.5 overflow-hidden"><div class="${barColor} h-1.5" style="width: ${Math.min(percent, 100)}%"></div></div><span class="text-[10px]">${percent}%</span></div></td>
             <td class="text-right">
                 <button onclick="openAccountManage(${originalIndex})" class="text-purple-600 mr-2 text-xs font-bold hover:bg-purple-50 px-1 rounded">📂 管理</button>
@@ -65,7 +65,7 @@ function resetFormForAdd(){ editingIndex=-1; document.querySelectorAll('#account
 function cancelEdit(){ document.getElementById('account_form').classList.add('hidden'); }
 async function deleteFromEdit(){ if(editingIndex>=0)delAccount(editingIndex); cancelEdit(); }
 
-async function loadStats(){ const b=document.getElementById('btn_stats'); b.disabled=true; try{ const r=await fetch('/api/stats'); const d=await r.json(); accounts.forEach(a=>{ const s=d.find(x=>x.alias===a.alias); a.stats=s&&!s.error?s:{total:0,max:100000}; }); renderTable(); }catch(e){} b.disabled=false; }
+async function loadStats(){ const b=document.getElementById('btn_stats'); b.disabled=true; try{ const r=await fetch('/api/stats'); if(!r.ok)throw new Error(`HTTP ${r.status}`); const d=await r.json(); const errs=[]; accounts.forEach(a=>{ const s=d.find(x=>x.alias===a.alias); if(s){ a.stats=s; if(s.error)errs.push(`${a.alias}: ${s.error}`); } else { a.stats={total:0,max:100000,error:'未匹配到账号'}; errs.push(`${a.alias}: 未匹配到账号`); } }); renderTable(); if(errs.length)Swal.fire({title:'用量查询异常',html:`<div class="text-left text-xs max-h-60 overflow-y-auto">${errs.map(e=>`<p class="text-red-600 mb-1">⚠️ ${e}</p>`).join('')}</div>`,icon:'warning',confirmButtonColor:'#4f46e5'}); }catch(e){ Swal.fire('用量查询失败',e.message,'error'); } b.disabled=false; }
 
 async function fetchZonesForAccount() {
     const email = document.getElementById('in_email').value;
