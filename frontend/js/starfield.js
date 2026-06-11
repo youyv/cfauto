@@ -52,14 +52,6 @@ function initStarfield() {
         try {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        const grad = ctx.createRadialGradient(canvas.width/2, canvas.height/2, 0, canvas.width/2, canvas.height/2, canvas.width*0.7);
-        grad.addColorStop(0, '#0f172a');
-        grad.addColorStop(0.4, '#0c1322');
-        grad.addColorStop(0.8, '#080e1a');
-        grad.addColorStop(1, '#020617');
-        ctx.fillStyle = grad;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
         nebulaPhase = (nebulaPhase + 0.003) % (Math.PI * 2);
         const pulse = 0.5 + 0.5 * Math.sin(nebulaPhase);
 
@@ -131,6 +123,7 @@ function toggleTheme() {
     const btn = document.getElementById('theme_btn');
     if (isDark) {
         html.removeAttribute('data-theme');
+        document.body.style.background = '';
         btn.innerText = '☀️';
         btn.style.transform = 'rotate(-180deg)';
         setTimeout(() => { btn.style.transform = ''; }, 400);
@@ -138,6 +131,7 @@ function toggleTheme() {
         localStorage.setItem('worker_theme', 'light');
     } else {
         html.setAttribute('data-theme', 'dark');
+        document.body.style.background = '#0a101e';
         btn.innerText = '🌙';
         btn.style.transform = 'rotate(180deg)';
         setTimeout(() => { btn.style.transform = ''; }, 400);
@@ -150,6 +144,7 @@ function applyTheme() {
     const saved = localStorage.getItem('worker_theme');
     if (saved === 'dark') {
         document.documentElement.setAttribute('data-theme', 'dark');
+        document.body.style.background = '#0a101e';
         document.getElementById('theme_btn').innerText = '🌙';
         initStarfield();
     }
