@@ -1,6 +1,8 @@
-// ===== 星空主题引擎 =====
+// ===== 星空主题引擎 (Premium) =====
 
 let starAnimId = null;
+let nebulaPhase = 0;
+
 function initStarfield() {
     const canvas = document.getElementById('starfield');
     if (!canvas) return;
@@ -16,15 +18,16 @@ function initStarfield() {
 
     function createStars() {
         stars = [];
-        const count = Math.floor((canvas.width * canvas.height) / 3000);
+        const count = Math.floor((canvas.width * canvas.height) / 1500);
+        const palette = ['#ffffff', '#c4b5fd', '#93c5fd', '#fcd34d', '#a5b4fc', '#fbbf24', '#e9d5ff', '#bfdbfe'];
         for (let i = 0; i < count; i++) {
             stars.push({
                 x: Math.random() * canvas.width,
                 y: Math.random() * canvas.height,
-                r: Math.random() * 1.5 + 0.3,
+                r: Math.random() * 1.8 + 0.2,
                 alpha: Math.random(),
-                delta: (Math.random() * 0.02 + 0.003) * (Math.random() > 0.5 ? 1 : -1),
-                color: ['#ffffff', '#c4b5fd', '#93c5fd', '#fcd34d', '#a5b4fc'][Math.floor(Math.random() * 5)]
+                delta: (Math.random() * 0.018 + 0.002) * (Math.random() > 0.5 ? 1 : -1),
+                color: palette[Math.floor(Math.random() * palette.length)]
             });
         }
     }
@@ -32,60 +35,78 @@ function initStarfield() {
     window.addEventListener('resize', createStars);
 
     function maybeShootingStar() {
-        if (Math.random() < 0.008 && shootingStars.length < 3) {
+        if (Math.random() < 0.012 && shootingStars.length < 4) {
             shootingStars.push({
                 x: Math.random() * canvas.width * 0.7,
                 y: Math.random() * canvas.height * 0.3,
-                len: Math.random() * 80 + 40,
-                speed: Math.random() * 6 + 4,
+                len: Math.random() * 100 + 50,
+                speed: Math.random() * 7 + 5,
                 alpha: 1
             });
         }
     }
 
-    function draw() {
+    function draw(ts) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // 深空背景渐变
         const grad = ctx.createRadialGradient(canvas.width/2, canvas.height/2, 0, canvas.width/2, canvas.height/2, canvas.width*0.7);
         grad.addColorStop(0, '#0f172a');
-        grad.addColorStop(0.5, '#0c1222');
+        grad.addColorStop(0.4, '#0c1322');
+        grad.addColorStop(0.8, '#080e1a');
         grad.addColorStop(1, '#020617');
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        const nebula = ctx.createRadialGradient(canvas.width * 0.2, canvas.height * 0.3, 0, canvas.width * 0.2, canvas.height * 0.3, 300);
-        nebula.addColorStop(0, 'rgba(139, 92, 246, 0.03)');
-        nebula.addColorStop(1, 'transparent');
-        ctx.fillStyle = nebula;
+        // 星云光晕 — 呼吸脉冲
+        nebulaPhase = (nebulaPhase + 0.003) % (Math.PI * 2);
+        const pulse = 0.5 + 0.5 * Math.sin(nebulaPhase);
+
+        const nebula1 = ctx.createRadialGradient(canvas.width * 0.2, canvas.height * 0.3, 0, canvas.width * 0.2, canvas.height * 0.3, 350);
+        nebula1.addColorStop(0, `rgba(139,92,246,${0.025 + pulse * 0.015})`);
+        nebula1.addColorStop(0.5, `rgba(139,92,246,${0.01 + pulse * 0.005})`);
+        nebula1.addColorStop(1, 'transparent');
+        ctx.fillStyle = nebula1;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        const nebula2 = ctx.createRadialGradient(canvas.width * 0.8, canvas.height * 0.7, 0, canvas.width * 0.8, canvas.height * 0.7, 250);
-        nebula2.addColorStop(0, 'rgba(59, 130, 246, 0.025)');
+        const nebula2 = ctx.createRadialGradient(canvas.width * 0.8, canvas.height * 0.7, 0, canvas.width * 0.8, canvas.height * 0.7, 280);
+        nebula2.addColorStop(0, `rgba(59,130,246,${0.02 + pulse * 0.012})`);
+        nebula2.addColorStop(0.5, `rgba(59,130,246,${0.008 + pulse * 0.004})`);
         nebula2.addColorStop(1, 'transparent');
         ctx.fillStyle = nebula2;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+        const nebula3 = ctx.createRadialGradient(canvas.width * 0.5, canvas.height * 0.5, 0, canvas.width * 0.5, canvas.height * 0.5, 400);
+        nebula3.addColorStop(0, `rgba(251,191,36,${0.008 + pulse * 0.006})`);
+        nebula3.addColorStop(1, 'transparent');
+        ctx.fillStyle = nebula3;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // 星星渲染
         for (const s of stars) {
             s.alpha += s.delta;
-            if (s.alpha <= 0.1 || s.alpha >= 1) s.delta = -s.delta;
+            if (s.alpha <= 0.08 || s.alpha >= 1) s.delta = -s.delta;
             ctx.beginPath();
             ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
             ctx.fillStyle = s.color;
-            ctx.globalAlpha = Math.max(0.1, Math.min(1, s.alpha));
+            ctx.globalAlpha = Math.max(0.08, Math.min(1, s.alpha));
             ctx.fill();
         }
         ctx.globalAlpha = 1;
 
+        // 流星
         maybeShootingStar();
         shootingStars = shootingStars.filter(m => {
-            m.x += m.speed; m.y += m.speed * 0.6; m.alpha -= 0.015;
+            m.x += m.speed; m.y += m.speed * 0.6; m.alpha -= 0.012;
             if (m.alpha <= 0) return false;
             ctx.save();
             ctx.globalAlpha = m.alpha;
             const gradient = ctx.createLinearGradient(m.x, m.y, m.x - m.len, m.y - m.len * 0.6);
             gradient.addColorStop(0, '#ffffff');
+            gradient.addColorStop(0.1, '#e9d5ff');
             gradient.addColorStop(1, 'transparent');
             ctx.strokeStyle = gradient;
-            ctx.lineWidth = 1.5;
+            ctx.lineWidth = 1.8;
             ctx.beginPath();
             ctx.moveTo(m.x, m.y);
             ctx.lineTo(m.x - m.len, m.y - m.len * 0.6);
@@ -96,7 +117,7 @@ function initStarfield() {
 
         starAnimId = requestAnimationFrame(draw);
     }
-    draw();
+    requestAnimationFrame(draw);
 }
 
 function stopStarfield() {
@@ -106,14 +127,19 @@ function stopStarfield() {
 function toggleTheme() {
     const html = document.documentElement;
     const isDark = html.getAttribute('data-theme') === 'dark';
+    const btn = document.getElementById('theme_btn');
     if (isDark) {
         html.removeAttribute('data-theme');
-        document.getElementById('theme_btn').innerText = '🌙';
+        btn.innerText = '🌙';
+        btn.style.transform = 'rotate(-180deg)';
+        setTimeout(() => { btn.style.transform = ''; }, 400);
         stopStarfield();
         localStorage.setItem('worker_theme', 'light');
     } else {
         html.setAttribute('data-theme', 'dark');
-        document.getElementById('theme_btn').innerText = '☀️';
+        btn.innerText = '☀️';
+        btn.style.transform = 'rotate(180deg)';
+        setTimeout(() => { btn.style.transform = ''; }, 400);
         initStarfield();
         localStorage.setItem('worker_theme', 'dark');
     }
