@@ -89,6 +89,10 @@
         backdrop-filter: blur(var(--glass-blur-3)); -webkit-backdrop-filter: blur(var(--glass-blur-3));
       }
       [data-theme="dark"] .text-gray-600 { color: var(--text-secondary) !important; }
+      [data-theme="dark"] .bg-purple-100 { background: rgba(88,28,135,0.2) !important; }
+      [data-theme="dark"] .text-purple-600 { color: #c4b5fd !important; }
+      [data-theme="dark"] .text-indigo-600 { color: #a5b4fc !important; }
+      [data-theme="dark"] .hover\\:bg-indigo-100:hover { background: rgba(49,46,129,0.2) !important; }
 
       /* ── 文本颜色 ── */
       [data-theme="dark"] .text-slate-800, [data-theme="dark"] .text-gray-700,
