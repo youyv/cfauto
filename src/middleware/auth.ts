@@ -57,7 +57,7 @@ export function authenticate(request: Request, env: any): Response | null {
 
     // 认证检查
     if (correctCode && !cookieHeader.includes(`auth=${correctCode}`)) {
-        return new Response(loginHtml(), { headers: { "Content-Type": "text/html;charset=UTF-8" } });
+        return new Response(loginHtml(), { headers: { "Content-Type": "text/html;charset=UTF-8", "Cache-Control": "no-store, must-revalidate" } });
     }
 
     // CSRF 防护

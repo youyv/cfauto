@@ -53,7 +53,7 @@ export default {
             const correctCode = env.ACCESS_CODE;
             const cookieHeader = request.headers.get('Cookie') || '';
             if (correctCode && !cookieHeader.includes(`auth=${correctCode}`)) {
-                return new Response(loginHtml(), { headers: { 'Content-Type': 'text/html;charset=UTF-8' } });
+                return new Response(loginHtml(), { headers: { 'Content-Type': 'text/html;charset=UTF-8', 'Cache-Control': 'no-store, must-revalidate' } });
             }
 
             // [安全] CSRF 防护 — POST 请求校验 Origin 与 Host 一致
@@ -71,7 +71,7 @@ export default {
             if (handler) return handler(request, env);
 
             // [回退] 无匹配路由 → 返回管理面板 HTML
-            return new Response(mainHtml(), { headers: { 'Content-Type': 'text/html;charset=UTF-8' } });
+            return new Response(mainHtml(), { headers: { 'Content-Type': 'text/html;charset=UTF-8', 'Cache-Control': 'no-store, must-revalidate' } });
 
         } catch (err: any) {
             return jsonError(err.message);
