@@ -123,10 +123,11 @@
         border-bottom-color: var(--border-light) !important; color: var(--text-secondary) !important;
         transition: background 0.2s;
       }
-      [data-theme="dark"] .compact-table tr:hover td {
-        background: rgba(51,65,85,0.12) !important;
+      [data-theme="dark"] .compact-table tr:hover td,
+      [data-theme="dark"] .compact-table tr:hover {
+        background: transparent !important;
       }
-      .compact-table tr:hover td { background: rgba(0,0,0,0.03); transition: background 0.15s; }
+      .compact-table tr:hover td { background: rgba(0,0,0,0.02); transition: background 0.15s; }
 
       /* ── 彩色背景 ── */
       [data-theme="dark"] .bg-red-50    { background: rgba(127,29,29,0.25) !important; border-color: rgba(127,29,29,0.35) !important; }
