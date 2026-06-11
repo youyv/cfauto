@@ -48,8 +48,10 @@
       [data-theme="dark"] body { background: transparent; }
 
       /* ── 星空 Canvas ── */
-      #starfield { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: -1; background: #0a101e; display: none; }
+      #starfield { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; background: #0a101e; display: none; pointer-events: none; }
       [data-theme="dark"] #starfield { display: block; }
+      /* 内容区必须在 canvas 之上 */
+      body > .max-w-7xl { position: relative; z-index: 1; }
 
       /* body 必须透明，否则遮盖星空 */
       [data-theme="dark"] body.bg-slate-100 {
@@ -188,12 +190,16 @@
 
       /* ── 主题切换按钮 — 旋转过渡 ── */
       .theme-toggle {
-        cursor: pointer; font-size: 18px; width: 38px; height: 38px;
-        border-radius: 50%; border: 2px solid var(--border-color);
+        cursor: pointer; font-size: 18px; width: 38px; height: 38px; line-height: 38px;
+        border-radius: 50%; border: 2px solid #cbd5e1;
         display: flex; align-items: center; justify-content: center;
         transition: all 0.4s cubic-bezier(0.4,0,0.2,1);
-        background: var(--glass-2);
+        background: #f1f5f9; color: #1e293b;
         position: relative; overflow: hidden;
+      }
+      [data-theme="dark"] .theme-toggle {
+        background: rgba(255,255,255,0.15); color: #fbbf24;
+        border-color: rgba(255,255,255,0.25);
       }
       .theme-toggle:hover {
         transform: scale(1.1) rotate(15deg);
