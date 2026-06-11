@@ -47,18 +47,16 @@
       body { background: #f1f5f9; color: var(--text-primary); transition: background 0.5s, color 0.5s; }
       [data-theme="dark"] body { background: transparent; }
 
-      /* ── 星空 Canvas ── */
-      #starfield { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; background: #0a101e; display: none; pointer-events: none; }
+      /* ── 星空 Canvas — 顶层覆盖，pointer-events 穿透 ── */
+      #starfield { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 99998; background: #0a101e; display: none; pointer-events: none; }
       [data-theme="dark"] #starfield { display: block; }
-      /* 内容区必须在 canvas 之上 */
-      body > .max-w-7xl { position: relative; z-index: 1; }
-
-      /* body 必须透明，否则遮盖星空 */
-      [data-theme="dark"] body.bg-slate-100 {
-        background: transparent !important;
-        backdrop-filter: none !important; -webkit-backdrop-filter: none !important;
-        border: none !important;
-      }
+      /* 模态框必须在星空之上 */
+      [data-theme="dark"] #batch_deploy_modal,
+      [data-theme="dark"] #account_manage_modal,
+      [data-theme="dark"] #history_modal,
+      [data-theme="dark"] #sync_select_modal,
+      [data-theme="dark"] #yxip_modal,
+      [data-theme="dark"] #workbench_modal { z-index: 99999; }
 
       /* ── 一级玻璃：Header ── */
       [data-theme="dark"] header {
