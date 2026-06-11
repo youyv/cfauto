@@ -125,7 +125,7 @@
       }
       [data-theme="dark"] .compact-table tr:hover td,
       [data-theme="dark"] .compact-table tr:hover {
-        background: transparent !important;
+        background: rgba(255,255,255,0.03) !important;
       }
       .compact-table tr:hover td { background: rgba(0,0,0,0.02); transition: background 0.15s; }
 
