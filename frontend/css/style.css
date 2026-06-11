@@ -44,7 +44,7 @@
       }
 
       /* ── 基础 ── */
-      body { background: linear-gradient(180deg, #f8fafc 0%, #eef1f5 60%, #e2e6ec 100%); color: var(--text-primary); transition: background 0.5s, color 0.5s; }
+      body { background: linear-gradient(175deg, #e8edf5 0%, #f2efe8 35%, #efe5d8 70%, #e8dcc8 100%); color: var(--text-primary); }
       [data-theme="dark"] body { background: transparent; }
 
       /* ── 星空 Canvas — 只画星星不画背景，body 负责底色 ── */
@@ -126,10 +126,9 @@
         transition: background 0.2s;
       }
       [data-theme="dark"] .compact-table tr:hover td {
-        background: rgba(51,65,85,0.2) !important;
+        background: rgba(51,65,85,0.12) !important;
       }
-      /* 浅色模式表格 hover */
-      .compact-table tr:hover td { background: #f1f5f9; }
+      .compact-table tr:hover td { background: rgba(0,0,0,0.03); transition: background 0.15s; }
 
       /* ── 彩色背景 ── */
       [data-theme="dark"] .bg-red-50    { background: rgba(127,29,29,0.25) !important; border-color: rgba(127,29,29,0.35) !important; }
