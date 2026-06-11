@@ -62,6 +62,15 @@ function initStarfield() {
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+        // DIAG: 四角醒目测试圆 — 如果看不到说明 canvas 被遮盖
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = '#ff0000'; ctx.beginPath(); ctx.arc(40,40,20,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle = '#00ff00'; ctx.beginPath(); ctx.arc(canvas.width-40,40,20,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle = '#0000ff'; ctx.beginPath(); ctx.arc(40,canvas.height-40,20,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle = '#ffff00'; ctx.beginPath(); ctx.arc(canvas.width-40,canvas.height-40,20,0,Math.PI*2); ctx.fill();
+        ctx.font = 'bold 24px sans-serif'; ctx.fillStyle = '#ffffff';
+        ctx.fillText('CANVAS OK', canvas.width/2-80, canvas.height/2);
+
         nebulaPhase = (nebulaPhase + 0.003) % (Math.PI * 2);
         const pulse = 0.5 + 0.5 * Math.sin(nebulaPhase);
 
