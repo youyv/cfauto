@@ -4,9 +4,11 @@ let starAnimId = null;
 let nebulaPhase = 0;
 
 function initStarfield() {
+    try {
     const canvas = document.getElementById('starfield');
-    if (!canvas) return;
+    if (!canvas) { console.warn('[Starfield] canvas not found'); return; }
     const ctx = canvas.getContext('2d');
+    if (!ctx) { console.warn('[Starfield] 2d context null'); return; }
     let stars = [], shootingStars = [];
 
     function resize() {
@@ -30,6 +32,7 @@ function initStarfield() {
                 color: palette[Math.floor(Math.random() * palette.length)]
             });
         }
+        console.log('[Starfield] stars created:', stars.length, 'canvas:', canvas.width+'x'+canvas.height);
     }
     createStars();
     window.addEventListener('resize', createStars);
@@ -46,10 +49,11 @@ function initStarfield() {
         }
     }
 
+    let frameCount = 0;
     function draw(ts) {
+        try {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // 深空背景渐变
         const grad = ctx.createRadialGradient(canvas.width/2, canvas.height/2, 0, canvas.width/2, canvas.height/2, canvas.width*0.7);
         grad.addColorStop(0, '#0f172a');
         grad.addColorStop(0.4, '#0c1322');
@@ -58,31 +62,29 @@ function initStarfield() {
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        // 星云光晕 — 呼吸脉冲
         nebulaPhase = (nebulaPhase + 0.003) % (Math.PI * 2);
         const pulse = 0.5 + 0.5 * Math.sin(nebulaPhase);
 
         const nebula1 = ctx.createRadialGradient(canvas.width * 0.2, canvas.height * 0.3, 0, canvas.width * 0.2, canvas.height * 0.3, 350);
-        nebula1.addColorStop(0, `rgba(139,92,246,${0.025 + pulse * 0.015})`);
-        nebula1.addColorStop(0.5, `rgba(139,92,246,${0.01 + pulse * 0.005})`);
+        nebula1.addColorStop(0, 'rgba(139,92,246,'+(0.025 + pulse * 0.015)+')');
+        nebula1.addColorStop(0.5, 'rgba(139,92,246,'+(0.01 + pulse * 0.005)+')');
         nebula1.addColorStop(1, 'transparent');
         ctx.fillStyle = nebula1;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
         const nebula2 = ctx.createRadialGradient(canvas.width * 0.8, canvas.height * 0.7, 0, canvas.width * 0.8, canvas.height * 0.7, 280);
-        nebula2.addColorStop(0, `rgba(59,130,246,${0.02 + pulse * 0.012})`);
-        nebula2.addColorStop(0.5, `rgba(59,130,246,${0.008 + pulse * 0.004})`);
+        nebula2.addColorStop(0, 'rgba(59,130,246,'+(0.02 + pulse * 0.012)+')');
+        nebula2.addColorStop(0.5, 'rgba(59,130,246,'+(0.008 + pulse * 0.004)+')');
         nebula2.addColorStop(1, 'transparent');
         ctx.fillStyle = nebula2;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
         const nebula3 = ctx.createRadialGradient(canvas.width * 0.5, canvas.height * 0.5, 0, canvas.width * 0.5, canvas.height * 0.5, 400);
-        nebula3.addColorStop(0, `rgba(251,191,36,${0.008 + pulse * 0.006})`);
+        nebula3.addColorStop(0, 'rgba(251,191,36,'+(0.008 + pulse * 0.006)+')');
         nebula3.addColorStop(1, 'transparent');
         ctx.fillStyle = nebula3;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        // 星星渲染
         for (const s of stars) {
             s.alpha += s.delta;
             if (s.alpha <= 0.08 || s.alpha >= 1) s.delta = -s.delta;
@@ -94,18 +96,17 @@ function initStarfield() {
         }
         ctx.globalAlpha = 1;
 
-        // 流星
         maybeShootingStar();
-        shootingStars = shootingStars.filter(m => {
+        shootingStars = shootingStars.filter(function(m) {
             m.x += m.speed; m.y += m.speed * 0.6; m.alpha -= 0.012;
             if (m.alpha <= 0) return false;
             ctx.save();
             ctx.globalAlpha = m.alpha;
-            const gradient = ctx.createLinearGradient(m.x, m.y, m.x - m.len, m.y - m.len * 0.6);
-            gradient.addColorStop(0, '#ffffff');
-            gradient.addColorStop(0.1, '#e9d5ff');
-            gradient.addColorStop(1, 'transparent');
-            ctx.strokeStyle = gradient;
+            var g = ctx.createLinearGradient(m.x, m.y, m.x - m.len, m.y - m.len * 0.6);
+            g.addColorStop(0, '#ffffff');
+            g.addColorStop(0.1, '#e9d5ff');
+            g.addColorStop(1, 'transparent');
+            ctx.strokeStyle = g;
             ctx.lineWidth = 1.8;
             ctx.beginPath();
             ctx.moveTo(m.x, m.y);
@@ -115,9 +116,14 @@ function initStarfield() {
             return true;
         });
 
+        frameCount++;
+        if (frameCount === 1) console.log('[Starfield] first frame rendered, stars:', stars.length);
+        } catch(e) { console.error('[Starfield] draw error:', e); starAnimId = null; return; }
         starAnimId = requestAnimationFrame(draw);
     }
     requestAnimationFrame(draw);
+    console.log('[Starfield] init complete');
+    } catch(e) { console.error('[Starfield] init error:', e); }
 }
 
 function stopStarfield() {
