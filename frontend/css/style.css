@@ -71,13 +71,11 @@
         box-shadow: var(--shadow-md), var(--shadow-glow);
         transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
       }
-      /* 卡片 hover — 微浮 + 柔和折光 */
+      /* 卡片 hover — 极淡反馈 */
       [data-theme="dark"] .bg-white:hover,
       [data-theme="dark"] .project-card:hover {
-        transform: translateY(-2px);
-        box-shadow: var(--shadow-lg),
-                    0 0 0 1px rgba(139,92,246,0.08) !important;
-        border-color: rgba(139,92,246,0.18) !important;
+        border-color: rgba(139,92,246,0.08) !important;
+        box-shadow: var(--shadow-md) !important;
       }
 
       /* ── 三级玻璃：嵌套容器 (bg-slate-50, bg-gray-50, bg-red-50 等) ── */
