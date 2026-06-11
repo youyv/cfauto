@@ -78,13 +78,17 @@
         box-shadow: var(--shadow-md) !important;
       }
 
-      /* ── 三级玻璃：嵌套容器 (bg-slate-50, bg-gray-50, bg-red-50 等) ── */
+      /* ── 三级玻璃：嵌套容器 ── */
       [data-theme="dark"] .bg-slate-50,
       [data-theme="dark"] .bg-gray-50,
+      [data-theme="dark"] .bg-gray-100,
+      [data-theme="dark"] .bg-gray-200,
+      [data-theme="dark"] .bg-gray-300,
       [data-theme="dark"] .bg-slate-100.rounded.shadow {
         background: var(--glass-3) !important;
         backdrop-filter: blur(var(--glass-blur-3)); -webkit-backdrop-filter: blur(var(--glass-blur-3));
       }
+      [data-theme="dark"] .text-gray-600 { color: var(--text-secondary) !important; }
 
       /* ── 文本颜色 ── */
       [data-theme="dark"] .text-slate-800, [data-theme="dark"] .text-gray-700,
