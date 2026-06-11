@@ -32,7 +32,6 @@ function initStarfield() {
                 color: palette[Math.floor(Math.random() * palette.length)]
             });
         }
-        console.log('[Starfield] stars created:', stars.length, 'canvas:', canvas.width+'x'+canvas.height);
     }
     createStars();
     window.addEventListener('resize', createStars);
@@ -49,7 +48,6 @@ function initStarfield() {
         }
     }
 
-    let frameCount = 0;
     function draw(ts) {
         try {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -61,15 +59,6 @@ function initStarfield() {
         grad.addColorStop(1, '#020617');
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        // DIAG: 四角醒目测试圆 — 如果看不到说明 canvas 被遮盖
-        ctx.globalAlpha = 1;
-        ctx.fillStyle = '#ff0000'; ctx.beginPath(); ctx.arc(40,40,20,0,Math.PI*2); ctx.fill();
-        ctx.fillStyle = '#00ff00'; ctx.beginPath(); ctx.arc(canvas.width-40,40,20,0,Math.PI*2); ctx.fill();
-        ctx.fillStyle = '#0000ff'; ctx.beginPath(); ctx.arc(40,canvas.height-40,20,0,Math.PI*2); ctx.fill();
-        ctx.fillStyle = '#ffff00'; ctx.beginPath(); ctx.arc(canvas.width-40,canvas.height-40,20,0,Math.PI*2); ctx.fill();
-        ctx.font = 'bold 24px sans-serif'; ctx.fillStyle = '#ffffff';
-        ctx.fillText('CANVAS OK', canvas.width/2-80, canvas.height/2);
 
         nebulaPhase = (nebulaPhase + 0.003) % (Math.PI * 2);
         const pulse = 0.5 + 0.5 * Math.sin(nebulaPhase);
@@ -125,13 +114,10 @@ function initStarfield() {
             return true;
         });
 
-        frameCount++;
-        if (frameCount === 1) console.log('[Starfield] first frame rendered, stars:', stars.length);
         } catch(e) { console.error('[Starfield] draw error:', e); starAnimId = null; return; }
         starAnimId = requestAnimationFrame(draw);
     }
     requestAnimationFrame(draw);
-    console.log('[Starfield] init complete');
     } catch(e) { console.error('[Starfield] init error:', e); }
 }
 
