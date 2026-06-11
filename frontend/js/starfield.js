@@ -131,7 +131,7 @@ function toggleTheme() {
         localStorage.setItem('worker_theme', 'light');
     } else {
         html.setAttribute('data-theme', 'dark');
-        document.body.style.setProperty('background', '#040914', 'important');
+        document.body.style.setProperty('background', '#ff0000', 'important');
         btn.innerText = '🌙';
         btn.style.transform = 'rotate(180deg)';
         setTimeout(() => { btn.style.transform = ''; }, 400);
@@ -144,7 +144,7 @@ function applyTheme() {
     const saved = localStorage.getItem('worker_theme');
     if (saved === 'dark') {
         document.documentElement.setAttribute('data-theme', 'dark');
-        document.body.style.setProperty('background', '#040914', 'important');
+        document.body.style.setProperty('background', '#ff0000', 'important');
         document.getElementById('theme_btn').innerText = '🌙';
         initStarfield();
     }
