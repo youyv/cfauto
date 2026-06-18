@@ -117,6 +117,14 @@ function stopStarfield() {
     if (starAnimId) { cancelAnimationFrame(starAnimId); starAnimId = null; }
 }
 
+function updateThemeBtn(isDark) {
+    const icon = document.getElementById("theme_icon");
+    const label = document.getElementById("theme_label");
+    if (!icon || !label) return;
+    if (isDark) { icon.innerText = "🌙"; label.innerText = "暗色"; }
+    else { icon.innerText = "☀️"; label.innerText = "亮色"; }
+}
+
 function toggleTheme() {
     const html = document.documentElement;
     const isDark = html.getAttribute('data-theme') === 'dark';
@@ -124,7 +132,7 @@ function toggleTheme() {
     if (isDark) {
         html.removeAttribute('data-theme');
         document.body.style.removeProperty('background');
-        btn.innerText = '☀️';
+        updateThemeBtn(false);
         btn.style.transform = 'rotate(-180deg)';
         setTimeout(() => { btn.style.transform = ''; }, 400);
         stopStarfield();
@@ -132,7 +140,7 @@ function toggleTheme() {
     } else {
         html.setAttribute('data-theme', 'dark');
         document.body.style.setProperty('background', '#040914', 'important');
-        btn.innerText = '🌙';
+        updateThemeBtn(true);
         btn.style.transform = 'rotate(180deg)';
         setTimeout(() => { btn.style.transform = ''; }, 400);
         initStarfield();
@@ -148,7 +156,7 @@ function applyTheme() {
     if (shouldDark) {
         document.documentElement.setAttribute('data-theme', 'dark');
         document.body.style.setProperty('background', '#040914', 'important');
-        document.getElementById('theme_btn').innerText = '🌙';
+        updateThemeBtn(true);
         initStarfield();
     }
 }
@@ -171,12 +179,12 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e)
         if (e.matches) {
             document.documentElement.setAttribute('data-theme', 'dark');
             document.body.style.setProperty('background', '#040914', 'important');
-            document.getElementById('theme_btn').innerText = '🌙';
+            updateThemeBtn(true);
             initStarfield();
         } else {
             document.documentElement.removeAttribute('data-theme');
             document.body.style.removeProperty('background');
-            document.getElementById('theme_btn').innerText = '☀️';
+            updateThemeBtn(false);
             stopStarfield();
         }
     }
