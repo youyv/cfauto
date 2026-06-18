@@ -213,17 +213,13 @@
       .input-field { border: 1px solid #cbd5e1; padding: 0.25rem 0.5rem; width:100%; border-radius: 6px; font-size: 0.8rem; transition: border-color 0.2s, box-shadow 0.2s; }
       .input-field:focus { border-color:#3b82f6; outline:none; box-shadow: 0 0 0 3px rgba(59,130,246,0.15); }
 
-      /* ── 开关组件（纯 CSS，不依赖 Tailwind）── */
-      .tgl-cb { appearance: none; -webkit-appearance: none; position: absolute; width: 16px; height: 16px; border-radius: 50%; border: 4px solid #d1d5db; background: #fff; cursor: pointer; transition: all 0.3s ease; outline: none; margin: 0; padding: 0; top: 0; left: 0; }
-      .tgl-track { display: block; width: 32px; height: 16px; border-radius: 8px; background: #d1d5db; cursor: pointer; transition: background-color 0.3s ease; position: relative; }
-      .tgl-cb:checked { left: auto; right: 0; border-color: #8b5cf6; background: #fff; box-shadow: 0 0 6px rgba(139,92,246,0.5); }
-      .tgl-cb:checked + .tgl-track { background: #8b5cf6; }
-      /* 暗色关态 */
-      [data-theme="dark"] .tgl-cb { border-color: #6b7280; background: #e5e7eb; }
-      [data-theme="dark"] .tgl-track { background: #374151; }
-      /* 暗色开态 */
-      [data-theme="dark"] .tgl-cb:checked { border-color: #a78bfa; background: #fff; box-shadow: 0 0 8px rgba(167,139,250,0.6); }
-      [data-theme="dark"] .tgl-cb:checked + .tgl-track { background: #a78bfa; }
+      /* 开关 — 亮色: 紫色开/灰色关; 暗色: 亮紫开/深灰关 */
+      .toggle-checkbox:checked { border-color: #8b5cf6 !important; }
+      .toggle-checkbox:checked + .toggle-label { background-color: #8b5cf6 !important; }
+      [data-theme="dark"] .toggle-checkbox { border-color: #6b7280 !important; }
+      [data-theme="dark"] .toggle-checkbox:checked { border-color: #a78bfa !important; }
+      [data-theme="dark"] .toggle-label { background-color: #374151 !important; }
+      [data-theme="dark"] .toggle-checkbox:checked + .toggle-label { background-color: #a78bfa !important; }
 
       /* ── 表格 ── */
       .compact-table th, .compact-table td { padding: 8px; font-size: 13px; border-bottom: 1px solid #f1f5f9; white-space: nowrap; }
