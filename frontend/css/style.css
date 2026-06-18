@@ -213,11 +213,11 @@
       .input-field { border: 1px solid #cbd5e1; padding: 0.25rem 0.5rem; width:100%; border-radius: 6px; font-size: 0.8rem; transition: border-color 0.2s, box-shadow 0.2s; }
       .input-field:focus { border-color:#3b82f6; outline:none; box-shadow: 0 0 0 3px rgba(59,130,246,0.15); }
 
-      /* 开关 — 亮色: 紫色开/灰色关; 暗色: 亮紫开/深灰关 */
-      .toggle-checkbox:checked { border-color: #8b5cf6 !important; }
+      /* 开关 */
+      .toggle-checkbox:checked { right: 0 !important; border-color: #8b5cf6 !important; background: #fff !important; }
       .toggle-checkbox:checked + .toggle-label { background-color: #8b5cf6 !important; }
-      [data-theme="dark"] .toggle-checkbox { border-color: #6b7280 !important; }
-      [data-theme="dark"] .toggle-checkbox:checked { border-color: #a78bfa !important; }
+      [data-theme="dark"] .toggle-checkbox { border-color: #6b7280 !important; background: #e5e7eb !important; }
+      [data-theme="dark"] .toggle-checkbox:checked { right: 0 !important; border-color: #a78bfa !important; background: #fff !important; }
       [data-theme="dark"] .toggle-label { background-color: #374151 !important; }
       [data-theme="dark"] .toggle-checkbox:checked + .toggle-label { background-color: #a78bfa !important; }
 
