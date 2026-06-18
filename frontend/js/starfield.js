@@ -154,12 +154,12 @@ function applyTheme() {
 }
 applyTheme();
 function styleToggles(isDark) {
-    document.querySelectorAll('.toggle-checkbox').forEach(function(cb) {
+    document.querySelectorAll('.tgl-cb').forEach(function(cb) {
         cb.style.setProperty('background', '#fff', 'important');
         cb.style.setProperty('border-color', isDark ? (cb.checked ? '#a78bfa' : '#6b7280') : '', 'important');
     });
-    document.querySelectorAll('.toggle-label').forEach(function(l) {
-        var cb = l.parentElement.querySelector('.toggle-checkbox');
+    document.querySelectorAll('.tgl-track').forEach(function(l) {
+        var cb = l.parentElement.querySelector('.tgl-cb');
         if (!cb) return;
         if (isDark) {
             l.style.setProperty('background-color', cb.checked ? '#a78bfa' : '#374151', 'important');
@@ -170,7 +170,7 @@ function styleToggles(isDark) {
 }
 // 开关状态变化时自动刷新样式
 document.addEventListener('change', function(e) {
-    if (e.target.classList.contains('toggle-checkbox')) {
+    if (e.target.classList.contains('tgl-cb')) {
         var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
         styleToggles(isDark);
     }
