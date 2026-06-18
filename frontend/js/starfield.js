@@ -128,7 +128,7 @@ function toggleTheme() {
         btn.style.transform = 'rotate(-180deg)';
         setTimeout(() => { btn.style.transform = ''; }, 400);
         stopStarfield();
-        localStorage.setItem('worker_theme', 'light'); styleToggles(false);
+        localStorage.setItem('worker_theme', 'light');
     } else {
         html.setAttribute('data-theme', 'dark');
         document.body.style.setProperty('background', '#040914', 'important');
@@ -136,7 +136,7 @@ function toggleTheme() {
         btn.style.transform = 'rotate(180deg)';
         setTimeout(() => { btn.style.transform = ''; }, 400);
         initStarfield();
-        localStorage.setItem('worker_theme', 'dark'); styleToggles(true);
+        localStorage.setItem('worker_theme', 'dark');
     }
 }
 
@@ -153,29 +153,6 @@ function applyTheme() {
     }
 }
 applyTheme();
-function styleToggles(isDark) {
-    document.querySelectorAll('.tgl-cb').forEach(function(cb) {
-        cb.style.setProperty('background', '#fff', 'important');
-        cb.style.setProperty('border-color', isDark ? (cb.checked ? '#a78bfa' : '#6b7280') : '', 'important');
-    });
-    document.querySelectorAll('.tgl-track').forEach(function(l) {
-        var cb = l.parentElement.querySelector('.tgl-cb');
-        if (!cb) return;
-        if (isDark) {
-            l.style.setProperty('background-color', cb.checked ? '#a78bfa' : '#374151', 'important');
-        } else {
-            l.style.setProperty('background-color', cb.checked ? '#8b5cf6' : '#d1d5db', 'important');
-        }
-    });
-}
-// 开关状态变化时自动刷新样式
-document.addEventListener('change', function(e) {
-    if (e.target.classList.contains('tgl-cb')) {
-        var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-        styleToggles(isDark);
-    }
-});
-
 
 // 标签页不可见时暂停星空动画以节省性能
 document.addEventListener('visibilitychange', () => {
@@ -183,7 +160,7 @@ document.addEventListener('visibilitychange', () => {
         stopStarfield();
     } else {
         const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-        if (isDark) initStarfield(); styleToggles(isDark);
+        if (isDark) initStarfield();
     }
 });
 

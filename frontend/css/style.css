@@ -213,13 +213,17 @@
       .input-field { border: 1px solid #cbd5e1; padding: 0.25rem 0.5rem; width:100%; border-radius: 6px; font-size: 0.8rem; transition: border-color 0.2s, box-shadow 0.2s; }
       .input-field:focus { border-color:#3b82f6; outline:none; box-shadow: 0 0 0 3px rgba(59,130,246,0.15); }
 
-      /* 开关 */
-      .toggle-checkbox:checked { right: 0 !important; border-color: #8b5cf6 !important; background: #fff !important; }
-      .toggle-checkbox:checked + .toggle-label { background-color: #8b5cf6 !important; }
-      [data-theme="dark"] .toggle-checkbox { border-color: #6b7280 !important; background: #e5e7eb !important; }
-      [data-theme="dark"] .toggle-checkbox:checked { right: 0 !important; border-color: #a78bfa !important; background: #fff !important; }
-      [data-theme="dark"] .toggle-label { background-color: #374151 !important; }
-      [data-theme="dark"] .toggle-checkbox:checked + .toggle-label { background-color: #a78bfa !important; }
+      /* ── 开关: checkbox隐藏, label伪元素画圆点 ── */
+      .tgl-input { position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none; }
+      .tgl-switch { display: inline-block; width: 32px; height: 18px; border-radius: 9px; background: #d1d5db; cursor: pointer; position: relative; transition: background 0.3s; vertical-align: middle; }
+      .tgl-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform 0.3s; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
+      .tgl-input:checked + .tgl-switch { background: #8b5cf6; }
+      .tgl-input:checked + .tgl-switch::after { transform: translateX(14px); }
+      /* 暗色 */
+      [data-theme="dark"] .tgl-switch { background: #374151; }
+      [data-theme="dark"] .tgl-switch::after { background: #e5e7eb; }
+      [data-theme="dark"] .tgl-input:checked + .tgl-switch { background: #a78bfa; }
+      [data-theme="dark"] .tgl-input:checked + .tgl-switch::after { background: #fff; }
 
       /* ── 表格 ── */
       .compact-table th, .compact-table td { padding: 8px; font-size: 13px; border-bottom: 1px solid #f1f5f9; white-space: nowrap; }
