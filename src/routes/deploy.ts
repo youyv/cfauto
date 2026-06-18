@@ -53,7 +53,7 @@ export async function coreDeployLogic(
         }
 
         // [步骤2] 模板特有转换（joey 前缀 / ech proxy 替换 / ech token 注入）
-        githubScriptContent = applyTemplateTransform(type, githubScriptContent, variables);
+        githubScriptContent = applyTemplateTransform(type, githubScriptContent, variables, { echTokenEnabled });
 
         // [步骤3] 遍历账号 → 读取绑定 → 合并变量 → 上传
         const logs: Array<{ name: string; success: boolean; msg: string }> = [];

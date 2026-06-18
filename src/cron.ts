@@ -38,6 +38,7 @@ export async function handleCronJob(env: any) {
                         await rotateUUIDAndDeploy(env, ft, accounts, ACCOUNTS_KEY);
                     }
                     actionTaken = true;
+                    await sendFuseAlert(env, acc.alias, stat.total, limit, fuseThreshold);
                     break;
                 }
             }

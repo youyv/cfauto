@@ -73,7 +73,6 @@ function doYxipSearch() {
         }
     });
 }
-function updateYxipSearchClear() { /* always visible */ }
 function clearYxipSearch() {
     const input = document.getElementById('yxip_search');
     if (input) { input.value = ''; input.focus(); doYxipSearch(); }
@@ -92,7 +91,7 @@ function renderYxipRegions() {
         container.innerHTML = '<div class="col-span-full text-center py-4 text-gray-400">没有找到任何可用节点</div>';
         return;
     }
-    container.innerHTML = '<div class="col-span-full flex gap-1 items-center mb-1"><input id="yxip_search" oninput="updateYxipSearchClear()" placeholder="🔍 搜索国家/代码..." class="flex-1 text-xs border rounded px-2 py-1"><button id="yxip_search_clear" onclick="clearYxipSearch()" class="text-xs text-gray-400 hover:text-red-500 px-1" title="清除 (Esc)">✕</button><button onclick="doYxipSearch()" class="text-xs bg-blue-500 text-white px-2 py-0.5 rounded">搜索</button></div>' + codes.map(code => {
+    container.innerHTML = '<div class="col-span-full flex gap-1 items-center mb-1"><input id="yxip_search" placeholder="🔍 搜索国家/代码..." class="flex-1 text-xs border rounded px-2 py-1"><button id="yxip_search_clear" onclick="clearYxipSearch()" class="text-xs text-gray-400 hover:text-red-500 px-1" title="清除 (Esc)">✕</button><button onclick="doYxipSearch()" class="text-xs bg-blue-500 text-white px-2 py-0.5 rounded">搜索</button></div>' + codes.map(code => {
         const count = yxipData[code].length;
         const cname = REGION_MAP[code] || code;
         return '<label class="flex items-center gap-1.5 p-1.5 border rounded cursor-pointer hover:bg-yellow-50 transition-colors">' +
@@ -165,7 +164,7 @@ async function doYxipDeploy() {
         }
     }
 
-    const rawContent = type.startsWith('joey') ? results.join(',') : results.join('\\n');
+    const rawContent = type.startsWith('joey') ? results.join(',') : results.join('\n');
 
     try {
         document.getElementById('yxip_modal').classList.add('hidden');

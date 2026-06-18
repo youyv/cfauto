@@ -115,7 +115,7 @@ export async function handleChangeSubdomain(accountId: string, email: string, ke
         const headers = getAuthHeaders(email, key);
         try {
             await fetch(cf.acctSubdomain(accountId), { method: 'DELETE', headers });
-        } catch (e) { }
+        } catch (e) { console.warn('[changeSubdomain] DELETE failed:', (e as Error).message); }
         const res = await fetch(cf.acctSubdomain(accountId), {
             method: 'PUT',
             headers,

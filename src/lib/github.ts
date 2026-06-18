@@ -39,7 +39,8 @@ export async function fetchGithubCode(type: string, targetSha: string | null, en
 export function applyTemplateTransform(
     type: string,
     code: string,
-    variables: Array<{ key: string; value: string }> | null
+    variables: Array<{ key: string; value: string }> | null,
+    options: { echTokenEnabled?: boolean } = {}
 ) {
     let result = code;
     

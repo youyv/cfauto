@@ -49,10 +49,13 @@ export default {
                 return jsonError('密码错误', 401);
             }
 
-            // [认证] Cookie 校验 — 未登录用户看到登录页
+            // [认证] Cookie 校验 — 未设置密码时拒绝所有访问
             const correctCode = env.ACCESS_CODE;
+            if (!correctCode) {
+                return new Response('未配置 ACCESS_CODE，请在 Cloudflare Dashboard → Workers & Pages → 设置 → 变量 中设置 ACCESS_CODE 密钥', { status: 503 });
+            }
             const cookieHeader = request.headers.get('Cookie') || '';
-            if (correctCode && !cookieHeader.includes(`auth=${correctCode}`)) {
+            if (!cookieHeader.includes(`auth=${correctCode}`)) {
                 return new Response(loginHtml(), { headers: { 'Content-Type': 'text/html;charset=UTF-8', 'Cache-Control': 'no-store, must-revalidate' } });
             }
 
