@@ -1,16 +1,16 @@
-# 🚀 Cloudflare Worker 智能部署中控 (V10.10.0)
+# 🚀 Cloudflare Worker 智能部署中控 (V10.11.0)
 
 > 全部代码为 Claude Code 完成
 > 自行修改延伸功能
 
-> **版本状态**: V10.10.0 Stable
+> **版本状态**: V10.11.0 Stable
 > **核心进化**: 内置 `yxip` 全球优选下发 + CMLiu KV直写 + Joey 双轨制并存(KV直接下发/全局架构变量覆写)。
 
 本项目是一个基于 Cloudflare Worker 构建的深度集成化部署管理平台。它不仅能管理多个 Cloudflare 账号，还支持一键批量部署、版本回滚、自动化流量熔断以及代码级的混淆加固，是管理大规模 Worker 节点的终极工具。
 
 ---
 
-## 🆕 V10.10.0 更新日志
+## 🆕 V10.11.0 更新日志
 
 ### ⚡ 反代落地部署再升级 (YXIP Improvements)
 
