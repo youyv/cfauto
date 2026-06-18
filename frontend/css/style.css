@@ -24,23 +24,23 @@
 
       /* ── 暗黑模式变量 — 三级玻璃 ── */
       [data-theme="dark"] {
-        /* 玻璃层次 — 深邃紫调代替灰色 */
-        --glass-1: rgba(20,16,40,0.88);
-        --glass-2: rgba(25,20,48,0.75);
-        --glass-3: rgba(35,28,60,0.58);
-        --glass-input: rgba(40,32,68,0.72);
-        --glass-modal: rgba(14,10,32,0.96);
+        /* 玻璃层次：header(最强) > 卡片(中) > 嵌套(轻) */
+        --glass-1: rgba(15,23,42,0.85);
+        --glass-2: rgba(15,23,42,0.72);
+        --glass-3: rgba(30,41,59,0.55);
+        --glass-input: rgba(30,41,59,0.7);
+        --glass-modal: rgba(10,16,30,0.95);
         --glass-blur-1: 24px; --glass-blur-2: 16px; --glass-blur-3: 10px;
-        --text-primary: #ede9fe; --text-secondary: #d8d0f0; --text-muted: #a094c8;
-        --border-color: rgba(120,100,180,0.4); --border-light: rgba(100,80,160,0.3);
-        --border-glow: rgba(139,92,246,0.18);
-        --shadow-sm: 0 1px 3px rgba(0,0,0,0.25);
-        --shadow-md: 0 4px 16px rgba(0,0,0,0.4), 0 1px 4px rgba(0,0,0,0.25);
-        --shadow-lg: 0 8px 32px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.3);
-        --shadow-glow: 0 0 0 1px rgba(139,92,246,0.15);
-        --table-header-bg: rgba(40,32,68,0.55); --table-row-hover: rgba(60,48,100,0.28);
-        --accent-purple: #c4b5fd; --accent-blue: #93c5fd;
-        --input-ring: rgba(147,197,253,0.3);
+        --text-primary: #e2e8f0; --text-secondary: #cbd5e1; --text-muted: #94a3b8;
+        --border-color: rgba(71,85,105,0.45); --border-light: rgba(51,65,85,0.35);
+        --border-glow: rgba(139,92,246,0.12);
+        --shadow-sm: 0 1px 3px rgba(0,0,0,0.2);
+        --shadow-md: 0 4px 16px rgba(0,0,0,0.35), 0 1px 4px rgba(0,0,0,0.2);
+        --shadow-lg: 0 8px 32px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.25);
+        --shadow-glow: 0 0 0 1px rgba(139,92,246,0.12);
+        --table-header-bg: rgba(30,41,59,0.6); --table-row-hover: rgba(51,65,85,0.3);
+        --accent-purple: #a78bfa; --accent-blue: #60a5fa;
+        --input-ring: rgba(96,165,250,0.35);
       }
 
       /* ── 基础 ── */
