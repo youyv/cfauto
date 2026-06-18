@@ -213,8 +213,14 @@
       .input-field { border: 1px solid #cbd5e1; padding: 0.25rem 0.5rem; width:100%; border-radius: 6px; font-size: 0.8rem; transition: border-color 0.2s, box-shadow 0.2s; }
       .input-field:focus { border-color:#3b82f6; outline:none; box-shadow: 0 0 0 3px rgba(59,130,246,0.15); }
 
-      .toggle-checkbox:checked { right: 0; border-color: #68D391; }
-      .toggle-checkbox:checked + .toggle-label { background-color: #68D391; }
+      .toggle-checkbox { transition: all 0.3s ease; }
+      .toggle-label { transition: background-color 0.3s ease; }
+      .toggle-checkbox:checked { right: 0; border-color: #8b5cf6 !important; box-shadow: 0 0 6px rgba(139,92,246,0.5); }
+      .toggle-checkbox:checked + .toggle-label { background-color: #8b5cf6 !important; }
+      [data-theme="dark"] .toggle-checkbox:not(:checked) { border-color: #6b7280 !important; }
+      [data-theme="dark"] .toggle-checkbox:not(:checked) + .toggle-label { background-color: #4b5563 !important; }
+      [data-theme="dark"] .toggle-checkbox:checked { border-color: #a78bfa !important; box-shadow: 0 0 8px rgba(167,139,250,0.6); }
+      [data-theme="dark"] .toggle-checkbox:checked + .toggle-label { background-color: #a78bfa !important; }
 
       /* ── 表格 ── */
       .compact-table th, .compact-table td { padding: 8px; font-size: 13px; border-bottom: 1px solid #f1f5f9; white-space: nowrap; }
