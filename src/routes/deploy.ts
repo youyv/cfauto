@@ -53,7 +53,7 @@ export async function coreDeployLogic(
         }
 
         // [步骤2] 模板特有转换（joey 前缀 / ech proxy 替换 / ech token 注入）
-        githubScriptContent = applyTemplateTransform(type, githubScriptContent, variables, { echTokenEnabled });
+        githubScriptContent = applyTemplateTransform(type, githubScriptContent, variables);
 
         // [步骤3] 遍历账号 → 读取绑定 → 合并变量 → 上传
         const logs: Array<{ name: string; success: boolean; msg: string }> = [];
@@ -74,9 +74,10 @@ export async function coreDeployLogic(
                     if (variables) {
                         variables.forEach(v => {
                             if (v.value && v.value.trim() !== "") {
+                                const bindingType = (v as any).secret ? "secret_text" : "plain_text";
                                 const idx = currentBindings.findIndex((b: any) => b.name === v.key);
-                                if (idx !== -1) currentBindings[idx] = { name: v.key, type: "plain_text", text: v.value };
-                                else currentBindings.push({ name: v.key, type: "plain_text", text: v.value });
+                                if (idx !== -1) currentBindings[idx] = { name: v.key, type: bindingType, text: v.value };
+                                else currentBindings.push({ name: v.key, type: bindingType, text: v.value });
                             }
                         });
                     }
@@ -112,6 +113,13 @@ export async function coreDeployLogic(
 
         const hasSuccess = logs.some(l => l.success);
         if (hasSuccess) {
+            // 写入部署操作日志
+            try {
+                const journalKey = 'DEPLOY_JOURNAL';
+                const existing = JSON.parse(await env.CONFIG_KV.get(journalKey) || '[]');
+                existing.unshift({ time: new Date().toISOString(), type, sha: deployedSha, accounts: logs.filter(l => l.success).length, total: logs.length, summary: logs.map(l => l.name + ': ' + (l.success ? 'OK' : l.msg)).join('; ').substring(0, 500) });
+                await env.CONFIG_KV.put(journalKey, JSON.stringify(existing.slice(0, 100)));
+            } catch (e) { /* journal non-critical */ }
             const DEPLOY_CONFIG_KEY = KV_KEYS.deployConfig(type);
             const mode = isLatestMode ? 'latest' : 'fixed';
             await env.CONFIG_KV.put(DEPLOY_CONFIG_KEY, JSON.stringify({ mode, currentSha: deployedSha || 'unknown', deployTime: new Date().toISOString() }));

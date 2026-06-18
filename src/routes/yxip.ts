@@ -2,8 +2,8 @@
  * 路由: YXIP 优选节点 — 获取区域数据 + 保存节点
  */
 
-import { TEMPLATES } from '../config/templates';
-import { cf, getAuthHeaders } from '../lib/cloudflare-api';
+import { TEMPLATES, KV_KEYS } from '../config/templates';
+import { cf, getAuthHeaders, json } from '../lib/cloudflare-api';
 
 /** 提取并返回全球区域节点的基础数据 */
 export async function handleGetRegionsData() {

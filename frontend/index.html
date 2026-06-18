@@ -31,6 +31,10 @@
                   <span class="text-red-600 font-bold">熔断:</span>
                   <input type="number" id="fuse_threshold" value="0" placeholder="0" class="w-8 text-center border border-red-300 bg-red-50 rounded py-0.5 font-bold text-red-600">
                </div>
+               <div class="flex items-center gap-1">
+                  <span class="text-orange-600 font-bold text-xs">告警:</span>
+                  <input type="text" id="fuse_webhook" placeholder="Webhook URL(可选)" class="text-xs border rounded px-1 py-0.5 w-40">
+               </div>
                <button onclick="saveAutoConfig()" class="bg-slate-700 text-white px-2 py-1 rounded hover:bg-slate-800 font-bold ml-1">保存</button>
           </div>
       </header>

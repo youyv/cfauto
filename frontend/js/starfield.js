@@ -142,7 +142,10 @@ function toggleTheme() {
 
 function applyTheme() {
     const saved = localStorage.getItem('worker_theme');
-    if (saved === 'dark') {
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    // 手动设置优先; 无手动设置时跟随系统
+    const shouldDark = saved === 'dark' || (saved !== 'light' && prefersDark);
+    if (shouldDark) {
         document.documentElement.setAttribute('data-theme', 'dark');
         document.body.style.setProperty('background', '#040914', 'important');
         document.getElementById('theme_btn').innerText = '🌙';
@@ -150,6 +153,34 @@ function applyTheme() {
     }
 }
 applyTheme();
+
+// 标签页不可见时暂停星空动画以节省性能
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+        stopStarfield();
+    } else {
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        if (isDark) initStarfield();
+    }
+});
+
+// 监听系统主题变化（仅在无手动覆盖时生效）
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+    const saved = localStorage.getItem('worker_theme');
+    if (!saved) { // 无手动设置时跟随系统
+        if (e.matches) {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            document.body.style.setProperty('background', '#040914', 'important');
+            document.getElementById('theme_btn').innerText = '🌙';
+            initStarfield();
+        } else {
+            document.documentElement.removeAttribute('data-theme');
+            document.body.style.removeProperty('background');
+            document.getElementById('theme_btn').innerText = '☀️';
+            stopStarfield();
+        }
+    }
+});
 
 // 应用入口（init 定义于 state.js，在所有 JS 文件拼接后调用）
 init();

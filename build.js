@@ -37,7 +37,7 @@ esbuild.buildSync({
     format: 'esm',
     platform: 'neutral',
     target: 'es2022',
-    minify: false,
+    minify: true,
     banner: {
         js: `// Worker 智能中控 — 前后端分离构建 (${new Date().toISOString()})`
     }

@@ -1,16 +1,55 @@
 // ===== 账号管理 =====
 
+
+function doSearch() {
+    const input = document.getElementById('account_search');
+    const q = (input||{}).value||'';
+    const rows = document.querySelectorAll('#account_body tr');
+    let visible = 0, total = 0;
+    rows.forEach(r => {
+        // 只过滤数据行（有复选框的），工具栏和搜索行始终可见
+        const isDataRow = !!r.querySelector('input[type=checkbox]');
+        if (!isDataRow) return; // 跳过工具栏和搜索行
+        total++;
+        if (q === '') { r.style.display = ''; visible++; }
+        else {
+            const text = r.textContent.toLowerCase();
+            const show = text.includes(q.toLowerCase());
+            r.style.display = show ? '' : 'none';
+            if (show) visible++;
+        }
+    });
+    const countEl = document.getElementById('search_count');
+    if (countEl) countEl.textContent = q ? visible + '/' + total : '';
+}
+function updateSearchClear() { /* clear button always visible */ }
+function clearSearch() {
+    const input = document.getElementById('account_search');
+    if (input) { input.value = ''; input.focus(); doSearch(); }
+}
+document.addEventListener('keydown', function(e) {
+    if (document.activeElement && document.activeElement.id === 'account_search') {
+        if (e.key === 'Enter') { e.preventDefault(); doSearch(); }
+        else if (e.key === 'Escape') { clearSearch(); }
+    }
+});
+
 function renderTable() {
+    // 保存搜索状态（loadStats 等异步回调可能重建表格）
+    const savedSearch = (document.getElementById("account_search")||{}).value||"";
     const tb = document.getElementById('account_body');
-    if (accounts.length === 0) { tb.innerHTML = '<tr><td colspan="6" class="text-center text-gray-300 py-4">无数据</td></tr>'; return; }
+    if (accounts.length === 0) { tb.innerHTML = '<tr><td colspan="7" class="text-center text-gray-300 py-4">无数据</td></tr>'; return; }
     const sortedAccounts = [...accounts].sort((a, b) => b.stats.total - a.stats.total);
-    tb.innerHTML = sortedAccounts.map((a) => {
+    // 批量操作工具栏
+    const toolbarHTML = accounts.length > 0 ? '<div class="flex gap-1 mb-1"><button onclick="selectAllAccounts()" class="text-xs bg-gray-100 px-2 py-0.5 rounded">全选</button><button onclick="deselectAllAccounts()" class="text-xs bg-gray-100 px-2 py-0.5 rounded">取消</button><button onclick="batchDeleteAccounts()" class="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded">批量删除</button><button onclick="exportAccounts()" class="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded ml-auto">导出</button><button onclick="importAccounts()" class="text-xs bg-green-100 text-green-600 px-2 py-0.5 rounded">导入</button><button onclick="backupAll()" class="text-xs bg-purple-100 text-purple-600 px-2 py-0.5 rounded">备份</button><button onclick="restoreBackup()" class="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded">恢复</button></div>' : '';
+    tb.innerHTML = (toolbarHTML ? '<tr><td colspan="7" class="p-1">' + toolbarHTML + '</td></tr>' : '') + '<tr><td colspan="7" class="p-1"><div class="flex gap-1 items-center"><input id="account_search" oninput="updateSearchClear()" placeholder="🔍 搜索账号/别名/邮箱/域名..." class="flex-1 text-xs border rounded px-2 py-1"><button id="search_clear" onclick="clearSearch()" class="text-xs text-gray-400 hover:text-red-500 px-1" title="清除搜索 (Esc)">✕</button><button onclick="doSearch()" class="text-xs bg-blue-500 text-white px-2 py-0.5 rounded" title="搜索 (Enter)">搜索</button><span id="search_count" class="text-[10px] text-gray-400"></span></div></td></tr>' + sortedAccounts.map((a) => {
         const originalIndex = accounts.findIndex(acc => acc.alias === a.alias);
         const count = (a.workers_cmliu||[]).length + (a.workers_joey||[]).length + (a.workers_ech||[]).length;
         const percent = ((a.stats.total / a.stats.max) * 100).toFixed(1);
         let barColor = 'bg-green-500'; if (percent > 80) barColor = 'bg-orange-500'; if (percent >= 100) barColor = 'bg-red-600';
         const zoneBadge = a.defaultZoneName ? `<span class="bg-purple-100 text-purple-600 text-[10px] px-1 rounded">${a.defaultZoneName}</span>` : '<span class="text-gray-300">-</span>';
         return `<tr class="hover:bg-gray-50 border-b">
+            <td class="w-6"><input type="checkbox" class="acct-chk" value="${originalIndex}" onchange="updateBatchToolbar()"></td>
             <td class="font-medium">${a.alias}</td>
             <td>${zoneBadge}</td>
             <td><span class="text-xs bg-gray-100 text-gray-600 rounded px-1.5 py-0.5">${count} 个</span></td>
@@ -23,9 +62,14 @@ function renderTable() {
             </td>
         </tr>`;
     }).join('');
+    // 恢复搜索状态
+    if (savedSearch) {
+        const input = document.getElementById('account_search');
+        if (input) { input.value = savedSearch; }
+    }
 }
 
-async function loadAccounts() { try { const r = await fetch('/api/accounts'); accounts = await r.json(); accounts.forEach(a => a.stats = a.stats || {total:0,max:100000}); renderTable(); } catch(e){} }
+async function loadAccounts() { try { const r = await fetch('/api/accounts'); accounts = await r.json(); accounts.forEach(a => a.stats = a.stats || {total:0,max:100000}); renderTable(); } catch(e){ console.error('[loadAccounts]', e); } }
 
 async function saveAccount() {
     const o={
@@ -100,7 +144,104 @@ function updateZoneInfo() {
     }
 }
 
+
+
+async function verifyAllCredentials() {
+    Swal.fire({ title: '验证中...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+    try {
+        const r = await fetch('/api/verify_credentials');
+        const results = await r.json();
+        const ok = results.filter((x) => x.ok).length;
+        const fail = results.filter((x) => !x.ok).length;
+        let html = '✅ ' + ok + ' / ❌ ' + fail + '<br><div class="text-left text-xs max-h-40 overflow-y-auto mt-2">';
+        results.forEach((x) => { if (!x.ok) html += '<p class="text-red-500">' + x.alias + ': ' + (x.error || 'HTTP ' + x.status) + '</p>'; });
+        html += '</div>';
+        Swal.fire({ title: '凭据验证结果', html, icon: fail > 0 ? 'warning' : 'success' });
+    } catch(e) { Swal.fire('验证失败', e.message, 'error'); }
+}
+
+async function exportAccounts() {
+    try {
+        const r = await fetch('/api/accounts/export');
+        const blob = await r.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'accounts-' + new Date().toISOString().slice(0,10) + '.json';
+        a.click(); URL.revokeObjectURL(url);
+    } catch(e) { Swal.fire('导出失败', e.message, 'error'); }
+}
+async function importAccounts() {
+    const input = document.createElement('input');
+    input.type = 'file'; input.accept = '.json';
+    input.onchange = async () => {
+        try {
+            const file = input.files[0];
+            if (!file) return;
+            const text = await file.text();
+            const data = JSON.parse(text);
+            const res = await fetch('/api/accounts/import', { method: 'POST', body: JSON.stringify(data) });
+            const result = await res.json();
+            if (result.success) {
+                Swal.fire('导入完成', '新增 ' + result.added + ' 个, 跳过 ' + result.skipped + ' 个, 共 ' + result.total + ' 个账号', 'success');
+                await loadAccounts();
+            } else { Swal.fire('导入失败', result.msg, 'error'); }
+        } catch(e) { Swal.fire('导入失败', e.message, 'error'); }
+    };
+    input.click();
+}
+async function backupAll() {
+    try {
+        const r = await fetch('/api/backup');
+        const blob = await r.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'worker-backup-' + new Date().toISOString().slice(0,10) + '.json';
+        a.click(); URL.revokeObjectURL(url);
+        Swal.fire('备份完成', '数据已下载', 'success');
+    } catch(e) { Swal.fire('备份失败', e.message, 'error'); }
+}
+async function restoreBackup() {
+    const input = document.createElement('input');
+    input.type = 'file'; input.accept = '.json';
+    input.onchange = async () => {
+        const result = await Swal.fire({
+            title: '⚠️ 恢复数据', text: '此操作会覆盖现有配置，确定继续？', icon: 'warning',
+            showCancelButton: true, confirmButtonText: '确认恢复', confirmButtonColor: '#d33'
+        });
+        if (!result.isConfirmed) return;
+        try {
+            const file = input.files[0];
+            if (!file) return;
+            const text = await file.text();
+            const data = JSON.parse(text);
+            const res = await fetch('/api/restore', { method: 'POST', body: JSON.stringify(data) });
+            const r = await res.json();
+            if (r.success) {
+                Swal.fire('恢复完成', '已恢复 ' + r.restored + ' 项配置', 'success');
+                location.reload();
+            } else { Swal.fire('恢复失败', r.msg, 'error'); }
+        } catch(e) { Swal.fire('恢复失败', e.message, 'error'); }
+    };
+    input.click();
+}
+
 // ===== 账号管理弹窗 =====
+
+function selectAllAccounts() { document.querySelectorAll('.acct-chk').forEach(c => c.checked = true); updateBatchToolbar(); }
+function deselectAllAccounts() { document.querySelectorAll('.acct-chk').forEach(c => c.checked = false); updateBatchToolbar(); }
+function updateBatchToolbar() { /* placeholder */ }
+async function batchDeleteAccounts() {
+    const selected = Array.from(document.querySelectorAll('.acct-chk:checked')).map(c => parseInt(c.value));
+    if (selected.length === 0) return Swal.fire('提示', '请先选择账号', 'info');
+    const result = await Swal.fire({ title: '批量删除', text: '确定删除 ' + selected.length + ' 个账号？', icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: '确认删除' });
+    if (!result.isConfirmed) return;
+    // Delete in reverse order to preserve indices
+    selected.sort((a,b) => b - a).forEach(i => accounts.splice(i, 1));
+    await fetch('/api/accounts', { method: 'POST', body: JSON.stringify(accounts) });
+    renderTable();
+    Swal.fire('已删除', selected.length + ' 个账号已删除', 'success');
+}
+
 let currentManageAccIndex = -1;
 
 async function openAccountManage(i) {
@@ -272,5 +413,5 @@ async function confirmDeleteWorker(alias, workerId, accIndex) {
 }
 
 // Auto Config
-async function loadGlobalConfig(){ try{ const r=await fetch('/api/auto_config'); const c=await r.json(); document.getElementById('auto_update_toggle').checked=!!c.enabled; document.getElementById('auto_update_interval').value=c.interval||30; document.getElementById('fuse_threshold').value=c.fuseThreshold||0; }catch(e){} }
-async function saveAutoConfig(){ await fetch('/api/auto_config',{method:'POST',body:JSON.stringify({enabled:document.getElementById('auto_update_toggle').checked, interval:document.getElementById('auto_update_interval').value, fuseThreshold:document.getElementById('fuse_threshold').value})}); alert('已保存配置'); }
+async function loadGlobalConfig(){ try{ const r=await fetch('/api/auto_config'); const c=await r.json(); document.getElementById('auto_update_toggle').checked=!!c.enabled; document.getElementById('auto_update_interval').value=c.interval||30; document.getElementById('fuse_threshold').value=c.fuseThreshold||0; document.getElementById('fuse_webhook').value=c.fuseWebhook||''; }catch(e){ console.error('[loadGlobalConfig]', e); } }
+async function saveAutoConfig(){ await fetch('/api/auto_config',{method:'POST',body:JSON.stringify({enabled:document.getElementById('auto_update_toggle').checked, interval:document.getElementById('auto_update_interval').value, fuseThreshold:document.getElementById('fuse_threshold').value, fuseWebhook:document.getElementById('fuse_webhook').value})}); alert('已保存配置'); }

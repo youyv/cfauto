@@ -61,6 +61,30 @@ async function fetchYxipRegions() {
     }
 }
 
+
+function doYxipSearch() {
+    const input = document.getElementById('yxip_search');
+    const q = (input||{}).value||'';
+    document.querySelectorAll('#yxip_regions label').forEach(l => {
+        if (q === '') { l.style.display = ''; }
+        else {
+            const text = l.textContent.toLowerCase();
+            l.style.display = text.includes(q.toLowerCase()) ? '' : 'none';
+        }
+    });
+}
+function updateYxipSearchClear() { /* always visible */ }
+function clearYxipSearch() {
+    const input = document.getElementById('yxip_search');
+    if (input) { input.value = ''; input.focus(); doYxipSearch(); }
+}
+document.addEventListener('keydown', function(e) {
+    if (document.activeElement && document.activeElement.id === 'yxip_search') {
+        if (e.key === 'Enter') { e.preventDefault(); doYxipSearch(); }
+        else if (e.key === 'Escape') { clearYxipSearch(); }
+    }
+});
+
 function renderYxipRegions() {
     const container = document.getElementById('yxip_regions');
     const codes = Object.keys(yxipData).sort();
@@ -68,7 +92,7 @@ function renderYxipRegions() {
         container.innerHTML = '<div class="col-span-full text-center py-4 text-gray-400">没有找到任何可用节点</div>';
         return;
     }
-    container.innerHTML = codes.map(code => {
+    container.innerHTML = '<div class="col-span-full flex gap-1 items-center mb-1"><input id="yxip_search" oninput="updateYxipSearchClear()" placeholder="🔍 搜索国家/代码..." class="flex-1 text-xs border rounded px-2 py-1"><button id="yxip_search_clear" onclick="clearYxipSearch()" class="text-xs text-gray-400 hover:text-red-500 px-1" title="清除 (Esc)">✕</button><button onclick="doYxipSearch()" class="text-xs bg-blue-500 text-white px-2 py-0.5 rounded">搜索</button></div>' + codes.map(code => {
         const count = yxipData[code].length;
         const cname = REGION_MAP[code] || code;
         return '<label class="flex items-center gap-1.5 p-1.5 border rounded cursor-pointer hover:bg-yellow-50 transition-colors">' +

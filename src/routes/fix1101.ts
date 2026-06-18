@@ -44,7 +44,7 @@ export async function handleFix1101(env: any, type: string) {
                     if (bindRes.ok) {
                         savedBindings = (await bindRes.json()).result || [];
                     }
-                } catch (e) { }
+                } catch (e) { steps.push('\u26a0\ufe0f \u8bb0\u5f55\u7ed1\u5b9a\u5931\u8d25: ' + (e as Error).message); }
                 const varCount = savedBindings.filter((b: any) => b.type === 'plain_text').length;
                 steps.push(`📋 记录 ${savedBindings.length} 个绑定 (${varCount} 变量)`);
 
@@ -56,7 +56,7 @@ export async function handleFix1101(env: any, type: string) {
                         const allDomains = (await domainsRes.json()).result || [];
                         savedDomains = allDomains.filter((d: any) => d.service === wName);
                     }
-                } catch (e) { }
+                } catch (e) { steps.push('\u26a0\ufe0f \u8bb0\u5f55\u57df\u540d\u5931\u8d25: ' + (e as Error).message); }
                 if (savedDomains.length > 0) steps.push(`🔗 记录 ${savedDomains.length} 个自定义域名`);
 
                 // Step 2: 删除 Worker（不删 KV）
@@ -127,7 +127,7 @@ export async function handleFix1101(env: any, type: string) {
                                     body: JSON.stringify({ hostname: d.hostname, service: wName, zone_id: d.zone_id, environment: d.environment || 'production' })
                                 });
                                 if (dRes.ok) domainOk++;
-                            } catch (e) { }
+                            } catch (e) { /* domain restore best-effort */ }
                         }
                         steps.push(`🔗 域名恢复 ${domainOk}/${savedDomains.length}`);
                     }

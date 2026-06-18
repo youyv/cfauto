@@ -22,35 +22,52 @@ export async function handleCronJob(env: any) {
     const accounts = JSON.parse(await env.CONFIG_KV.get(ACCOUNTS_KEY) || "[]");
     if (accounts.length === 0) return;
 
-    const statsData = await fetchInternalStats(accounts);
-    let actionTaken = false;
+    try {
+        const statsData = await fetchInternalStats(accounts);
+        let actionTaken = false;
 
-    const fuseThreshold = parseInt(config.fuseThreshold || 0);
-    if (fuseThreshold > 0) {
-        for (const acc of accounts) {
-            const stat = statsData.find(s => s.alias === acc.alias);
-            if (!stat || stat.error) continue;
-            const limit = stat.max || 100000;
-            if ((stat.total / limit) * 100 >= fuseThreshold) {
-                const fuseTypes = Object.entries(TEMPLATES).filter(([, t]) => t.uuidField).map(([k]) => k);
-                for (const ft of fuseTypes) {
-                    await rotateUUIDAndDeploy(env, ft, accounts, ACCOUNTS_KEY);
+        const fuseThreshold = parseInt(config.fuseThreshold || 0);
+        if (fuseThreshold > 0) {
+            for (const acc of accounts) {
+                const stat = statsData.find(s => s.alias === acc.alias);
+                if (!stat || stat.error) continue;
+                const limit = stat.max || 100000;
+                if ((stat.total / limit) * 100 >= fuseThreshold) {
+                    const fuseTypes = Object.entries(TEMPLATES).filter(([, t]) => t.uuidField).map(([k]) => k);
+                    for (const ft of fuseTypes) {
+                        await rotateUUIDAndDeploy(env, ft, accounts, ACCOUNTS_KEY);
+                    }
+                    actionTaken = true;
+                    break;
                 }
-                actionTaken = true;
-                break;
             }
         }
-    }
 
-    if (!actionTaken) {
-        const updateTypes = Object.entries(TEMPLATES).filter(([, t]) => t.uuidField).map(([k]) => k);
-        await Promise.all(updateTypes.map(type =>
-            checkAndDeployUpdate(env, type, accounts, ACCOUNTS_KEY)
-        ));
+        if (!actionTaken) {
+            const updateTypes = Object.entries(TEMPLATES).filter(([, t]) => t.uuidField).map(([k]) => k);
+            await Promise.all(updateTypes.map(type =>
+                checkAndDeployUpdate(env, type, accounts, ACCOUNTS_KEY)
+            ));
+        }
+    } catch (e) {
+        console.error('[Cron] handleCronJob failed:', (e as Error).message);
     }
 
     config.lastCheck = now;
     await env.CONFIG_KV.put(GLOBAL_CONFIG_KEY, JSON.stringify(config));
+}
+
+async function sendFuseAlert(env: any, alias: string, total: number, limit: number, threshold: number) {
+    try {
+        const config = JSON.parse(await env.CONFIG_KV.get(KV_KEYS.GLOBAL_CONFIG) || '{}');
+        const webhookUrl = config.fuseWebhook;
+        if (!webhookUrl) return;
+        const payload = {
+            msgtype: 'text',
+            text: { content: '[Worker中控] 🔥 熔断触发: ' + alias + ' 用量达 ' + ((total/limit)*100).toFixed(1) + '% (阈值' + threshold + '%), 已自动轮换UUID并重新部署' }
+        };
+        await fetch(webhookUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    } catch (e) { console.error('[FuseAlert] webhook failed:', (e as Error).message); }
 }
 
 async function checkAndDeployUpdate(env: any, type: string, accounts: any[], accountsKey: string) {
@@ -68,26 +85,26 @@ async function checkAndDeployUpdate(env: any, type: string, accounts: any[], acc
             const { coreDeployLogic } = await import('./routes/deploy');
             await coreDeployLogic(env, type, variables, [], accountsKey, 'latest');
         }
-    } catch (e) { console.error(`[Update Error] ${type}: ${(e as Error).message}`); }
+        } catch (e) { console.error(`[Update Error] ${type}: ${(e as Error).message}`); }
 }
 
 async function rotateUUIDAndDeploy(env: any, type: string, accounts: any[], accountsKey: string) {
-    const VARS_KEY = KV_KEYS.vars(type);
-    const varsStr = await env.CONFIG_KV.get(VARS_KEY);
-    let variables: Array<{ key: string; value: string }> = varsStr ? JSON.parse(varsStr) : [];
-    const uuidField = TEMPLATES[type].uuidField;
-    if (!uuidField) return;
+        const VARS_KEY = KV_KEYS.vars(type);
+        const varsStr = await env.CONFIG_KV.get(VARS_KEY);
+        let variables: Array<{ key: string; value: string }> = varsStr ? JSON.parse(varsStr) : [];
+        const uuidField = TEMPLATES[type].uuidField;
+        if (!uuidField) return;
 
-    let uuidUpdated = false;
-    variables = variables.map(v => {
+        let uuidUpdated = false;
+        variables = variables.map(v => {
         if (v.key === uuidField) { v.value = crypto.randomUUID(); uuidUpdated = true; }
         return v;
-    });
-    if (!uuidUpdated) variables.push({ key: uuidField, value: crypto.randomUUID() });
-    await env.CONFIG_KV.put(VARS_KEY, JSON.stringify(variables));
+        });
+        if (!uuidUpdated) variables.push({ key: uuidField, value: crypto.randomUUID() });
+        await env.CONFIG_KV.put(VARS_KEY, JSON.stringify(variables));
 
-    const deployConfig = JSON.parse(await env.CONFIG_KV.get(KV_KEYS.deployConfig(type)) || '{"mode":"latest"}');
-    const targetSha = deployConfig.mode === 'fixed' ? deployConfig.currentSha : 'latest';
-    const { coreDeployLogic } = await import('./routes/deploy');
-    await coreDeployLogic(env, type, variables, [], accountsKey, targetSha);
+        const deployConfig = JSON.parse(await env.CONFIG_KV.get(KV_KEYS.deployConfig(type)) || '{"mode":"latest"}');
+        const targetSha = deployConfig.mode === 'fixed' ? deployConfig.currentSha : 'latest';
+        const { coreDeployLogic } = await import('./routes/deploy');
+        await coreDeployLogic(env, type, variables, [], accountsKey, targetSha);
 }

@@ -29,7 +29,7 @@ export async function fetchGithubCode(type: string, targetSha: string | null, en
         try {
             const apiRes = await fetch(apiUrl + `?sha=${TEMPLATES[type].ghBranch}&per_page=1`, { headers });
             if (apiRes.ok) sha = (await apiRes.json())[0].sha;
-        } catch (e) { /* SHA 非必需 */ }
+        } catch (e) { console.warn('[GitHub] SHA fetch failed:', (e as Error).message); }
     }
     
     return { code, sha };
@@ -39,8 +39,7 @@ export async function fetchGithubCode(type: string, targetSha: string | null, en
 export function applyTemplateTransform(
     type: string,
     code: string,
-    variables: Array<{ key: string; value: string }> | null,
-    options: { echTokenEnabled?: boolean } = {}
+    variables: Array<{ key: string; value: string }> | null
 ) {
     let result = code;
     

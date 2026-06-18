@@ -3,9 +3,9 @@
  * V10.10.0
  */
 
-import { MANIFEST, loginHtml, authenticate } from './middleware/auth';
+import { MANIFEST, loginHtml } from './middleware/auth';
 import { jsonError } from './lib/cloudflare-api';
-import { createRoutes } from './routes/index';
+import { getRoute } from './routes/index';
 import { handleCronJob } from './cron';
 import { TEMPLATES, ECH_PROXIES, KV_KEYS } from './config/templates';
 import { FRONTEND_HTML, FRONTEND_CSS, FRONTEND_JS } from './frontend-bundle';
@@ -64,10 +64,8 @@ export default {
                 }
             }
 
-            // [核心] 路由分发 — 按 METHOD + PATH 查找处理器
-            // ROUTES Map 在 createRoutes(env) 中构建，env 通过闭包注入
-            const routes = createRoutes(env);
-            const handler = routes.get(`${request.method} ${url.pathname}`);
+            // [核心] 路由分发 — 按 METHOD + PATH 查找处理器（模块级缓存，仅构建一次）
+            const handler = getRoute(request.method, url.pathname);
             if (handler) return handler(request, env);
 
             // [回退] 无匹配路由 → 返回管理面板 HTML

@@ -1,5 +1,19 @@
 // ===== 部署逻辑 =====
 
+
+async function previewDeploy(t) {
+    const vars = []; document.querySelectorAll('.var-row-' + t).forEach(r => { const k = r.querySelector('.key').value; const v = r.querySelector('.val').value; const secret = r.querySelector('.is-secret').value === '1'; if(k) vars.push({key: k, value: v, secret: secret}); });
+    openWorkbench();
+    wbLog('🔍 预览部署 ' + t + '...', 'text-blue-400');
+    try {
+        const res = await fetch('/api/deploy/preview?type=' + t);
+        const data = await res.json();
+        wbLog('📋 将影响 ' + data.accounts + ' 个账号, ' + data.workers + ' 个 Worker:', 'text-white');
+        if (data.details) data.details.forEach(d => wbLog('   ' + d, 'text-slate-400'));
+        wbLog('✅ 预览完成，确认无误后可执行实际部署', 'text-green-400');
+    } catch(e) { wbLog('❌ 预览失败: ' + e.message, 'text-red-500'); }
+}
+
 function toggleEchToken() {
     const enabled = document.getElementById('ech_token_enabled').checked;
     const input = document.getElementById('ech_token_input');
@@ -39,7 +53,7 @@ async function deploy(t, sha='') {
    openWorkbench();
    wbLog('⚡ Deploying ' + t + '...', 'text-yellow-400');
    try {
-       const res = await fetch('/api/deploy?type=' + t, { method: 'POST', body: JSON.stringify({ type: t, variables: vars, deletedVariables: deletedVars[t], targetSha: sha, echTokenEnabled: echTokenEnabled, echDisableWorkersDev: echDisableWorkersDev }) });
+       const res = await fetch('/api/deploy?type=' + t, { method: 'POST', body: JSON.stringify({ variables: vars, deletedVariables: deletedVars[t], targetSha: sha, echTokenEnabled: echTokenEnabled, echDisableWorkersDev: echDisableWorkersDev }) });
        const logs = await res.json();
        logs.forEach(l => wbLog('[' + (l.success ? 'OK' : 'ERR') + '] ' + l.name + ': ' + l.msg, l.success ? '' : 'text-red-400'));
        deletedVars[t] = [];
@@ -74,6 +88,7 @@ async function fix1101(t) {
 }
 
 // ===== 批量部署 =====
+let _lastFailedBatch = null;
 async function doBatchDeploy() {
     const btn = document.getElementById('btn_do_batch');
     const t = document.getElementById('bd_template').value;
@@ -142,9 +157,15 @@ async function doBatchDeploy() {
              else wbLog(`[${l.success ? 'OK' : 'ERR'}] ${l.name}: ${l.msg}`, l.success ? '' : 'text-red-400');
          });
 
+         const failedItems = logs.filter(l => !l.success);
+         _lastFailedBatch = failedItems.length > 0 ? { failedItems, template: t, workerName: name, kvName, enableKV, useSavedVars, config } : null;
          document.getElementById('batch_deploy_modal').classList.add('hidden');
          await loadAccounts();
-         Swal.fire('完成', '操作完成，请查看工作台', 'success');
+         if (_lastFailedBatch) {
+             Swal.fire({ title: '完成', html: '成功: ' + (logs.length - failedItems.length) + ' / 失败: ' + failedItems.length + '<br><button onclick="retryFailedBatch()" class="swal2-confirm swal2-styled" style="background-color:#f97316">🔄 重试失败项</button>', icon: 'warning', showConfirmButton: false });
+         } else {
+             Swal.fire('完成', '操作完成，请查看工作台', 'success');
+         }
 
      } catch(e) {
          Swal.fire('错误', '部署失败: ' + e.message, 'error');
@@ -175,4 +196,15 @@ function toggleBatchInputs() {
     document.getElementById('bd_config_joey').classList.toggle('hidden', t !== 'joey');
     const kvCheck = document.getElementById('bd_enable_kv');
     if (t === 'joey') kvCheck.checked = false; else kvCheck.checked = true;
+}
+
+function retryFailedBatch() {
+    if (!_lastFailedBatch) return Swal.fire('提示', '没有失败的部署记录', 'info');
+    Swal.close();
+    const { failedItems, template, workerName, kvName, enableKV, useSavedVars, config } = _lastFailedBatch;
+    const failedAliases = failedItems.map(f => f.name.split(' ->')[0]);
+    // Re-check only the failed accounts
+    document.querySelectorAll('.bd-acc-chk').forEach(c => { c.checked = failedAliases.includes(c.value); });
+    document.getElementById('batch_deploy_modal').classList.remove('hidden');
+    _lastFailedBatch = null;
 }
