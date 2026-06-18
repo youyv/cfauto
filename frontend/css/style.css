@@ -213,18 +213,20 @@
       .input-field { border: 1px solid #cbd5e1; padding: 0.25rem 0.5rem; width:100%; border-radius: 6px; font-size: 0.8rem; transition: border-color 0.2s, box-shadow 0.2s; }
       .input-field:focus { border-color:#3b82f6; outline:none; box-shadow: 0 0 0 3px rgba(59,130,246,0.15); }
 
-      /* 开关基础 */
-      .toggle-checkbox { transition: all 0.3s ease; background: #fff !important; }
+      /* 开关 — 圆点始终白色，轨道关灰开紫 */
+      .toggle-checkbox { transition: all 0.3s ease; }
       .toggle-label { transition: background-color 0.3s ease; }
-      /* 开态 — 亮紫色 */
-      .toggle-checkbox:checked { right: 0; border-color: #8b5cf6 !important; box-shadow: 0 0 6px rgba(139,92,246,0.5); background: #fff !important; }
+      /* 亮色关 */
+      .toggle-checkbox:not(:checked) { border-color: #d1d5db !important; background: #fff !important; }
+      .toggle-checkbox:not(:checked) + .toggle-label { background-color: #d1d5db !important; }
+      /* 亮色开 */
+      .toggle-checkbox:checked { right: 0; border-color: #8b5cf6 !important; background: #fff !important; box-shadow: 0 0 6px rgba(139,92,246,0.5); }
       .toggle-checkbox:checked + .toggle-label { background-color: #8b5cf6 !important; }
-      /* 暗色关态 — 深灰轨道+白圆点 */
-      [data-theme="dark"] .toggle-checkbox:not(:checked) { border-color: #9ca3af !important; background: #f3f4f6 !important; }
-      [data-theme="dark"] .toggle-label:not(:checked) { background-color: #374151 !important; }
+      /* 暗色关 */
+      [data-theme="dark"] .toggle-checkbox:not(:checked) { border-color: #6b7280 !important; background: #e5e7eb !important; }
       [data-theme="dark"] .toggle-checkbox:not(:checked) + .toggle-label { background-color: #374151 !important; }
-      /* 暗色开态 — 亮紫轨道+白圆点 */
-      [data-theme="dark"] .toggle-checkbox:checked { border-color: #a78bfa !important; box-shadow: 0 0 8px rgba(167,139,250,0.6); background: #fff !important; }
+      /* 暗色开 */
+      [data-theme="dark"] .toggle-checkbox:checked { right: 0; border-color: #a78bfa !important; background: #fff !important; box-shadow: 0 0 8px rgba(167,139,250,0.6); }
       [data-theme="dark"] .toggle-checkbox:checked + .toggle-label { background-color: #a78bfa !important; }
 
       /* ── 表格 ── */
