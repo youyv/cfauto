@@ -104,7 +104,7 @@ export async function coreDeployLogic(
                         }
                         logItem.msg = msgs.join(' | ');
                     } else {
-                        logItem.msg = `❌ ${(await updateRes.json()).errors?.[0]?.message}`;
+                        try { const e = await updateRes.json(); logItem.msg = `❌ ${e.errors?.[0]?.message || "API error"}`; } catch(_) { logItem.msg = `❌ HTTP ${updateRes.status}`; }
                     }
                 } catch (err: any) { logItem.msg = `❌ ${err.message}`; }
                 logs.push(logItem);
@@ -115,11 +115,11 @@ export async function coreDeployLogic(
         if (hasSuccess) {
             // 写入部署操作日志
             try {
-                const journalKey = 'DEPLOY_JOURNAL';
-                const existing = JSON.parse(await env.CONFIG_KV.get(journalKey) || '[]');
+                
+                const existing = JSON.parse(await env.CONFIG_KV.get(KV_KEYS.DEPLOY_JOURNAL) || '[]');
                 existing.unshift({ time: new Date().toISOString(), type, sha: deployedSha, accounts: logs.filter(l => l.success).length, total: logs.length, summary: logs.map(l => l.name + ': ' + (l.success ? 'OK' : l.msg)).join('; ').substring(0, 500) });
-                await env.CONFIG_KV.put(journalKey, JSON.stringify(existing.slice(0, 100)));
-            } catch (e) { /* journal non-critical */ }
+                await env.CONFIG_KV.put(KV_KEYS.DEPLOY_JOURNAL, JSON.stringify(existing.slice(0, 100)));
+            } catch (e) { console.warn("[Deploy] journal write failed:", (e as Error).message); }
             const DEPLOY_CONFIG_KEY = KV_KEYS.deployConfig(type);
             const mode = isLatestMode ? 'latest' : 'fixed';
             await env.CONFIG_KV.put(DEPLOY_CONFIG_KEY, JSON.stringify({ mode, currentSha: deployedSha || 'unknown', deployTime: new Date().toISOString() }));
@@ -179,7 +179,7 @@ export async function handleBatchDeploy(env: any, reqData: any, accountsKey: str
                     const createNsRes = await fetch(cf.kvNamespaces(acc.accountId), {
                         method: 'POST', headers: jsonHeaders, body: JSON.stringify({ title: kvName })
                     });
-                    if (!createNsRes.ok) throw new Error("创建KV失败: " + (await createNsRes.json()).errors[0].message);
+                    if (!createNsRes.ok) { let kvMsg; try { const e = await createNsRes.json(); kvMsg = e.errors?.[0]?.message; } catch(_) { /* JSON parse failed — fallback to statusText */ } throw new Error("创建KV失败: " + (kvMsg || createNsRes.statusText)); }
                     nsId = (await createNsRes.json()).result.id;
                 }
             }
@@ -255,7 +255,7 @@ export async function handleBatchDeploy(env: any, reqData: any, accountsKey: str
                     updatedAccounts = true;
                 }
             } else {
-                log.msg = `❌ ${(await deployRes.json()).errors?.[0]?.message}`;
+                try { const e = await deployRes.json(); log.msg = `❌ ${e.errors?.[0]?.message || "API error"}`; } catch(_) { log.msg = `❌ HTTP ${deployRes.status}`; }
             }
         } catch (e: any) { log.msg = `❌ ${e.message}`; }
         logs.push(log);

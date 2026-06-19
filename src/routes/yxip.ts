@@ -99,7 +99,7 @@ export async function handleSaveYxip(env: any, reqData: any, accountsKey: string
                             logItem.success = true;
                             logItem.msg = `✅ 已更新对应命名空间的 ${targetKey}`;
                         } else {
-                            logItem.msg = `❌ 写入失败: ${(await putRes.json()).errors?.[0]?.message}`;
+                            try { const errBody = await putRes.json(); logItem.msg = `❌ 写入失败: ${errBody.errors?.[0]?.message || 'Unknown error'}`; } catch(e) { logItem.msg = `❌ HTTP ${putRes.status}: ${putRes.statusText}`; }
                         }
                     }
                 } catch (e: any) { logItem.msg = `❌ ${e.message}`; }

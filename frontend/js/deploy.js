@@ -33,7 +33,7 @@ function toggleEchToken() {
 
 async function deploy(t, sha='') {
    const btn = document.getElementById('btn_deploy_' + t); const ot = btn.innerText; btn.innerText = '⏳ 部署中...'; btn.disabled = true;
-   const vars = []; document.querySelectorAll('.var-row-' + t).forEach(r => { const k = r.querySelector('.key').value; const v = r.querySelector('.val').value; if(k) vars.push({key: k, value: v}); });
+   const vars = []; document.querySelectorAll('.var-row-' + t).forEach(r => { const k = r.querySelector('.key').value; const v = r.querySelector('.val').value; const isSecret = r.querySelector('.is-secret').value === '1'; if(k) vars.push({key: k, value: v, secret: isSecret || undefined}); });
 
    let echTokenEnabled = false;
    let echDisableWorkersDev = false;

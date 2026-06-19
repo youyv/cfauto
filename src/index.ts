@@ -3,7 +3,7 @@
  * V10.11.0
  */
 
-import { MANIFEST, loginHtml } from './middleware/auth';
+import { MANIFEST, requireAccessCode, requireCookie, checkCsrf } from './middleware/auth';
 import { jsonError } from './lib/cloudflare-api';
 import { getRoute } from './routes/index';
 import { handleCronJob } from './cron';
@@ -31,7 +31,7 @@ export default {
 
             // [公开] PWA manifest，无需认证
             if (url.pathname === '/manifest.json') {
-                return new Response(JSON.stringify(MANIFEST), { headers: { 'Content-Type': 'application/json' } });
+                return new Response(JSON.stringify(MANIFEST), { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' } });
             }
 
             // [公开] 登录接口 — 验证 ACCESS_CODE，成功则写入 Cookie
@@ -49,23 +49,9 @@ export default {
                 return jsonError('密码错误', 401);
             }
 
-            // [认证] Cookie 校验 — 未设置密码时拒绝所有访问
-            const correctCode = env.ACCESS_CODE;
-            if (!correctCode) {
-                return new Response('未配置 ACCESS_CODE，请在 Cloudflare Dashboard → Workers & Pages → 设置 → 变量 中设置 ACCESS_CODE 密钥', { status: 503 });
-            }
-            const cookieHeader = request.headers.get('Cookie') || '';
-            if (!cookieHeader.includes(`auth=${correctCode}`)) {
-                return new Response(loginHtml(), { headers: { 'Content-Type': 'text/html;charset=UTF-8', 'Cache-Control': 'no-store, must-revalidate' } });
-            }
-
-            // [安全] CSRF 防护 — POST 请求校验 Origin 与 Host 一致
-            if (request.method === 'POST') {
-                const origin = request.headers.get('Origin');
-                if (origin && new URL(origin).host !== url.host) {
-                    return jsonError('CSRF rejected', 403);
-                }
-            }
+            // [认证] 中间件链 — 任一检查不通过即返回对应错误
+            const authResult = requireAccessCode(env) || requireCookie(request, env) || checkCsrf(request, url);
+            if (authResult) return authResult;
 
             // [核心] 路由分发 — 按 METHOD + PATH 查找处理器（模块级缓存，仅构建一次）
             const handler = getRoute(request.method, url.pathname);

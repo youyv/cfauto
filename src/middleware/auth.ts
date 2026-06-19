@@ -27,6 +27,44 @@ document.getElementById('login_code').addEventListener('keydown',e=>{if(e.key===
 </body></html>`;
 }
 
+
+
+/** 检查 ACCESS_CODE 是否已配置 */
+export function requireAccessCode(env: any): Response | null {
+    if (!env.ACCESS_CODE) {
+        return new Response(
+            '未配置 ACCESS_CODE，请在 Cloudflare Dashboard → Workers & Pages → 设置 → 变量 中设置 ACCESS_CODE 密钥',
+            { status: 503 }
+        );
+    }
+    return null;
+}
+
+/** 检查 Cookie 是否包含有效 auth token */
+export function requireCookie(request: Request, env: any): Response | null {
+    const cookieHeader = request.headers.get('Cookie') || '';
+    if (!cookieHeader.includes('auth=' + env.ACCESS_CODE)) {
+        return new Response(loginHtml(), {
+            headers: { 'Content-Type': 'text/html;charset=UTF-8', 'Cache-Control': 'no-store, must-revalidate' }
+        });
+    }
+    return null;
+}
+
+/** CSRF 防护 — POST 请求校验 Origin 与 Host 一致 */
+export function checkCsrf(request: Request, url: URL): Response | null {
+    if (request.method === 'POST') {
+        const origin = request.headers.get('Origin');
+        if (origin && new URL(origin).host !== url.host) {
+            return new Response(JSON.stringify({ success: false, msg: 'CSRF rejected' }), {
+                status: 403,
+                headers: { 'Content-Type': 'application/json' }
+            });
+        }
+    }
+    return null;
+}
+
 export const MANIFEST = {
     "name": "Worker Pro", "short_name": "WorkerPro", "start_url": "/", "display": "standalone",
     "background_color": "#f3f4f6", "theme_color": "#1e293b",

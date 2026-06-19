@@ -6,6 +6,8 @@ compatibility_date = "2024-12-01"
 binding = "CONFIG_KV"
 id = "4c1c769926a740c996b42bbba137f824"
 
+[build]
+command = "npm run build"
 [vars]
 ACCESS_CODE = ""
 GITHUB_TOKEN = ""

@@ -15,6 +15,7 @@ export const cf = {
     kvNamespace:    (aid: string, nsId: string)      => `${CF_API}/accounts/${aid}/storage/kv/namespaces/${nsId}`,
     kvValue:        (aid: string, nsId: string, key: string) => `${CF_API}/accounts/${aid}/storage/kv/namespaces/${nsId}/values/${key}`,
     zones:          (aid: string)                    => `${CF_API}/zones?account.id=${aid}&per_page=50`,
+    userTokenVerify:()                               => `${CF_API}/user/tokens/verify`,
     graphql:        ()                               => `${CF_API}/graphql`,
 };
 

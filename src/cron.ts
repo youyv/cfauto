@@ -67,7 +67,8 @@ async function sendFuseAlert(env: any, alias: string, total: number, limit: numb
             msgtype: 'text',
             text: { content: '[Worker中控] 🔥 熔断触发: ' + alias + ' 用量达 ' + ((total/limit)*100).toFixed(1) + '% (阈值' + threshold + '%), 已自动轮换UUID并重新部署' }
         };
-        await fetch(webhookUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        const webhookRes = await fetch(webhookUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        if (!webhookRes.ok) console.warn('[FuseAlert] webhook returned ' + webhookRes.status);
     } catch (e) { console.error('[FuseAlert] webhook failed:', (e as Error).message); }
 }
 

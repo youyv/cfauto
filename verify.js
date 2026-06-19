@@ -24,6 +24,8 @@ const expectedFiles = [
     'src/routes/fix1101.ts',
     'src/routes/yxip.ts',
     'src/routes/zones.ts',
+    'src/routes/crud.ts',
+    'src/routes/loader.ts',
     'frontend/index.html',
     'frontend/css/style.css',
     'frontend/js/state.js',
@@ -170,7 +172,7 @@ if (missingFuncs.length > 0) {
 
 // ===== 6. 检查后端路由注册完整性 =====
 console.log('\n=== 6. API route coverage ===');
-const routesTS = fs.readFileSync(path.join(ROOT, 'src/routes/index.ts'), 'utf-8');
+const routesTS = fs.readFileSync(path.join(ROOT, 'src/routes/index.ts'), 'utf-8') + String.fromCharCode(10) + fs.readFileSync(path.join(ROOT, 'src/routes/crud.ts'), 'utf-8') + String.fromCharCode(10) + fs.readFileSync(path.join(ROOT, 'src/routes/loader.ts'), 'utf-8');
 const originalRoutes = [
     'GET /api/accounts', 'POST /api/accounts',
     'GET /api/settings', 'POST /api/settings',

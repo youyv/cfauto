@@ -328,7 +328,7 @@ async function promptChangeSubdomain() {
         preConfirm: () => {
             const val = document.getElementById('swal_new_subdomain').value.trim();
             if (!val) { Swal.showValidationMessage('请输入新子域名'); return false; }
-            if (!/^[a-z0-9][a-z0-9-]*[a-z0-9]$/i.test(val) && val.length > 1 || val.length < 1) {
+            if (val.length < 1 || !/^[a-z0-9][a-z0-9-]*[a-z0-9]$/i.test(val)) {
                 Swal.showValidationMessage('子域名只能包含字母、数字和连字符'); return false;
             }
             return val;

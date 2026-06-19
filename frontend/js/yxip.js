@@ -149,7 +149,7 @@ async function doYxipDeploy() {
     const results = [];
 
     for (const region of yxipSelected) {
-        const ipList = shuffleArray([...yxipData[region]]);
+        const ipList = shuffleArray([...(yxipData[region] || [])]);
         const toTake = Math.min(limit, ipList.length);
 
         for (let i = 0; i < toTake; i++) {

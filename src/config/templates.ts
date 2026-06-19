@@ -1,7 +1,6 @@
 /**
  * 模板配置 — 定义每个项目的 GitHub 拉取源、KV 绑定名、变量结构
  */
-
 export const TEMPLATES: Record<string, {
     name: string;
     ghUser: string;
@@ -75,7 +74,6 @@ export const TEMPLATES: Record<string, {
         yxipBuildContent: (raw: string) => raw,
     }
 };
-
 export const ECH_PROXIES = [
     { group: "Global", list: ["ProxyIP.CMLiussss.net", "ProxyIP.Aliyun.CMLiussss.net", "ProxyIP.Oracle.CMLiussss.net"] },
     { group: "HK (香港)", list: ["ProxyIP.HK.CMLiussss.net", "ProxyIP.Aliyun.HK.CMLiussss.net", "ProxyIP.Oracle.HK.CMLiussss.net"] },
@@ -86,7 +84,6 @@ export const ECH_PROXIES = [
     { group: "Europe", list: ["ProxyIP.DE.CMLiussss.net (德国)", "ProxyIP.UK.CMLiussss.net (英国)", "ProxyIP.FR.CMLiussss.net (法国)", "ProxyIP.NL.CMLiussss.net (荷兰)", "ProxyIP.RU.CMLiussss.net (俄罗斯)"] },
     { group: "Others", list: ["ProxyIP.TW.CMLiussss.net (台湾)", "ProxyIP.AU.CMLiussss.net (澳洲)", "ProxyIP.IN.CMLiussss.net (印度)"] }
 ];
-
 /** KV 键名常量 — 所有数据存储的键统一在此定义，避免魔法字符串 */
 export const KV_KEYS = {
     ACCOUNTS: 'ACCOUNTS_UNIFIED_STORAGE',              // 账号列表
@@ -94,4 +91,5 @@ export const KV_KEYS = {
     vars: (type: string) => `VARS_${type}`,             // 各模板变量（如 VARS_cmliu）
     deployConfig: (type: string) => `DEPLOY_CONFIG_${type}`, // 部署配置（锁定版本等）
     favorites: (type: string) => `FAVORITES_${type}`,   // 版本收藏
+    DEPLOY_JOURNAL: 'DEPLOY_JOURNAL',                // 部署操作日志
 };
