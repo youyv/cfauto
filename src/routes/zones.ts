@@ -7,12 +7,19 @@ import { cf, getAuthHeaders, jsonError, json } from '../lib/cloudflare-api';
 
 export async function handleGetZones(accountId: string, email: string, key: string) {
     try {
-        const res = await fetch(cf.zones(accountId), {
-            headers: getAuthHeaders(email, key)
-        });
-        const data: any = await res.json();
-        const zones = data.result.map((z: any) => ({ id: z.id, name: z.name }));
-        return json({ success: true, zones });
+        const headers = getAuthHeaders(email, key);
+        let allZones: Array<{ id: string; name: string }> = [];
+        let page = 1;
+        while (true) {
+            const res = await fetch(cf.zones(accountId) + '&page=' + page, { headers });
+            const data: any = await res.json();
+            if (!data.result || data.result.length === 0) break;
+            data.result.forEach((z: any) => allZones.push({ id: z.id, name: z.name }));
+            const totalPages = data.result_info?.total_pages || 0;
+            if (page >= totalPages) break;
+            page++;
+        }
+        return json({ success: true, zones: allZones });
     } catch (e: any) { return jsonError(e.message); }
 }
 

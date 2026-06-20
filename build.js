@@ -43,4 +43,14 @@ esbuild.buildSync({
     }
 });
 
+
+// 自动更新 wrangler.toml 的 compatibility_date 为今天
+try {
+    const tomlPath = path.join(__dirname, 'wrangler.toml');
+    const today = new Date().toISOString().split('T')[0];
+    let toml = fs.readFileSync(tomlPath, 'utf-8');
+    toml = toml.replace(/compatibility_date = "\d{4}-\d{2}-\d{2}"/, 'compatibility_date = "' + today + '"');
+    fs.writeFileSync(tomlPath, toml, 'utf-8');
+    console.log('📅 compatibility_date → ' + today);
+} catch (e) { /* wrangler.toml 不存在则跳过 */ }
 console.log('✅ Build complete → dist/worker.js');

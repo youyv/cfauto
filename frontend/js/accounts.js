@@ -40,7 +40,7 @@ function renderTable() {
     if (accounts.length === 0) { tb.innerHTML = '<tr><td colspan="7" class="text-center text-gray-300 py-4">无数据</td></tr>'; return; }
     const sortedAccounts = [...accounts].sort((a, b) => b.stats.total - a.stats.total);
     // 批量操作工具栏
-    const toolbarHTML = accounts.length > 0 ? '<div class="flex gap-1 mb-1"><button onclick="selectAllAccounts()" class="text-xs bg-gray-100 px-2 py-0.5 rounded">全选</button><button onclick="deselectAllAccounts()" class="text-xs bg-gray-100 px-2 py-0.5 rounded">取消</button><button onclick="batchDeleteAccounts()" class="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded">批量删除</button><button onclick="exportAccounts()" class="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded ml-auto">导出</button><button onclick="importAccounts()" class="text-xs bg-green-100 text-green-600 px-2 py-0.5 rounded">导入</button><button onclick="backupAll()" class="text-xs bg-purple-100 text-purple-600 px-2 py-0.5 rounded">备份</button><button onclick="restoreBackup()" class="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded">恢复</button></div>' : '';
+    const toolbarHTML = accounts.length > 0 ? '<div class="flex gap-1 mb-1"><button onclick="selectAllAccounts()" class="text-xs bg-gray-100 px-2 py-0.5 rounded">全选</button><button onclick="deselectAllAccounts()" class="text-xs bg-gray-100 px-2 py-0.5 rounded">取消</button><button onclick="batchDeleteAccounts()" class="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded">批量删除</button><button onclick="exportAccounts()" class="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded ml-auto">导出</button><button onclick="importAccounts()" class="text-xs bg-green-100 text-green-600 px-2 py-0.5 rounded">导入</button><button onclick="backupAll()" class="text-xs bg-purple-100 text-purple-600 px-2 py-0.5 rounded">备份</button><button onclick="restoreBackup()" class="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded">恢复</button><span id="batch_count" class="text-[10px] text-gray-400 ml-1"></span></div>' : '';
     tb.innerHTML = (toolbarHTML ? '<tr><td colspan="7" class="p-1">' + toolbarHTML + '</td></tr>' : '') + '<tr><td colspan="7" class="p-1"><div class="flex gap-1 items-center"><input id="account_search" placeholder="🔍 搜索账号/别名/邮箱/域名..." class="flex-1 text-xs border rounded px-2 py-1"><button id="search_clear" onclick="clearSearch()" class="text-xs text-gray-400 hover:text-red-500 px-1" title="清除搜索 (Esc)">✕</button><button onclick="doSearch()" class="text-xs bg-blue-500 text-white px-2 py-0.5 rounded" title="搜索 (Enter)">搜索</button><span id="search_count" class="text-[10px] text-gray-400"></span></div></td></tr>' + sortedAccounts.map((a) => {
         const originalIndex = accounts.findIndex(acc => acc.alias === a.alias);
         const count = (a.workers_cmliu||[]).length + (a.workers_joey||[]).length + (a.workers_ech||[]).length;
@@ -228,7 +228,17 @@ async function restoreBackup() {
 
 function selectAllAccounts() { document.querySelectorAll('.acct-chk').forEach(c => c.checked = true); updateBatchToolbar(); }
 function deselectAllAccounts() { document.querySelectorAll('.acct-chk').forEach(c => c.checked = false); updateBatchToolbar(); }
-function updateBatchToolbar() { /* placeholder */ }
+function updateBatchToolbar() {
+    const selected = document.querySelectorAll('.acct-chk:checked').length;
+    const total = document.querySelectorAll('.acct-chk').length;
+    const countEl = document.getElementById('batch_count');
+    const delBtn = document.querySelector('#account_list_container button[onclick*="batchDeleteAccounts"]');
+    if (countEl) countEl.textContent = selected > 0 ? '已选 ' + selected + '/' + total : '';
+    if (delBtn) {
+      if (selected === 0) { delBtn.disabled = true; delBtn.classList.add('opacity-40'); }
+      else { delBtn.disabled = false; delBtn.classList.remove('opacity-40'); }
+    }
+  }
 async function batchDeleteAccounts() {
     const selected = Array.from(document.querySelectorAll('.acct-chk:checked')).map(c => parseInt(c.value));
     if (selected.length === 0) return Swal.fire('提示', '请先选择账号', 'info');

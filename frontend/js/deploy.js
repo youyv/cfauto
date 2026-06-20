@@ -158,7 +158,12 @@ async function doBatchDeploy() {
          });
 
          const failedItems = logs.filter(l => !l.success);
-         _lastFailedBatch = failedItems.length > 0 ? { failedItems, template: t, workerName: name, kvName, enableKV, useSavedVars, config } : null;
+         _lastFailedBatch = failedItems.length > 0 ? {
+      failedItems, template: t, workerName: name, kvName, enableKV, useSavedVars, config,
+      customDomainPrefix: document.getElementById('bd_domain_prefix').value,
+      disableWorkersDev: document.getElementById('bd_disable_workers_dev').checked,
+      savedVars: savedVars
+    } : null;
          document.getElementById('batch_deploy_modal').classList.add('hidden');
          await loadAccounts();
          if (_lastFailedBatch) {
@@ -201,10 +206,22 @@ function toggleBatchInputs() {
 function retryFailedBatch() {
     if (!_lastFailedBatch) return Swal.fire('提示', '没有失败的部署记录', 'info');
     Swal.close();
-    const { failedItems, template, workerName, kvName, enableKV, useSavedVars, config } = _lastFailedBatch;
+    const { failedItems, template, workerName, kvName, enableKV, useSavedVars, config,
+            customDomainPrefix, disableWorkersDev, savedVars } = _lastFailedBatch;
     const failedAliases = failedItems.map(f => f.name.split(' ->')[0]);
-    // Re-check only the failed accounts
+    // Re-check only the failed accounts AND restore form fields
     document.querySelectorAll('.bd-acc-chk').forEach(c => { c.checked = failedAliases.includes(c.value); });
+    // 恢复表单字段，避免用户重新填写
+    document.getElementById('bd_template').value = template || 'cmliu';
+    document.getElementById('bd_name').value = workerName || '';
+    document.getElementById('bd_kv_name').value = kvName || '';
+    document.getElementById('bd_enable_kv').checked = !!enableKV;
+    document.getElementById('bd_use_saved_vars').checked = !!useSavedVars;
+    document.getElementById('bd_domain_prefix').value = customDomainPrefix || '';
+    document.getElementById('bd_disable_workers_dev').checked = !!disableWorkersDev;
+    if (template === 'cmliu' && config && config.admin) document.getElementById('bd_admin_pass').value = config.admin;
+    if (config && config.uuid) document.getElementById('bd_uuid').value = config.uuid;
+    toggleBatchInputs();
     document.getElementById('batch_deploy_modal').classList.remove('hidden');
     _lastFailedBatch = null;
 }

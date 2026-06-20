@@ -79,6 +79,9 @@ export async function handleFix1101(env: any, type: string) {
                     else steps.push("🌐 子域名: 跳过(API限制)");
                 } catch (e) { steps.push("🌐 子域名: 跳过"); }
 
+                // Cloudflare API 删除是异步的，等待 2 秒确保删除完成再重建
+                await new Promise(r => setTimeout(r, 2000));
+
                 // Step 4: 重建 Worker + 恢复变量
                 let deployCode = applyTemplateTransform(type, freshCode, null);
 

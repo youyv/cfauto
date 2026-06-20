@@ -40,10 +40,13 @@ export function requireAccessCode(env: any): Response | null {
     return null;
 }
 
-/** 检查 Cookie 是否包含有效 auth token */
+/** 检查 Cookie 是否包含有效 auth token — 精确比对 auth 值，防止前缀绕过 */
 export function requireCookie(request: Request, env: any): Response | null {
     const cookieHeader = request.headers.get('Cookie') || '';
-    if (!cookieHeader.includes('auth=' + env.ACCESS_CODE)) {
+    // 提取 auth= 的值进行精确比对，避免子串/前缀绕过
+    const match = cookieHeader.match(/(?:^|;\s*)auth=([^;]*)/);
+    const cookieValue = match ? match[1] : null;
+    if (cookieValue !== env.ACCESS_CODE) {
         return new Response(loginHtml(), {
             headers: { 'Content-Type': 'text/html;charset=UTF-8', 'Cache-Control': 'no-store, must-revalidate' }
         });
