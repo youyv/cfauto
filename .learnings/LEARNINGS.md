@@ -204,3 +204,58 @@ while(true) { fetch(&page=N) → result_info.total_pages 判定终止 }
 - Source: code_review
 - Related Files: src/routes/zones.ts
 - Recurrence-Count: 1
+
+
+## [LRN-20260620-012] error
+
+**Status**: resolved
+**Area**: build
+**Pattern-Key**: esbuild.output.file.locked
+
+### Summary
+esbuild write dist/worker.js Access denied - file locked by wrangler/other process.
+
+### Details
+wrangler deploy may hold dist/worker.js open. Subsequent build fails.
+Fix: build.bat adds del /f dist/worker.js 2>nul, build.js adds fs.unlinkSync.
+
+### Metadata
+- Source: error
+- Recurrence-Count: 1
+---
+
+## [LRN-20260620-013] correction
+
+**Status**: resolved
+**Area**: config
+**Pattern-Key**: bat.utf8.bom.broken
+
+### Summary
+bat files with UTF-8 BOM cause CMD garbled text. Fix: pure ASCII, no BOM, no Chinese.
+
+### Details
+BOM bytes (EF BB BF) display as gibberish in GBK terminal and break @echo off.
+Fix: all bat files rewritten in ASCII-only English, no BOM, no chcp 65001 needed.
+
+### Metadata
+- Source: error
+- Recurrence-Count: 1
+---
+
+## [LRN-20260620-014] best_practice
+
+**Status**: resolved
+**Area**: config
+**Pattern-Key**: wrangler.local.toml.gitignore
+
+### Summary
+Dual-config pattern: wrangler.toml (template, git) + wrangler.local.toml (real values, gitignored).
+
+### Details
+deploy.bat: if exist wrangler.local.toml -> use it, else fallback to wrangler.toml.
+Public repo sees only placeholders. Personal info stays local.
+
+### Metadata
+- Source: user_feedback
+- Related Files: deploy.bat, .gitignore, wrangler.local.toml
+- Recurrence-Count: 1
