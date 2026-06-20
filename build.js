@@ -27,6 +27,9 @@ export const FRONTEND_JS = ${JSON.stringify(jsContent)};
 
 fs.writeFileSync(path.join(__dirname, 'src/frontend-bundle.ts'), frontendBundle, 'utf-8');
 
+// 删除旧输出文件 (避免占用锁定)
+try { fs.unlinkSync(path.join(__dirname, 'dist/worker.js')); } catch(e) { /* 文件不存在则跳过 */ }
+
 // esbuild 打包 (absroot 保证不受 cwd 影响)
 const absroot = __dirname;
 esbuild.buildSync({
