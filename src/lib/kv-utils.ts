@@ -1,0 +1,14 @@
+import type { KVNamespace } from "../config/env";
+/**
+ * KV utility - eliminate JSON.parse boilerplate
+ */
+
+export async function getJSON(kv: KVNamespace, key: string, fallback: any = null): Promise<any> {
+  const raw = await kv.get(key);
+  if (raw === null) return fallback;
+  try { return JSON.parse(raw); } catch (e) { return fallback; }
+}
+
+export async function putJSON(kv: KVNamespace, key: string, value: any): Promise<void> {
+  await kv.put(key, JSON.stringify(value));
+}

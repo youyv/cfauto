@@ -93,3 +93,10 @@ export const KV_KEYS = {
     favorites: (type: string) => `FAVORITES_${type}`,   // 版本收藏
     DEPLOY_JOURNAL: 'DEPLOY_JOURNAL',                // 部署操作日志
 };
+
+/** PWA Manifest */
+export const MANIFEST = {
+    "name": "Worker Pro", "short_name": "WorkerPro", "start_url": "/", "display": "standalone",
+    "background_color": "#f3f4f6", "theme_color": "#1e293b",
+    "icons": [{ "src": "https://www.cloudflare.com/img/logo-cloudflare-dark.svg", "sizes": "192x192", "type": "image/svg+xml" }]
+};

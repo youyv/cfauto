@@ -3,84 +3,93 @@
  */
 import { KV_KEYS } from '../config/templates';
 import { jsonError } from '../lib/cloudflare-api';
+import type { AccountCredentials } from '../config/env';
+import type { AppEnv } from "../config/env";
 
-type Handler = (req: Request, env: any) => Promise<Response>;
+type Handler = (req: Request, env: AppEnv) => Promise<Response>;
 
 export function registerLazyRoutes(ROUTES: Map<string, Handler>) {
 const getHandler = async (name: string) => {
     switch (name) {
         case 'checkUpdate': {
             const { handleCheckUpdate } = await import('./check');
-            return (req: Request, env: any) => {
+            return (req: Request, env: AppEnv) => {
                 const url = new URL(req.url);
                 return handleCheckUpdate(env, url.searchParams.get('type') || '', url.searchParams.get('mode') || undefined, parseInt(url.searchParams.get('limit') || '10'));
             };
         }
         case 'getCode': {
             const { handleGetCode } = await import('./check');
-            return (req: Request, env: any) => handleGetCode(env, new URL(req.url).searchParams.get('type') || '');
+            return (req: Request, env: AppEnv) => handleGetCode(env, new URL(req.url).searchParams.get('type') || '');
         }
         case 'deploy': {
             const { handleManualDeploy } = await import('./deploy');
-            return async (req: Request, env: any) => {
-                const type = new URL(req.url).searchParams.get('type') || '';
-                const { variables, deletedVariables, targetSha, customCode, echTokenEnabled, echDisableWorkersDev, targetAccountIds } = await req.json() as any;
-                return handleManualDeploy(env, type, variables, deletedVariables, KV_KEYS.ACCOUNTS, targetSha, customCode, echTokenEnabled, echDisableWorkersDev, targetAccountIds);
+            return async (req: Request, env: AppEnv) => {
+                const body = await req.json() as any;
+                return handleManualDeploy(env, {
+                    type: new URL(req.url).searchParams.get('type') || '',
+                    variables: body.variables,
+                    deletedVariables: body.deletedVariables,
+                    targetSha: body.targetSha,
+                    customCode: body.customCode,
+                    ech: body.echTokenEnabled !== undefined ? { tokenEnabled: body.echTokenEnabled, disableWorkersDev: body.echDisableWorkersDev } : undefined,
+                    targetAccountIds: body.targetAccountIds
+                });
             };
         }
         case 'batchDeploy': {
             const { handleBatchDeploy } = await import('./deploy');
-            return async (req: Request, env: any) => handleBatchDeploy(env, await req.json(), KV_KEYS.ACCOUNTS);
+            return async (req: Request, env: AppEnv) => handleBatchDeploy(env, await req.json());
         }
         case 'zones': {
             const { handleGetZones } = await import('./zones');
-            return async (req: Request, _env: any) => {
-                const { accountId, email, globalKey } = await req.json() as any;
-                return handleGetZones(accountId, email, globalKey);
+            return async (req: Request, _env: AppEnv) => {
+                const cred: AccountCredentials = await req.json();
+                return handleGetZones(cred);
             };
         }
         case 'allWorkers': {
             const { handleGetAllWorkers } = await import('./zones');
-            return async (req: Request, _env: any) => {
-                const { accountId, email, globalKey } = await req.json() as any;
-                return handleGetAllWorkers(accountId, email, globalKey);
+            return async (req: Request, _env: AppEnv) => {
+                const cred: AccountCredentials = await req.json();
+                return handleGetAllWorkers(cred);
             };
         }
         case 'deleteWorker': {
             const { handleDeleteWorker } = await import('./zones');
-            return async (req: Request, env: any) => {
-                const { accountId, email, globalKey, workerName, deleteKv } = await req.json() as any;
-                return handleDeleteWorker(env, accountId, email, globalKey, workerName, deleteKv);
+            return async (req: Request, env: AppEnv) => {
+                const { workerName, deleteKv, ...cred } = await req.json() as any;
+                return handleDeleteWorker(env, cred as AccountCredentials, workerName, deleteKv);
             };
         }
         case 'fetchBindings': {
             const { handleFetchBindings } = await import('./zones');
-            return async (req: Request, _env: any) => {
-                const { accountId, email, globalKey, workerName } = await req.json() as any;
-                return handleFetchBindings(accountId, email, globalKey, workerName);
+            return async (req: Request, _env: AppEnv) => {
+                const { workerName, ...cred } = await req.json() as any;
+                return handleFetchBindings(cred as AccountCredentials, workerName);
             };
         }
         case 'getSubdomain': {
             const { handleGetSubdomain } = await import('./zones');
-            return async (req: Request, _env: any) => {
-                const { accountId, email, globalKey } = await req.json() as any;
-                return handleGetSubdomain(accountId, email, globalKey);
+            return async (req: Request, _env: AppEnv) => {
+                const cred: AccountCredentials = await req.json();
+                return handleGetSubdomain(cred);
             };
         }
         case 'changeSubdomain': {
             const { handleChangeSubdomain } = await import('./zones');
-            return async (req: Request, _env: any) => {
-                const { accountId, email, globalKey, newSubdomain } = await req.json() as any;
-                return handleChangeSubdomain(accountId, email, globalKey, newSubdomain);
+            return async (req: Request, _env: AppEnv) => {
+                const { newSubdomain, ...cred } = await req.json() as any;
+                return handleChangeSubdomain(cred as AccountCredentials, newSubdomain);
             };
         }
         case 'stats': {
             const { handleStats } = await import('./check');
-            return (_req: Request, env: any) => handleStats(env, KV_KEYS.ACCOUNTS);
+            return (_req: Request, env: AppEnv) => handleStats(env);
         }
         case 'fix1101': {
             const { handleFix1101 } = await import('./fix1101');
-            return async (req: Request, env: any) => handleFix1101(env, (await req.json() as any).type);
+            return async (req: Request, env: AppEnv) => handleFix1101(env, (await req.json() as any).type);
         }
         case 'regionsData': {
             const { handleGetRegionsData } = await import('./yxip');
@@ -88,7 +97,7 @@ const getHandler = async (name: string) => {
         }
         case 'saveYxip': {
             const { handleSaveYxip } = await import('./yxip');
-            return async (req: Request, env: any) => handleSaveYxip(env, await req.json(), KV_KEYS.ACCOUNTS);
+            return async (req: Request, env: AppEnv) => handleSaveYxip(env, await req.json());
         }
     }
     return null;

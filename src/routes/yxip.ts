@@ -4,6 +4,8 @@
 
 import { TEMPLATES, KV_KEYS } from '../config/templates';
 import { cf, getAuthHeaders, json } from '../lib/cloudflare-api';
+import { getJSON, putJSON } from "../lib/kv-utils";
+import type { AppEnv } from "../config/env";
 
 /** 提取并返回全球区域节点的基础数据 */
 export async function handleGetRegionsData() {
@@ -34,22 +36,21 @@ export async function handleGetRegionsData() {
 }
 
 /** 保存优选节点逻辑 */
-export async function handleSaveYxip(env: any, reqData: any, accountsKey: string) {
+export async function handleSaveYxip(env: AppEnv, reqData: any) {
     const { type, accountId, email, globalKey, rawContent } = reqData;
 
     // Joey 无 KV 模式：覆盖全局变量
     if (type === 'joey_var') {
         const VARS_KEY = KV_KEYS.vars('joey');
         try {
-            const varsStr = await env.CONFIG_KV.get(VARS_KEY);
-            let variables = varsStr ? JSON.parse(varsStr) : [];
+            let variables = await getJSON(env.CONFIG_KV, VARS_KEY, []);
             const idx = variables.findIndex((v: any) => v.key === 'yx');
             if (idx !== -1) {
                 variables[idx] = { key: 'yx', type: "plain_text", value: rawContent };
             } else {
                 variables.push({ key: 'yx', type: "plain_text", value: rawContent });
             }
-            await env.CONFIG_KV.put(VARS_KEY, JSON.stringify(variables));
+            await putJSON(env.CONFIG_KV, VARS_KEY, variables);
             return json([{ name: "Joey 全局变量 (无 KV 模式)", success: true, msg: "✅ 变量 [yx] 已成功覆盖至全体记录供稍后部署使用", type: 'joey' }]);
         } catch (e: any) {
             return new Response(JSON.stringify([{ name: "写入错误", success: false, msg: e.message }]), { status: 500 });
@@ -61,7 +62,7 @@ export async function handleSaveYxip(env: any, reqData: any, accountsKey: string
         if (!accountId || !email || !globalKey) return new Response(JSON.stringify([{ name: "配置错误", success: false, msg: "未提供对应账户凭证" }]), { status: 400 });
 
         try {
-            const accounts = JSON.parse(await env.CONFIG_KV.get(accountsKey) || "[]");
+            const accounts = await getJSON(env.CONFIG_KV, KV_KEYS.ACCOUNTS, []);
             const targetAccount = accounts.find((a: any) => a.accountId === accountId);
             if (!targetAccount) return new Response(JSON.stringify([{ name: "查找错误", success: false, msg: "系统记录中找不到该账户" }]), { status: 404 });
 

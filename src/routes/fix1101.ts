@@ -3,12 +3,15 @@
  */
 
 import { KV_KEYS, TEMPLATES } from '../config/templates';
-import { cf, getAuthHeaders, getUploadHeaders } from '../lib/cloudflare-api';
+import { cf, getAuthHeaders } from '../lib/cloudflare-api';
 import { fetchGithubCode, applyTemplateTransform } from '../lib/github';
+import { uploadWorker, parseApiError } from '../lib/deploy-utils';
+import { getJSON, putJSON } from "../lib/kv-utils";
+import type { AppEnv } from "../config/env";
 
-export async function handleFix1101(env: any, type: string) {
+export async function handleFix1101(env: AppEnv, type: string) {
     const ACCOUNTS_KEY = KV_KEYS.ACCOUNTS;
-    const accounts = JSON.parse(await env.CONFIG_KV.get(ACCOUNTS_KEY) || "[]");
+    const accounts = await getJSON(env.CONFIG_KV, ACCOUNTS_KEY, []);
     if (accounts.length === 0) return new Response(JSON.stringify([{ name: "提示", success: false, msg: "无账号" }]), { headers: { "Content-Type": "application/json" } });
 
     const logs: Array<{ name: string; success: boolean; msg: string }> = [];
@@ -83,10 +86,8 @@ export async function handleFix1101(env: any, type: string) {
                 await new Promise(r => setTimeout(r, 2000));
 
                 // Step 4: 重建 Worker + 恢复变量
-                let deployCode = applyTemplateTransform(type, freshCode, null);
-
-                const varsStr = await env.CONFIG_KV.get(KV_KEYS.vars(type));
-                const kvVars = varsStr ? JSON.parse(varsStr) : [];
+                const kvVars = await getJSON(env.CONFIG_KV, KV_KEYS.vars(type), []);
+                let deployCode = applyTemplateTransform(type, freshCode, kvVars, { echTokenEnabled: true });
                 const kvVarMap = new Map(kvVars.map((v: any) => [v.key, v.value]));
 
                 const restoredBindings = savedBindings.map((b: any) => {
@@ -105,19 +106,9 @@ export async function handleFix1101(env: any, type: string) {
                 }
                 const restoredVarCount = restoredBindings.filter((b: any) => b.type === 'plain_text').length;
 
-                const metadata = {
-                    main_module: "index.js",
-                    bindings: restoredBindings,
-                    compatibility_date: new Date().toISOString().split('T')[0]
-                };
-                const formData = new FormData();
-                formData.append("metadata", JSON.stringify(metadata));
-                formData.append("script", new Blob([deployCode], { type: "application/javascript+module" }), "index.js");
+                const { ok, res: uploadRes } = await uploadWorker(acc, wName, deployCode, restoredBindings);
 
-                const uploadHeaders = getUploadHeaders(acc.email, acc.globalKey);
-                const uploadRes = await fetch(baseUrl, { method: "PUT", headers: uploadHeaders, body: formData });
-
-                if (uploadRes.ok) {
+                if (ok) {
                     logItem.success = true;
                     steps.push(`✅ 重建成功 (${restoredVarCount} 变量已恢复)`);
 
@@ -135,8 +126,7 @@ export async function handleFix1101(env: any, type: string) {
                         steps.push(`🔗 域名恢复 ${domainOk}/${savedDomains.length}`);
                     }
                 } else {
-                    const err = await uploadRes.json();
-                    steps.push(`❌ 重建失败: ${err.errors?.[0]?.message}`);
+                    steps.push(await parseApiError(uploadRes));
                 }
             } catch (err: any) {
                 steps.push(`❌ ${err.message}`);
@@ -149,7 +139,7 @@ export async function handleFix1101(env: any, type: string) {
     const hasSuccess = logs.some(l => l.success);
     if (hasSuccess) {
         const DEPLOY_CONFIG_KEY = KV_KEYS.deployConfig(type);
-        await env.CONFIG_KV.put(DEPLOY_CONFIG_KEY, JSON.stringify({ mode: 'latest', currentSha: latestSha || 'unknown', deployTime: new Date().toISOString() }));
+        await putJSON(env.CONFIG_KV, DEPLOY_CONFIG_KEY, { mode: 'latest', currentSha: latestSha || 'unknown', deployTime: new Date().toISOString() });
     }
 
     return new Response(JSON.stringify(logs), { headers: { "Content-Type": "application/json" } });

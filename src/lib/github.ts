@@ -3,6 +3,7 @@
  */
 
 import { TEMPLATES } from '../config/templates';
+import type { AppEnv } from "../config/env";
 
 export function getGithubUrls(type: string, sha: string | null = null) {
     const t = TEMPLATES[type];
@@ -14,7 +15,7 @@ export function getGithubUrls(type: string, sha: string | null = null) {
 }
 
 /** 从 GitHub 拉取代码 + 解析最新 SHA */
-export async function fetchGithubCode(type: string, targetSha: string | null, env: any) {
+export async function fetchGithubCode(type: string, targetSha: string | null, env: AppEnv) {
     const isLatest = !targetSha || targetSha === 'latest';
     const { scriptUrl, apiUrl } = getGithubUrls(type, isLatest ? null : targetSha);
     

@@ -43,7 +43,7 @@ function renderTable() {
     const toolbarHTML = accounts.length > 0 ? '<div class="flex gap-1 mb-1"><button onclick="selectAllAccounts()" class="text-xs bg-gray-100 px-2 py-0.5 rounded">全选</button><button onclick="deselectAllAccounts()" class="text-xs bg-gray-100 px-2 py-0.5 rounded">取消</button><button onclick="batchDeleteAccounts()" class="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded">批量删除</button><button onclick="exportAccounts()" class="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded ml-auto">导出</button><button onclick="importAccounts()" class="text-xs bg-green-100 text-green-600 px-2 py-0.5 rounded">导入</button><button onclick="backupAll()" class="text-xs bg-purple-100 text-purple-600 px-2 py-0.5 rounded">备份</button><button onclick="restoreBackup()" class="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded">恢复</button><span id="batch_count" class="text-[10px] text-gray-400 ml-1"></span></div>' : '';
     tb.innerHTML = (toolbarHTML ? '<tr><td colspan="7" class="p-1">' + toolbarHTML + '</td></tr>' : '') + '<tr><td colspan="7" class="p-1"><div class="flex gap-1 items-center"><input id="account_search" placeholder="🔍 搜索账号/别名/邮箱/域名..." class="flex-1 text-xs border rounded px-2 py-1"><button id="search_clear" onclick="clearSearch()" class="text-xs text-gray-400 hover:text-red-500 px-1" title="清除搜索 (Esc)">✕</button><button onclick="doSearch()" class="text-xs bg-blue-500 text-white px-2 py-0.5 rounded" title="搜索 (Enter)">搜索</button><span id="search_count" class="text-[10px] text-gray-400"></span></div></td></tr>' + sortedAccounts.map((a) => {
         const originalIndex = accounts.findIndex(acc => acc.alias === a.alias);
-        const count = (a.workers_cmliu||[]).length + (a.workers_joey||[]).length + (a.workers_ech||[]).length;
+        const count = Object.keys(TEMPLATES).reduce((s,t) => s + (a['workers_'+t]||[]).length, 0);
         const percent = ((a.stats.total / a.stats.max) * 100).toFixed(1);
         let barColor = 'bg-green-500'; if (percent > 80) barColor = 'bg-orange-500'; if (percent >= 100) barColor = 'bg-red-600';
         const zoneBadge = a.defaultZoneName ? `<span class="bg-purple-100 text-purple-600 text-[10px] px-1 rounded">${a.defaultZoneName}</span>` : '<span class="text-gray-300">-</span>';
@@ -80,7 +80,7 @@ async function saveAccount() {
         defaultZoneId:document.getElementById('in_zone_id').value,
         stats:(editingIndex>=0 && accounts[editingIndex]) ? (accounts[editingIndex].stats || {total:0,max:100000}) : {total:0,max:100000}
     };
-    ['cmliu','joey','ech'].forEach(t=>o['workers_'+t]=document.getElementById('in_workers_'+t).value.split(/,|，/).map(s=>s.trim()).filter(s=>s));
+    Object.keys(TEMPLATES).forEach(t=>o['workers_'+t]=document.getElementById('in_workers_'+t).value.split(/,|，/).map(s=>s.trim()).filter(s=>s));
     if(editingIndex>=0)accounts[editingIndex]=o; else accounts.push(o);
     await fetch('/api/accounts',{method:'POST',body:JSON.stringify(accounts)});
     renderTable();
@@ -99,7 +99,7 @@ function editAccount(i){
     const select = document.getElementById('in_zone_select');
     if(a.defaultZoneName) { select.innerHTML = `<option value="${a.defaultZoneId}" data-name="${a.defaultZoneName}" selected>${a.defaultZoneName}</option>`; } else { select.innerHTML = '<option value="">(请点击读取)</option>'; }
 
-    ['cmliu','joey','ech'].forEach(t=>document.getElementById('in_workers_'+t).value=(a['workers_'+t]||[]).join(','));
+    Object.keys(TEMPLATES).forEach(t=>document.getElementById('in_workers_'+t).value=(a['workers_'+t]||[]).join(','));
     document.getElementById('account_form').classList.remove('hidden');
 }
 
@@ -422,6 +422,6 @@ async function confirmDeleteWorker(alias, workerId, accIndex) {
 }
 
 // Auto Config
-function updateAutoToggleLabel(){ const el=document.getElementById("auto_toggle_label"); if(el){ const on=document.getElementById("auto_update_toggle").checked; el.textContent=on?"开":"关"; el.className=on?"text-[10px] font-bold text-green-600":"text-[10px] font-bold text-gray-400"; } }
-async function loadGlobalConfig(){ try{ const r=await fetch('/api/auto_config'); const c=await r.json(); document.getElementById('auto_update_toggle').checked=!!c.enabled; updateAutoToggleLabel(); document.getElementById('auto_update_interval').value=c.interval||30; document.getElementById('fuse_threshold').value=c.fuseThreshold||0; document.getElementById('fuse_webhook').value=c.fuseWebhook||''; }catch(e){ console.error('[loadGlobalConfig]', e); } }
-async function saveAutoConfig(){ await fetch('/api/auto_config',{method:'POST',body:JSON.stringify({enabled:document.getElementById('auto_update_toggle').checked, interval:document.getElementById('auto_update_interval').value, fuseThreshold:document.getElementById('fuse_threshold').value, fuseWebhook:document.getElementById('fuse_webhook').value})}); alert('已保存配置'); }
+function updateAutoToggleLabel(){ const el=document.getElementById("auto_toggle_label"); const master=document.getElementById("auto_update_toggle"); if(el&&master){ const on=master.checked; el.textContent=on?"开":"关"; el.className=on?"text-[10px] font-bold text-green-600":"text-[10px] font-bold text-gray-400"; document.getElementById("auto_cmliu_toggle").checked=on; document.getElementById("auto_joey_toggle").checked=on; document.getElementById("auto_ech_toggle").checked=on; } }
+async function loadGlobalConfig(){ try{ const r=await fetch('/api/auto_config'); const c=await r.json(); document.getElementById('auto_update_toggle').checked=!!c.enabled; updateAutoToggleLabel(); document.getElementById('auto_update_interval').value=c.interval||30; document.getElementById('fuse_threshold').value=c.fuseThreshold||0; document.getElementById('fuse_webhook').value=c.fuseWebhook||''; document.getElementById('auto_cmliu_toggle').checked=c.enabled&&c.autoCmliu!==false; document.getElementById('auto_joey_toggle').checked=c.enabled&&c.autoJoey!==false; document.getElementById('auto_ech_toggle').checked=c.enabled&&c.autoEch!==false; }catch(e){ console.error('[loadGlobalConfig]', e); } }
+async function saveAutoConfig(){ await fetch('/api/auto_config',{method:'POST',body:JSON.stringify({enabled:document.getElementById('auto_update_toggle').checked, interval:document.getElementById('auto_update_interval').value, fuseThreshold:document.getElementById('fuse_threshold').value, fuseWebhook:document.getElementById('fuse_webhook').value, autoCmliu:document.getElementById('auto_cmliu_toggle').checked, autoJoey:document.getElementById('auto_joey_toggle').checked, autoEch:document.getElementById('auto_ech_toggle').checked})}); Swal.fire({icon:'success',title:'已保存',timer:1200,showConfirmButton:false}); setTimeout(()=>location.reload(),1300); }

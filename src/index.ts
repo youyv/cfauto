@@ -1,18 +1,19 @@
 /**
  * Worker 智能中控 — 前后端分离版 入口
- * V10.11.1
+ * V10.12.0
  */
 
-import { MANIFEST, requireAccessCode, requireCookie, checkCsrf } from './middleware/auth';
+import { requireAccessCode, requireCookie, checkCsrf } from './middleware/auth';
 import { jsonError } from './lib/cloudflare-api';
 import { getRoute } from './routes/index';
 import { handleCronJob } from './cron';
-import { TEMPLATES, ECH_PROXIES, KV_KEYS } from './config/templates';
+import { TEMPLATES, ECH_PROXIES, MANIFEST } from './config/templates';
 import { FRONTEND_HTML, FRONTEND_CSS, FRONTEND_JS } from './frontend-bundle';
+import type { AppEnv } from "./config/env";
 
 export default {
     // === 定时任务：自动更新 & 熔断轮换 ===
-    async scheduled(_event: ScheduledEvent, env: any, ctx: ExecutionContext) {
+    async scheduled(_event: ScheduledEvent, env: AppEnv, ctx: ExecutionContext) {
         if (env.CONFIG_KV) {
             ctx.waitUntil(handleCronJob(env));
         }
@@ -20,7 +21,7 @@ export default {
 
     // === HTTP 请求入口 ===
     // 请求流程：公开路由 → 登录 → 认证 → CSRF → 路由分发 → 回退主页
-    async fetch(request: Request, env: any, ctx: ExecutionContext): Promise<Response> {
+    async fetch(request: Request, env: AppEnv, ctx: ExecutionContext): Promise<Response> {
         try {
             // KV 未绑定时拒绝所有请求
             if (!env.CONFIG_KV) {
@@ -84,7 +85,7 @@ function mainHtml() {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="manifest" href="/manifest.json">
-    <title>Worker 智能中控 (V10.11.1)</title>
+    <title>Worker 智能中控 (V10.12.0)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>

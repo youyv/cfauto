@@ -5,8 +5,11 @@
 import { KV_KEYS } from '../config/templates';
 import { getGithubUrls } from '../lib/github';
 import { jsonError, json } from '../lib/cloudflare-api';
+import { getJSON, putJSON } from "../lib/kv-utils";
+import type { AppEnv } from "../config/env";
+import { fetchGithubVersion } from '../lib/auto-update';
 
-export async function handleGetCode(env: any, type: string) {
+export async function handleGetCode(env: AppEnv, type: string) {
     try {
         const { scriptUrl } = getGithubUrls(type);
         const res = await fetch(scriptUrl);
@@ -16,46 +19,36 @@ export async function handleGetCode(env: any, type: string) {
     } catch (e: any) { return jsonError(e.message); }
 }
 
-export async function handleCheckUpdate(env: any, type: string, mode?: string, limit = 10) {
+export async function handleCheckUpdate(env: AppEnv, type: string, mode?: string, limit = 10) {
     try {
-        const DEPLOY_CONFIG_KEY = KV_KEYS.deployConfig(type);
-        const deployConfig = JSON.parse(await env.CONFIG_KV.get(DEPLOY_CONFIG_KEY) || '{"mode":"latest"}');
-        const localSha = deployConfig.currentSha;
-        const localTime = deployConfig.deployTime;
-        const { apiUrl, branch } = getGithubUrls(type);
-
-        let fetchUrl = apiUrl + (mode === 'history' ? `?sha=${branch}&per_page=${limit}` : `?sha=${branch}&per_page=1`);
-        const headers: Record<string, string> = { "User-Agent": "Cloudflare-Worker-Manager" };
-        if (env.GITHUB_TOKEN) headers["Authorization"] = `token ${env.GITHUB_TOKEN}`;
-
-        const ghRes = await fetch(fetchUrl + `&t=${Date.now()}`, { headers });
-        if (!ghRes.ok) throw new Error(`GitHub API Error: ${ghRes.status}`);
-        const ghData = await ghRes.json();
-
-        if (mode === 'history') return json({ history: ghData });
-
-        const latestCommit = Array.isArray(ghData) ? ghData[0] : ghData;
-        let localCommitInfo = null;
-        if (localSha) {
-            if (localSha === latestCommit.sha) {
-                localCommitInfo = { sha: localSha, date: latestCommit.commit.committer.date };
-            } else {
-                localCommitInfo = { sha: localSha, date: localTime };
-            }
+        if (mode === 'history') {
+            const { apiUrl, branch } = getGithubUrls(type);
+            const headers: Record<string, string> = { "User-Agent": "Cloudflare-Worker-Manager" };
+            if (env.GITHUB_TOKEN) headers["Authorization"] = 'token ' + env.GITHUB_TOKEN;
+            const ghRes = await fetch(apiUrl + '?sha=' + branch + '&per_page=' + limit + '&t=' + Date.now(), { headers });
+            if (!ghRes.ok) throw new Error('GitHub API Error: ' + ghRes.status);
+            return json({ history: await ghRes.json() });
         }
 
+        const ver = await fetchGithubVersion(env, type);
+        let localCommitInfo = null;
+        if (ver.localSha) {
+            localCommitInfo = ver.localSha === ver.remoteSha
+                ? { sha: ver.localSha, date: ver.remoteDate }
+                : { sha: ver.localSha, date: ver.localTime };
+        }
         return json({
             local: localCommitInfo,
-            remote: { sha: latestCommit.sha, date: latestCommit.commit.committer.date, message: latestCommit.commit.message },
-            mode: deployConfig.mode
+            remote: { sha: ver.remoteSha, date: ver.remoteDate, message: ver.remoteMsg },
+            mode: ver.mode
         });
     } catch (e: any) { return new Response(JSON.stringify({ error: e.message }), { status: 500 }); }
 }
 
-export async function handleStats(env: any, accountsKey: string) {
+export async function handleStats(env: AppEnv) {
     try {
         const { fetchInternalStats } = await import('../lib/stats');
-        const accounts = JSON.parse(await env.CONFIG_KV.get(accountsKey) || "[]");
+        const accounts = await getJSON(env.CONFIG_KV, KV_KEYS.ACCOUNTS, []);
         const results = await fetchInternalStats(accounts);
         return json(results);
     } catch (e: any) { return new Response(JSON.stringify({ error: e.message }), { status: 500 }); }

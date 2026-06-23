@@ -3,14 +3,15 @@
  */
 
 import { KV_KEYS, TEMPLATES } from './config/templates';
+import { getJSON, putJSON } from './lib/kv-utils';
 import { fetchInternalStats } from './lib/stats';
+import { checkAndDeployUpdate, rotateUUIDAndDeploy } from './lib/auto-update';
+import type { AppEnv } from "./config/env";
 
-export async function handleCronJob(env: any) {
-    const ACCOUNTS_KEY = KV_KEYS.ACCOUNTS;
+export async function handleCronJob(env: AppEnv) {
     const GLOBAL_CONFIG_KEY = KV_KEYS.GLOBAL_CONFIG;
-    const configStr = await env.CONFIG_KV.get(GLOBAL_CONFIG_KEY);
-    if (!configStr) return;
-    const config = JSON.parse(configStr);
+    const config = await getJSON(env.CONFIG_KV, GLOBAL_CONFIG_KEY, null);
+    if (!config) return;
     if (!config.enabled) return;
 
     const now = Date.now();
@@ -19,7 +20,7 @@ export async function handleCronJob(env: any) {
 
     if (now - lastCheck <= intervalMs) return;
 
-    const accounts = JSON.parse(await env.CONFIG_KV.get(ACCOUNTS_KEY) || "[]");
+    const accounts = await getJSON(env.CONFIG_KV, KV_KEYS.ACCOUNTS, []);
     if (accounts.length === 0) return;
 
     try {
@@ -35,7 +36,9 @@ export async function handleCronJob(env: any) {
                 if ((stat.total / limit) * 100 >= fuseThreshold) {
                     const fuseTypes = Object.entries(TEMPLATES).filter(([, t]) => t.uuidField).map(([k]) => k);
                     for (const ft of fuseTypes) {
-                        await rotateUUIDAndDeploy(env, ft, accounts, ACCOUNTS_KEY);
+                        const flagKey = 'auto' + ft.charAt(0).toUpperCase() + ft.slice(1);
+                        if (config[flagKey] === false) continue;
+                        await rotateUUIDAndDeploy(env, ft);
                     }
                     actionTaken = true;
                     await sendFuseAlert(env, acc.alias, stat.total, limit, fuseThreshold);
@@ -46,67 +49,34 @@ export async function handleCronJob(env: any) {
 
         if (!actionTaken) {
             const updateTypes = Object.entries(TEMPLATES).filter(([, t]) => t.uuidField).map(([k]) => k);
-            await Promise.all(updateTypes.map(type =>
-                checkAndDeployUpdate(env, type, accounts, ACCOUNTS_KEY)
-            ));
+            const enabledTypes = updateTypes.filter(type => {
+                const flagKey = 'auto' + type.charAt(0).toUpperCase() + type.slice(1);
+                return config[flagKey] !== false;
+            });
+            if (enabledTypes.length > 0) {
+                await Promise.all(enabledTypes.map(type =>
+                    checkAndDeployUpdate(env, type)
+                ));
+            }
         }
     } catch (e) {
         console.error('[Cron] handleCronJob failed:', (e as Error).message);
     }
 
     config.lastCheck = now;
-    await env.CONFIG_KV.put(GLOBAL_CONFIG_KEY, JSON.stringify(config));
+    await putJSON(env.CONFIG_KV, GLOBAL_CONFIG_KEY, config);
 }
 
-async function sendFuseAlert(env: any, alias: string, total: number, limit: number, threshold: number) {
+async function sendFuseAlert(env: AppEnv, alias: string, total: number, limit: number, threshold: number) {
     try {
-        const config = JSON.parse(await env.CONFIG_KV.get(KV_KEYS.GLOBAL_CONFIG) || '{}');
+        const config = await getJSON(env.CONFIG_KV, KV_KEYS.GLOBAL_CONFIG, {});
         const webhookUrl = config.fuseWebhook;
         if (!webhookUrl) return;
         const payload = {
             msgtype: 'text',
-            text: { content: '[Worker中控] 🔥 熔断触发: ' + alias + ' 用量达 ' + ((total/limit)*100).toFixed(1) + '% (阈值' + threshold + '%), 已自动轮换UUID并重新部署' }
+            text: { content: '[Worker中控] \u{1F525} 熔断触发: ' + alias + ' 用量达 ' + ((total/limit)*100).toFixed(1) + '% (阈值' + threshold + '%), 已自动轮换UUID并重新部署' }
         };
         const webhookRes = await fetch(webhookUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
         if (!webhookRes.ok) console.warn('[FuseAlert] webhook returned ' + webhookRes.status);
     } catch (e) { console.error('[FuseAlert] webhook failed:', (e as Error).message); }
-}
-
-async function checkAndDeployUpdate(env: any, type: string, accounts: any[], accountsKey: string) {
-    try {
-        const deployConfig = JSON.parse(await env.CONFIG_KV.get(KV_KEYS.deployConfig(type)) || '{"mode":"latest"}');
-        if (deployConfig.mode === 'fixed') return;
-
-        const { handleCheckUpdate } = await import('./routes/check');
-        const res = await handleCheckUpdate(env, type, 'latest');
-        const checkData = await res.json();
-
-        if (checkData.remote && (!checkData.local || checkData.remote.sha !== checkData.local.sha)) {
-            const varsStr = await env.CONFIG_KV.get(KV_KEYS.vars(type));
-            const variables = varsStr ? JSON.parse(varsStr) : [];
-            const { coreDeployLogic } = await import('./routes/deploy');
-            await coreDeployLogic(env, type, variables, [], accountsKey, 'latest');
-        }
-        } catch (e) { console.error(`[Update Error] ${type}: ${(e as Error).message}`); }
-}
-
-async function rotateUUIDAndDeploy(env: any, type: string, accounts: any[], accountsKey: string) {
-        const VARS_KEY = KV_KEYS.vars(type);
-        const varsStr = await env.CONFIG_KV.get(VARS_KEY);
-        let variables: Array<{ key: string; value: string }> = varsStr ? JSON.parse(varsStr) : [];
-        const uuidField = TEMPLATES[type].uuidField;
-        if (!uuidField) return;
-
-        let uuidUpdated = false;
-        variables = variables.map(v => {
-        if (v.key === uuidField) { v.value = crypto.randomUUID(); uuidUpdated = true; }
-        return v;
-        });
-        if (!uuidUpdated) variables.push({ key: uuidField, value: crypto.randomUUID() });
-        await env.CONFIG_KV.put(VARS_KEY, JSON.stringify(variables));
-
-        const deployConfig = JSON.parse(await env.CONFIG_KV.get(KV_KEYS.deployConfig(type)) || '{"mode":"latest"}');
-        const targetSha = deployConfig.mode === 'fixed' ? deployConfig.currentSha : 'latest';
-        const { coreDeployLogic } = await import('./routes/deploy');
-        await coreDeployLogic(env, type, variables, [], accountsKey, targetSha);
 }

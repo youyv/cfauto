@@ -9,8 +9,8 @@ let currentHistoryType = null;
 async function init() {
     renderProxySelector();
     await loadAccounts();
-    await Promise.all(['cmliu','joey','ech'].map(t => loadVars(t)));
+    await Promise.all(Object.keys(TEMPLATES).map(t => loadVars(t)));
     await loadGlobalConfig();
     loadStats();
-    ['cmliu','joey'].forEach(t => { checkDeployConfig(t); checkUpdate(t); });
+    Object.keys(TEMPLATES).filter(t => TEMPLATES[t].uuidField).forEach(t => { checkDeployConfig(t); checkUpdate(t); });
 }

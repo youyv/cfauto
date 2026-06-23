@@ -15,7 +15,7 @@ main = "dist/worker.js"
 
 # ---------- 兼容日期 ----------
 # 每次 build.bat 自动更新为当天日期，无需手动改
-compatibility_date = "2026-06-20"
+compatibility_date = "2026-06-23"
 
 # workers_dev = false                                           # 禁用 *.workers.dev 默认域名
 # preview_urls = false                                       # 禁用预览 URL

@@ -1,17 +1,19 @@
 /**
  * CRUD 路由 — KV 直接读写 + 诊断 + 导入导出备份恢复
  */
-import { KV_KEYS } from '../config/templates';
+import { KV_KEYS, TEMPLATES } from '../config/templates';
 import { json, jsonError, cf, getAuthHeaders } from '../lib/cloudflare-api';
+import { getJSON, putJSON } from "../lib/kv-utils";
+import type { AppEnv } from "../config/env";
 
-type Handler = (req: Request, env: any) => Promise<Response>;
+type Handler = (req: Request, env: AppEnv) => Promise<Response>;
 
 export function registerCrudRoutes(ROUTES: Map<string, Handler>) {
 // --- KV CRUD 路由（直接内联） ---
 ROUTES.set('GET /api/accounts', async (_req, env) =>
     new Response(await env.CONFIG_KV.get(KV_KEYS.ACCOUNTS) || '[]', { headers: { 'Content-Type': 'application/json' } }));
 ROUTES.set('POST /api/accounts', async (req, env) => {
-    await env.CONFIG_KV.put(KV_KEYS.ACCOUNTS, JSON.stringify(await req.json()));
+    await putJSON(env.CONFIG_KV, KV_KEYS.ACCOUNTS, await req.json());
     return json({ success: true });
 });
 ROUTES.set('GET /api/settings', async (req, env) => {
@@ -20,7 +22,7 @@ ROUTES.set('GET /api/settings', async (req, env) => {
 });
 ROUTES.set('POST /api/settings', async (req, env) => {
     const type = new URL(req.url).searchParams.get('type');
-    await env.CONFIG_KV.put(KV_KEYS.vars(type || ''), JSON.stringify(await req.json()));
+    await putJSON(env.CONFIG_KV, KV_KEYS.vars(type || ''), await req.json());
     return json({ success: true });
 });
 ROUTES.set('GET /api/deploy_config', async (req, env) => {
@@ -37,22 +39,22 @@ ROUTES.set('POST /api/favorites', async (req, env) => {
     const type = new URL(req.url).searchParams.get('type');
     const key = KV_KEYS.favorites(type || '');
     const { action, item } = await req.json() as any;
-    let favs = JSON.parse(await env.CONFIG_KV.get(key) || '[]');
+    let favs = await getJSON(env.CONFIG_KV, key, []);
     if (action === 'add') { if (!favs.find((f: any) => f.sha === item.sha)) favs.unshift(item); }
     else if (action === 'remove') { favs = favs.filter((f: any) => f.sha !== item.sha); }
-    await env.CONFIG_KV.put(key, JSON.stringify(favs));
+    await putJSON(env.CONFIG_KV, key, favs);
     return json({ success: true, favorites: favs });
 });
 ROUTES.set('GET /api/auto_config', async (_req, env) =>
     new Response(await env.CONFIG_KV.get(KV_KEYS.GLOBAL_CONFIG) || '{}', { headers: { 'Content-Type': 'application/json' } }));
 ROUTES.set('POST /api/auto_config', async (req, env) => {
-    await env.CONFIG_KV.put(KV_KEYS.GLOBAL_CONFIG, JSON.stringify(await req.json()));
+    await putJSON(env.CONFIG_KV, KV_KEYS.GLOBAL_CONFIG, await req.json());
     return json({ success: true });
 });
 
 // --- 诊断端点 ---
 ROUTES.set('GET /api/verify_credentials', async (req, env) => {
-        const accounts = JSON.parse(await env.CONFIG_KV.get(KV_KEYS.ACCOUNTS) || '[]');
+        const accounts = await getJSON(env.CONFIG_KV, KV_KEYS.ACCOUNTS, []);
         const results = [];
         for (const acc of accounts) {
             try {
@@ -66,7 +68,7 @@ ROUTES.set('GET /api/verify_credentials', async (req, env) => {
 
 ROUTES.set('GET /api/deploy/preview', async (req, env) => {
         const type = new URL(req.url).searchParams.get('type') || '';
-        const accounts = JSON.parse(await env.CONFIG_KV.get(KV_KEYS.ACCOUNTS) || '[]');
+        const accounts = await getJSON(env.CONFIG_KV, KV_KEYS.ACCOUNTS, []);
         const targetWorkers = accounts.flatMap((a: any) => (a['workers_' + type] || []).map((w: string) => a.alias + ' -> [' + w + ']'));
         return new Response(JSON.stringify({ accounts: accounts.filter((a: any) => (a['workers_' + type] || []).length > 0).length, workers: targetWorkers.length, details: targetWorkers }), { headers: { 'Content-Type': 'application/json' } });
     });
@@ -86,6 +88,10 @@ ROUTES.set('GET /api/diag', async (_req, env) => {
 });
 
 
+// --- 部署操作日志 ---
+ROUTES.set('GET /api/deploy_journal', async (_req, env) =>
+    new Response(await env.CONFIG_KV.get(KV_KEYS.DEPLOY_JOURNAL) || '[]', { headers: { 'Content-Type': 'application/json' } }));
+
 // --- 账号导入导出 ---
 ROUTES.set('GET /api/accounts/export', async (_req, env) => {
     const data = await env.CONFIG_KV.get(KV_KEYS.ACCOUNTS);
@@ -97,7 +103,7 @@ ROUTES.set('POST /api/accounts/import', async (req, env) => {
     try {
         const imported = await req.json();
         if (!Array.isArray(imported)) return jsonError('格式错误：需要 JSON 数组');
-        const existing = JSON.parse(await env.CONFIG_KV.get(KV_KEYS.ACCOUNTS) || '[]');
+        const existing = await getJSON(env.CONFIG_KV, KV_KEYS.ACCOUNTS, []);
         const merged = [...existing];
         let added = 0, skipped = 0;
         for (const item of imported) {
@@ -106,18 +112,19 @@ ROUTES.set('POST /api/accounts/import', async (req, env) => {
             if (dupIdx >= 0) { merged[dupIdx] = { ...merged[dupIdx], ...item }; skipped++; }
             else { merged.push(item); added++; }
         }
-        await env.CONFIG_KV.put(KV_KEYS.ACCOUNTS, JSON.stringify(merged));
+        await putJSON(env.CONFIG_KV, KV_KEYS.ACCOUNTS, merged);
         return json({ success: true, added, skipped, total: merged.length });
     } catch (e: any) { return jsonError('导入失败: ' + e.message); }
 });
 
 // --- 数据备份恢复 ---
 ROUTES.set('GET /api/backup', async (_req, env) => {
-    const keys = [KV_KEYS.ACCOUNTS, KV_KEYS.GLOBAL_CONFIG, KV_KEYS.vars('cmliu'), KV_KEYS.vars('joey'), KV_KEYS.vars('ech'),
-        KV_KEYS.deployConfig('cmliu'), KV_KEYS.deployConfig('joey'), KV_KEYS.deployConfig('ech'),
-        KV_KEYS.favorites('cmliu'), KV_KEYS.favorites('joey'), KV_KEYS.favorites('ech')];
+    const templateTypes = Object.keys(TEMPLATES);
+    const keys = [KV_KEYS.ACCOUNTS, KV_KEYS.GLOBAL_CONFIG,
+        ...templateTypes.flatMap(t => [KV_KEYS.vars(t), KV_KEYS.deployConfig(t), KV_KEYS.favorites(t)])];
     const backup: Record<string, any> = { _time: new Date().toISOString() };
     for (const k of keys) {
+        // 备份保留原始格式：JSON 解析失败时回退到原始字符串（不用 getJSON 是因为需要保留损坏数据）
         try { backup[k] = JSON.parse(await env.CONFIG_KV.get(k) || 'null'); } catch (e) { backup[k] = await env.CONFIG_KV.get(k); }
     }
     return new Response(JSON.stringify(backup, null, 2), {

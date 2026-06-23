@@ -19,12 +19,10 @@ export const cf = {
     graphql:        ()                               => `${CF_API}/graphql`,
 };
 
-export function getAuthHeaders(email: string, key: string) {
-    return { "X-Auth-Email": email, "X-Auth-Key": key, "Content-Type": "application/json" };
-}
-
-export function getUploadHeaders(email: string, key: string) {
-    return { "X-Auth-Email": email, "X-Auth-Key": key };
+/** 获取 CF API 认证头，upload=true 时不含 Content-Type（由 FormData 自动设置） */
+export function getAuthHeaders(email: string, key: string, upload = false) {
+    const base = { "X-Auth-Email": email, "X-Auth-Key": key };
+    return upload ? base : { ...base, "Content-Type": "application/json" };
 }
 
 /** 统一 JSON 错误响应 */

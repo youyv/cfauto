@@ -2,16 +2,19 @@
  * 路由: Zones / Workers 管理 / 子域名
  */
 
-import { KV_KEYS } from '../config/templates';
+import { KV_KEYS, TEMPLATES } from '../config/templates';
 import { cf, getAuthHeaders, jsonError, json } from '../lib/cloudflare-api';
+import type { AccountCredentials } from '../config/env';
+import { getJSON, putJSON } from "../lib/kv-utils";
+import type { AppEnv } from "../config/env";
 
-export async function handleGetZones(accountId: string, email: string, key: string) {
+export async function handleGetZones(cred: AccountCredentials) {
     try {
-        const headers = getAuthHeaders(email, key);
+        const headers = getAuthHeaders(cred.email, cred.globalKey);
         let allZones: Array<{ id: string; name: string }> = [];
         let page = 1;
         while (true) {
-            const res = await fetch(cf.zones(accountId) + '&page=' + page, { headers });
+            const res = await fetch(cf.zones(cred.accountId) + '&page=' + page, { headers });
             const data: any = await res.json();
             if (!data.result || data.result.length === 0) break;
             data.result.forEach((z: any) => allZones.push({ id: z.id, name: z.name }));
@@ -23,10 +26,10 @@ export async function handleGetZones(accountId: string, email: string, key: stri
     } catch (e: any) { return jsonError(e.message); }
 }
 
-export async function handleGetAllWorkers(accountId: string, email: string, key: string) {
+export async function handleGetAllWorkers(cred: AccountCredentials) {
     try {
-        const res = await fetch(cf.workerScripts(accountId), {
-            headers: getAuthHeaders(email, key)
+        const res = await fetch(cf.workerScripts(cred.accountId), {
+            headers: getAuthHeaders(cred.email, cred.globalKey)
         });
         const data: any = await res.json();
         const workers = data.result.map((w: any) => ({
@@ -38,31 +41,31 @@ export async function handleGetAllWorkers(accountId: string, email: string, key:
     } catch (e: any) { return jsonError(e.message); }
 }
 
-export async function handleDeleteWorker(env: any, accountId: string, email: string, key: string, workerName: string, deleteKv: boolean) {
+export async function handleDeleteWorker(env: AppEnv, cred: AccountCredentials, workerName: string, deleteKv: boolean) {
     try {
-        const headers = getAuthHeaders(email, key);
+        const headers = getAuthHeaders(cred.email, cred.globalKey);
 
         let kvNamespaceIds: string[] = [];
         if (deleteKv) {
-            const bindRes = await fetch(cf.workerBindings(accountId, workerName), { headers });
+            const bindRes = await fetch(cf.workerBindings(cred.accountId, workerName), { headers });
             if (bindRes.ok) {
                 const binds = (await bindRes.json()).result;
                 kvNamespaceIds = binds.filter((b: any) => b.type === 'kv_namespace').map((b: any) => b.namespace_id);
             }
         }
 
-        const delWorkerRes = await fetch(cf.workerScript(accountId, workerName), {
+        const delWorkerRes = await fetch(cf.workerScript(cred.accountId, workerName), {
             method: "DELETE", headers
         });
 
         if (delWorkerRes.ok) {
             const ACCOUNTS_KEY = KV_KEYS.ACCOUNTS;
-            const accounts = JSON.parse(await env.CONFIG_KV.get(ACCOUNTS_KEY) || "[]");
+            const accounts = await getJSON(env.CONFIG_KV, ACCOUNTS_KEY, []);
             let updated = false;
 
             for (const acc of accounts) {
-                if (acc.accountId === accountId) {
-                    ['workers_cmliu', 'workers_joey', 'workers_ech'].forEach(type => {
+                if (acc.accountId === cred.accountId) {
+                    Object.keys(TEMPLATES).map(k => 'workers_' + k).forEach(type => {
                         if (acc[type] && acc[type].includes(workerName)) {
                             acc[type] = acc[type].filter((n: string) => n !== workerName);
                             updated = true;
@@ -72,13 +75,21 @@ export async function handleDeleteWorker(env: any, accountId: string, email: str
             }
 
             if (updated) {
-                await env.CONFIG_KV.put(ACCOUNTS_KEY, JSON.stringify(accounts));
+                await putJSON(env.CONFIG_KV, ACCOUNTS_KEY, accounts);
+                // 检查各类型Worker是否已全部删除，是则重置部署版本记录
+                const allTypes = Object.keys(TEMPLATES);
+                for (const t of allTypes) {
+                    const hasAny = accounts.some((a: any) => a['workers_' + t] && a['workers_' + t].length > 0);
+                    if (!hasAny) {
+                        await putJSON(env.CONFIG_KV, KV_KEYS.deployConfig(t), { mode: 'latest' });
+                    }
+                }
             }
 
             if (deleteKv && kvNamespaceIds.length > 0) {
                 await new Promise(r => setTimeout(r, 1000));
                 for (const nsId of kvNamespaceIds) {
-                    await fetch(cf.kvNamespace(accountId, nsId), {
+                    await fetch(cf.kvNamespace(cred.accountId, nsId), {
                         method: "DELETE", headers
                     });
                 }
@@ -91,10 +102,10 @@ export async function handleDeleteWorker(env: any, accountId: string, email: str
     } catch (e: any) { return jsonError(e.message); }
 }
 
-export async function handleFetchBindings(accountId: string, email: string, key: string, workerName: string) {
+export async function handleFetchBindings(cred: AccountCredentials, workerName: string) {
     try {
-        const res = await fetch(cf.workerBindings(accountId, workerName), {
-            headers: getAuthHeaders(email, key)
+        const res = await fetch(cf.workerBindings(cred.accountId, workerName), {
+            headers: getAuthHeaders(cred.email, cred.globalKey)
         });
         const data: any = await res.json();
         const bindings = data.result
@@ -104,10 +115,10 @@ export async function handleFetchBindings(accountId: string, email: string, key:
     } catch (e: any) { return jsonError(e.message); }
 }
 
-export async function handleGetSubdomain(accountId: string, email: string, key: string) {
+export async function handleGetSubdomain(cred: AccountCredentials) {
     try {
-        const headers = getAuthHeaders(email, key);
-        const res = await fetch(cf.acctSubdomain(accountId), { headers });
+        const headers = getAuthHeaders(cred.email, cred.globalKey);
+        const res = await fetch(cf.acctSubdomain(cred.accountId), { headers });
         const data: any = await res.json();
         if (data.success) {
             return json({ success: true, subdomain: data.result?.subdomain || '' });
@@ -117,13 +128,13 @@ export async function handleGetSubdomain(accountId: string, email: string, key: 
     } catch (e: any) { return jsonError(e.message); }
 }
 
-export async function handleChangeSubdomain(accountId: string, email: string, key: string, newSubdomain: string) {
+export async function handleChangeSubdomain(cred: AccountCredentials, newSubdomain: string) {
     try {
-        const headers = getAuthHeaders(email, key);
+        const headers = getAuthHeaders(cred.email, cred.globalKey);
         try {
-            await fetch(cf.acctSubdomain(accountId), { method: 'DELETE', headers });
+            await fetch(cf.acctSubdomain(cred.accountId), { method: 'DELETE', headers });
         } catch (e) { console.warn('[changeSubdomain] DELETE failed:', (e as Error).message); }
-        const res = await fetch(cf.acctSubdomain(accountId), {
+        const res = await fetch(cf.acctSubdomain(cred.accountId), {
             method: 'PUT',
             headers,
             body: JSON.stringify({ subdomain: newSubdomain })
