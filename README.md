@@ -108,12 +108,12 @@
 | **1** | 双击 `install.bat` | 安装 Node.js 依赖（仅一次） |
 | **2** | 双击 `build.bat` | 拼接前端 + esbuild 打包 → `dist/worker.js` |
 | **3** | 双击 `setup-secrets.bat` | 设置面板密码和 GitHub Token（仅一次，加密存 CF） |
-| **4** | 修改 `wrangler.toml` | 把 `name` 改成你的 Worker 名（其余保持注释即可） |
+| **4** | 修改 `wrangler.toml` | ① 把 `name` 改成你的 Worker 名 ② 首次部署需取消 `[[kv_namespaces]]` 注释并填入 KV ID ③ 如需自定义域名/定时任务也一并取消注释 |
 | **5** | 双击 `deploy.bat` | 推送到 Cloudflare |
 
 ### 🔄 日常更新代码
 
-`build.bat` → `deploy.bat`（两步搞定，密钥/KV/路由不会被覆盖）
+`build.bat` → `deploy.bat`（两步搞定，`wrangler.toml` 中已配置的 KV/路由/触发器不受影响；密钥通过 `wrangler secret` 管理，永不覆盖）
 
 ### 📁 文件夹可随意移动
 
@@ -123,14 +123,14 @@
 
 ## 🛠️ 部署教程 (保姆级)
 
-只需简单 4 步，即可拥有自己的 Worker 中控台。
+只需简单 5 步，即可拥有自己的 Worker 中控台。
 
 ### 1️⃣ 第一步：创建主控 Worker
 
 1. 登录 [Cloudflare Dashboard](https://dash.cloudflare.com/)。
 2. 进入 **Workers & Pages** -> **Overview** -> **Create Application** -> **Create Worker**。
 3. 命名为 `manager` (建议)，点击 **Deploy**。
-4. 点击 **Edit code**，将本项目提供的 `worker.js` (V10.3.0) **完整代码** 粘贴覆盖。
+4. 点击 **Edit code**，将本项目提供的 `dist/worker.js` (V10.12.0) **完整代码** 粘贴覆盖。
 5. 点击 **Save and deploy**。
 
 ### 2️⃣ 第二步：绑定 KV 存储 (⚠️ 核心)
