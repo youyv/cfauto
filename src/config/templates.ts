@@ -100,3 +100,6 @@ export const MANIFEST = {
     "background_color": "#f3f4f6", "theme_color": "#1e293b",
     "icons": [{ "src": "https://www.cloudflare.com/img/logo-cloudflare-dark.svg", "sizes": "192x192", "type": "image/svg+xml" }]
 };
+
+/** 模板类型 — 编译时约束，防止拼写错误 */
+export type TemplateType = keyof typeof TEMPLATES;

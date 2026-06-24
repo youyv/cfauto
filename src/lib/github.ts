@@ -3,9 +3,10 @@
  */
 
 import { TEMPLATES } from '../config/templates';
+import type { TemplateType } from '../config/templates';
 import type { AppEnv } from "../config/env";
 
-export function getGithubUrls(type: string, sha: string | null = null) {
+export function getGithubUrls(type: TemplateType, sha: string | null = null) {
     const t = TEMPLATES[type];
     const safePath = t.ghPath.split('/').map(p => encodeURIComponent(p)).join('/');
     const apiUrl = `https://api.github.com/repos/${t.ghUser}/${t.ghRepo}/commits`;
@@ -15,7 +16,7 @@ export function getGithubUrls(type: string, sha: string | null = null) {
 }
 
 /** 从 GitHub 拉取代码 + 解析最新 SHA */
-export async function fetchGithubCode(type: string, targetSha: string | null, env: AppEnv) {
+export async function fetchGithubCode(type: TemplateType, targetSha: string | null, env: AppEnv) {
     const isLatest = !targetSha || targetSha === 'latest';
     const { scriptUrl, apiUrl } = getGithubUrls(type, isLatest ? null : targetSha);
     
@@ -38,7 +39,7 @@ export async function fetchGithubCode(type: string, targetSha: string | null, en
 
 /** 应用模板特有转换 */
 export function applyTemplateTransform(
-    type: string,
+    type: TemplateType,
     code: string,
     variables: Array<{ key: string; value: string }> | null,
     options: { echTokenEnabled?: boolean } = {}
@@ -52,18 +53,26 @@ export function applyTemplateTransform(
     if (type === 'ech') {
         const proxyVar = variables ? variables.find(v => v.key === 'PROXYIP') : null;
         const targetIP = (proxyVar && proxyVar.value) ? proxyVar.value.trim() : 'ProxyIP.CMLiussss.net';
+        const beforeCF = result;
         result = result.replace(
             /const\s+CF_FALLBACK_IPS\s*=\s*\[.*?\];/s,
             `const CF_FALLBACK_IPS = ['${targetIP}'];`
         );
+        if (result === beforeCF) {
+            console.warn('[TemplateTransform] ECH CF_FALLBACK_IPS pattern not matched — upstream code may have changed, deploy uses unmodified code');
+        }
         
         const tokenVar = variables ? variables.find(v => v.key === 'TOKEN') : null;
         const tokenVal = (tokenVar && tokenVar.value && tokenVar.value.trim() && options.echTokenEnabled)
             ? tokenVar.value.trim() : '';
+        const beforeToken = result;
         result = result.replace(
             /const\s+token\s*=\s*['"]{1}.*?['"]{1};/,
             `const token = '${tokenVal}';`
         );
+        if (result === beforeToken) {
+            console.warn('[TemplateTransform] ECH token pattern not matched — upstream code may have changed, token not injected');
+        }
     }
     
     return result;

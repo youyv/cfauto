@@ -3,13 +3,14 @@
  */
 
 import { KV_KEYS } from '../config/templates';
+import type { TemplateType } from '../config/templates';
 import { getGithubUrls } from '../lib/github';
 import { jsonError, json } from '../lib/cloudflare-api';
 import { getJSON, putJSON } from "../lib/kv-utils";
 import type { AppEnv } from "../config/env";
 import { fetchGithubVersion } from '../lib/auto-update';
 
-export async function handleGetCode(env: AppEnv, type: string) {
+export async function handleGetCode(env: AppEnv, type: TemplateType) {
     try {
         const { scriptUrl } = getGithubUrls(type);
         const res = await fetch(scriptUrl);
@@ -19,7 +20,7 @@ export async function handleGetCode(env: AppEnv, type: string) {
     } catch (e: any) { return jsonError(e.message); }
 }
 
-export async function handleCheckUpdate(env: AppEnv, type: string, mode?: string, limit = 10) {
+export async function handleCheckUpdate(env: AppEnv, type: TemplateType, mode?: string, limit = 10) {
     try {
         if (mode === 'history') {
             const { apiUrl, branch } = getGithubUrls(type);
@@ -42,7 +43,10 @@ export async function handleCheckUpdate(env: AppEnv, type: string, mode?: string
             remote: { sha: ver.remoteSha, date: ver.remoteDate, message: ver.remoteMsg },
             mode: ver.mode
         });
-    } catch (e: any) { return new Response(JSON.stringify({ error: e.message }), { status: 500 }); }
+    } catch (e: any) {
+        // 前端 checkUpdate 检查 d.error 字段，此处不使用 jsonError 以保持兼容
+        return new Response(JSON.stringify({ error: e.message }), { status: 500 });
+    }
 }
 
 export async function handleStats(env: AppEnv) {
@@ -51,5 +55,5 @@ export async function handleStats(env: AppEnv) {
         const accounts = await getJSON(env.CONFIG_KV, KV_KEYS.ACCOUNTS, []);
         const results = await fetchInternalStats(accounts);
         return json(results);
-    } catch (e: any) { return new Response(JSON.stringify({ error: e.message }), { status: 500 }); }
+    } catch (e: any) { return jsonError(e.message); }
 }

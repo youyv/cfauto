@@ -76,28 +76,46 @@ export async function handleDeleteWorker(env: AppEnv, cred: AccountCredentials, 
 
             if (updated) {
                 await putJSON(env.CONFIG_KV, ACCOUNTS_KEY, accounts);
-                // 检查各类型Worker是否已全部删除，是则重置部署版本记录
+                // 检查各类型Worker是否已全部删除，是则清理关联的派生状态
                 const allTypes = Object.keys(TEMPLATES);
                 for (const t of allTypes) {
                     const hasAny = accounts.some((a: any) => a['workers_' + t] && a['workers_' + t].length > 0);
                     if (!hasAny) {
                         await putJSON(env.CONFIG_KV, KV_KEYS.deployConfig(t), { mode: 'latest' });
+                        await putJSON(env.CONFIG_KV, KV_KEYS.vars(t), []);
+                        await putJSON(env.CONFIG_KV, KV_KEYS.favorites(t), []);
                     }
                 }
             }
 
+            // 删除关联的 KV 命名空间（轮询等待 CF 异步解绑，避免竞态失败）
+            let kvDeleteErrors: string[] = [];
             if (deleteKv && kvNamespaceIds.length > 0) {
-                await new Promise(r => setTimeout(r, 1000));
                 for (const nsId of kvNamespaceIds) {
-                    await fetch(cf.kvNamespace(cred.accountId, nsId), {
-                        method: "DELETE", headers
-                    });
+                    let deleted = false;
+                    for (let attempt = 0; attempt < 5; attempt++) {
+                        if (attempt > 0) await new Promise(r => setTimeout(r, 2000));
+                        const delRes = await fetch(cf.kvNamespace(cred.accountId, nsId), {
+                            method: "DELETE", headers
+                        });
+                        if (delRes.ok) { deleted = true; break; }
+                        // 409 Conflict = 命名空间仍处于绑定状态，等待后重试
+                        if (delRes.status !== 409) break;
+                    }
+                    if (!deleted) {
+                        kvDeleteErrors.push(nsId);
+                        console.warn('[DeleteWorker] KV namespace deletion failed:', nsId);
+                    }
                 }
+            }
+
+            if (kvDeleteErrors.length > 0) {
+                return json({ success: true, kvWarnings: kvDeleteErrors.length + ' 个 KV 命名空间删除失败，请到 Cloudflare Dashboard 手动清理' });
             }
             return json({ success: true });
         } else {
             const err = await delWorkerRes.json();
-            return new Response(JSON.stringify({ success: false, msg: err.errors[0]?.message || "删除失败" }), { status: 200 });
+            return json({ success: false, msg: err.errors[0]?.message || "删除失败" });
         }
     } catch (e: any) { return jsonError(e.message); }
 }
@@ -123,7 +141,7 @@ export async function handleGetSubdomain(cred: AccountCredentials) {
         if (data.success) {
             return json({ success: true, subdomain: data.result?.subdomain || '' });
         } else {
-            return new Response(JSON.stringify({ success: false, msg: data.errors?.[0]?.message || '查询失败' }), { headers: { "Content-Type": "application/json" } });
+            return json({ success: false, msg: data.errors?.[0]?.message || '查询失败' });
         }
     } catch (e: any) { return jsonError(e.message); }
 }
@@ -131,23 +149,34 @@ export async function handleGetSubdomain(cred: AccountCredentials) {
 export async function handleChangeSubdomain(cred: AccountCredentials, newSubdomain: string) {
     try {
         const headers = getAuthHeaders(cred.email, cred.globalKey);
-        try {
-            await fetch(cf.acctSubdomain(cred.accountId), { method: 'DELETE', headers });
-        } catch (e) { console.warn('[changeSubdomain] DELETE failed:', (e as Error).message); }
-        const res = await fetch(cf.acctSubdomain(cred.accountId), {
+        // 先尝试直接 PUT（覆盖），避免无故删除已有子域名
+        let res = await fetch(cf.acctSubdomain(cred.accountId), {
             method: 'PUT',
             headers,
             body: JSON.stringify({ subdomain: newSubdomain })
         });
-        const data: any = await res.json();
+        let data: any = await res.json();
         if (data.success) {
             return json({ success: true, subdomain: data.result?.subdomain || newSubdomain });
-        } else {
-            const errMsg = data.errors?.[0]?.message || '修改失败';
-            if (errMsg.includes('already has')) {
-                return new Response(JSON.stringify({ success: false, msg: 'Cloudflare 不支持通过 API 修改已有子域名，请到 Dashboard → Workers & Pages → 设置中手动修改。' }), { headers: { "Content-Type": "application/json" } });
-            }
-            return new Response(JSON.stringify({ success: false, msg: errMsg }), { headers: { "Content-Type": "application/json" } });
         }
+        const errMsg = data.errors?.[0]?.message || '修改失败';
+        // PUT 返回 "already has" 时，先删再建
+        if (errMsg.includes('already has')) {
+            const delRes = await fetch(cf.acctSubdomain(cred.accountId), { method: 'DELETE', headers });
+            if (!delRes.ok) {
+                return json({ success: false, msg: 'Cloudflare 不支持通过 API 修改已有子域名，请到 Dashboard → Workers & Pages → 设置中手动修改。' });
+            }
+            res = await fetch(cf.acctSubdomain(cred.accountId), {
+                method: 'PUT',
+                headers,
+                body: JSON.stringify({ subdomain: newSubdomain })
+            });
+            data = await res.json();
+            if (data.success) {
+                return json({ success: true, subdomain: data.result?.subdomain || newSubdomain });
+            }
+            return json({ success: false, msg: '删除后重建子域名失败: ' + (data.errors?.[0]?.message || '未知错误') });
+        }
+        return json({ success: false, msg: errMsg });
     } catch (e: any) { return jsonError(e.message); }
 }

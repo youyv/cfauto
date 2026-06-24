@@ -63,14 +63,14 @@ ROUTES.set('GET /api/verify_credentials', async (req, env) => {
                 results.push({ alias: acc.alias, ok: res.ok, status: res.status });
             } catch(e: any) { results.push({ alias: acc.alias, ok: false, error: e.message }); }
         }
-        return new Response(JSON.stringify(results), { headers: { 'Content-Type': 'application/json' } });
+        return json(results);
     });
 
 ROUTES.set('GET /api/deploy/preview', async (req, env) => {
         const type = new URL(req.url).searchParams.get('type') || '';
         const accounts = await getJSON(env.CONFIG_KV, KV_KEYS.ACCOUNTS, []);
         const targetWorkers = accounts.flatMap((a: any) => (a['workers_' + type] || []).map((w: string) => a.alias + ' -> [' + w + ']'));
-        return new Response(JSON.stringify({ accounts: accounts.filter((a: any) => (a['workers_' + type] || []).length > 0).length, workers: targetWorkers.length, details: targetWorkers }), { headers: { 'Content-Type': 'application/json' } });
+        return json({ accounts: accounts.filter((a: any) => (a['workers_' + type] || []).length > 0).length, workers: targetWorkers.length, details: targetWorkers });
     });
 
 ROUTES.set('GET /api/diag', async (_req, env) => {
