@@ -4,6 +4,29 @@
 
 ---
 
+## V10.14.1 (2026-06-26)
+- 🐛 修复 Joey 批量部署变量名错误：u 被误填为 uuid 导致 Worker 功能异常
+- 🔧 后端 uuidField 硬编码改为动态映射，消除模板特定分支
+
+## V10.14.0 (2026-06-24)
+
+### 🔒 安全加固
+
+- **Cookie 不再存储明文密码**: 登录成功后将 ACCESS_CODE 的 SHA-256 摘要写入 Cookie，原始密码不再出现在任何 Cookie/日志中
+
+### 🐛 修复
+
+- **子域名修改安全性**: `handleChangeSubdomain` 改为先 PUT 覆盖，仅在 CF 返回 "already has" 时才 DELETE+PUT，避免无故删除已有子域名
+- **正则替换静默失败检测**: ECH 模板的 `CF_FALLBACK_IPS` 和 `token` 正则替换增加失败检测，上游代码变更时输出警告日志
+- **错误响应格式统一**: 所有路由统一使用 `json()` / `jsonError()` 工具函数构建 JSON 响应，不再手写 `new Response(JSON.stringify(...))`
+
+### 🧹 代码质量
+
+- **模板类型约束**: 新增 `TemplateType = keyof typeof TEMPLATES` 类型，关键函数签名从 `type: string` 改为 `type: TemplateType`，编译期防止模板名拼写错误
+- **消除无意义动态导入**: `loader.ts` 14 个 `await import()` 全部改为顶层静态 import，esbuild 打包后已是单文件，动态导入无实际收益
+- **verify.js 修正**: 导出检查 MAP 中 MANIFEST 从 middleware/auth 移至 config/templates，消除假警告
+- **KV 命名空间清理加固**: 删除 Worker 时 KV 命名空间删除改为 5 次 × 2s 轮询（409 Conflict 重试），失败时返回 `kvWarnings` 字段告知用户而非静默忽略；全类型 Worker 删除后同步清理 `VARS_*` 和 `FAVORITES_*` 残留数据
+
 
 ## V10.12.0 (2026-06-23)
 

@@ -3,6 +3,7 @@
  */
 
 import { KV_KEYS, TEMPLATES } from '../config/templates';
+import type { TemplateType } from '../config/templates';
 import { cf, getAuthHeaders } from './cloudflare-api';
 import { fetchGithubCode, applyTemplateTransform, getGithubUrls } from './github';
 import { uploadWorker, parseApiError } from './deploy-utils';
@@ -11,7 +12,7 @@ import type { AppEnv } from '../config/env';
 
 /** 部署选项 */
 export interface DeployOptions {
-    type: string;
+    type: TemplateType;
     variables: Array<{ key: string; value: string }>;
     deletedVariables?: string[];
     targetSha?: string | null;
@@ -117,7 +118,7 @@ export async function coreDeployLogic(env: AppEnv, opts: DeployOptions) {
     } catch (e: any) { return [{ name: "系统错误", success: false, msg: e.message }]; }
 }
 
-export async function fetchGithubVersion(env: AppEnv, type: string): Promise<{ localSha: string | null; localTime: string | null; remoteSha: string; remoteDate: string; remoteMsg: string; mode: string }> {
+export async function fetchGithubVersion(env: AppEnv, type: TemplateType): Promise<{ localSha: string | null; localTime: string | null; remoteSha: string; remoteDate: string; remoteMsg: string; mode: string }> {
     const deployConfig = await getJSON(env.CONFIG_KV, KV_KEYS.deployConfig(type), { mode: 'latest' });
     const accounts = await getJSON(env.CONFIG_KV, KV_KEYS.ACCOUNTS, []);
     const hasDeployed = accounts.some((a: any) => a['workers_' + type] && a['workers_' + type].length > 0);
@@ -144,7 +145,7 @@ export async function fetchGithubVersion(env: AppEnv, type: string): Promise<{ l
     };
 }
 
-export async function checkAndDeployUpdate(env: AppEnv, type: string) {
+export async function checkAndDeployUpdate(env: AppEnv, type: TemplateType) {
     try {
         const deployConfig = await getJSON(env.CONFIG_KV, KV_KEYS.deployConfig(type), { mode: 'latest' });
         if (deployConfig.mode === 'fixed') return;
@@ -157,7 +158,7 @@ export async function checkAndDeployUpdate(env: AppEnv, type: string) {
     } catch (e) { console.error('[Update Error] ' + type + ': ' + (e as Error).message); }
 }
 
-export async function rotateUUIDAndDeploy(env: AppEnv, type: string) {
+export async function rotateUUIDAndDeploy(env: AppEnv, type: TemplateType) {
     const uuidField = TEMPLATES[type].uuidField;
     if (!uuidField) return;
 

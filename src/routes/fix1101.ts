@@ -3,16 +3,17 @@
  */
 
 import { KV_KEYS, TEMPLATES } from '../config/templates';
+import type { TemplateType } from '../config/templates';
 import { cf, getAuthHeaders } from '../lib/cloudflare-api';
 import { fetchGithubCode, applyTemplateTransform } from '../lib/github';
 import { uploadWorker, parseApiError } from '../lib/deploy-utils';
 import { getJSON, putJSON } from "../lib/kv-utils";
 import type { AppEnv } from "../config/env";
 
-export async function handleFix1101(env: AppEnv, type: string) {
+export async function handleFix1101(env: AppEnv, type: TemplateType) {
     const ACCOUNTS_KEY = KV_KEYS.ACCOUNTS;
     const accounts = await getJSON(env.CONFIG_KV, ACCOUNTS_KEY, []);
-    if (accounts.length === 0) return new Response(JSON.stringify([{ name: "提示", success: false, msg: "无账号" }]), { headers: { "Content-Type": "application/json" } });
+    if (accounts.length === 0) return json([{ name: "提示", success: false, msg: "无账号" }]);
 
     const logs: Array<{ name: string; success: boolean; msg: string }> = [];
 
@@ -22,7 +23,7 @@ export async function handleFix1101(env: AppEnv, type: string) {
         freshCode = result.code;
         latestSha = result.sha;
     } catch (e: any) {
-        return new Response(JSON.stringify([{ name: "系统", success: false, msg: `代码下载失败: ${e.message}` }]), { headers: { "Content-Type": "application/json" } });
+        return json([{ name: "系统", success: false, msg: `代码下载失败: ${e.message}` }]);
     }
 
     for (const acc of accounts) {
@@ -142,5 +143,5 @@ export async function handleFix1101(env: AppEnv, type: string) {
         await putJSON(env.CONFIG_KV, DEPLOY_CONFIG_KEY, { mode: 'latest', currentSha: latestSha || 'unknown', deployTime: new Date().toISOString() });
     }
 
-    return new Response(JSON.stringify(logs), { headers: { "Content-Type": "application/json" } });
+    return json(logs);
 }

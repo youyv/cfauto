@@ -13,7 +13,7 @@ import { coreDeployLogic, DeployOptions } from '../lib/auto-update';
 /** 手动部署 — HTTP handler，调用核心部署逻辑 */
 export async function handleManualDeploy(env: AppEnv, opts: DeployOptions) {
     const result = await coreDeployLogic(env, opts);
-    return new Response(JSON.stringify(result), { headers: { "Content-Type": "application/json" } });
+    return json(result);
 }
 
 /**
@@ -24,14 +24,14 @@ export async function handleBatchDeploy(env: AppEnv, reqData: any) {
     const allAccounts = await getJSON(env.CONFIG_KV, KV_KEYS.ACCOUNTS, []);
 
     const accountsToDeploy = allAccounts.filter((a: any) => targetAccounts.includes(a.alias));
-    if (accountsToDeploy.length === 0) return new Response(JSON.stringify([{ name: "错误", success: false, msg: "未选择有效账号" }]), { headers: { "Content-Type": "application/json" } });
+    if (accountsToDeploy.length === 0) return json([{ name: "错误", success: false, msg: "未选择有效账号" }]);
 
     let scriptContent = "";
     try {
         const { code } = await fetchGithubCode(template, 'latest', env);
         scriptContent = applyTemplateTransform(template, code, null);
     } catch (e: any) {
-        return new Response(JSON.stringify([{ name: "网络错误", success: false, msg: e.message }]), { headers: { "Content-Type": "application/json" } });
+        return json([{ name: "网络错误", success: false, msg: e.message }]);
     }
 
     const logs: Array<{ name: string; success: boolean; msg: string }> = [];
@@ -70,17 +70,15 @@ export async function handleBatchDeploy(env: AppEnv, reqData: any) {
                     }
                 });
             } else {
-                if (config.admin) bindings.push({ name: "ADMIN", type: "plain_text", text: config.admin });
-                if (template === 'joey' && config.uuid) bindings.push({ name: "u", type: "plain_text", text: config.uuid });
-
                 const t = TEMPLATES[template];
+                if (config.admin) bindings.push({ name: "ADMIN", type: "plain_text", text: config.admin });
+                if (t.uuidField && config[t.uuidField]) {
+                    bindings.push({ name: t.uuidField, type: "plain_text", text: config[t.uuidField] });
+                }
+
                 t.defaultVars.forEach(key => {
                     if (key !== t.kvBindingName && key !== 'ADMIN' && key !== t.uuidField) {
-                        if (key === 'UUID') {
-                            bindings.push({ name: "UUID", type: "plain_text", text: config.uuid || crypto.randomUUID() });
-                        } else {
-                            bindings.push({ name: key, type: "plain_text", text: "" });
-                        }
+                        bindings.push({ name: key, type: "plain_text", text: "" });
                     }
                 });
             }
@@ -132,5 +130,5 @@ export async function handleBatchDeploy(env: AppEnv, reqData: any) {
         });
         await putJSON(env.CONFIG_KV, KV_KEYS.ACCOUNTS, finalAccounts);
     }
-    return new Response(JSON.stringify(logs), { headers: { "Content-Type": "application/json" } });
+    return json(logs);
 }

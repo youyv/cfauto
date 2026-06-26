@@ -111,11 +111,12 @@ async function doBatchDeploy() {
        if(chks.length===0) throw new Error("至少选择一个账号");
        const targetAccounts = Array.from(chks).map(c => c.value);
        const config = {};
+       const uuidVal = document.getElementById('bd_uuid').value;
        if (t === 'cmliu') {
             config.admin = document.getElementById('bd_admin_pass').value;
-            config.uuid = document.getElementById('bd_uuid').value;
-       } else {
-            config.uuid = document.getElementById('bd_uuid').value;
+            if (uuidVal) config.UUID = uuidVal;
+       } else if (t === 'joey') {
+            if (uuidVal) config.u = uuidVal;
        }
 
         let savedVars = null;
@@ -220,7 +221,7 @@ function retryFailedBatch() {
     document.getElementById('bd_domain_prefix').value = customDomainPrefix || '';
     document.getElementById('bd_disable_workers_dev').checked = !!disableWorkersDev;
     if (template === 'cmliu' && config && config.admin) document.getElementById('bd_admin_pass').value = config.admin;
-    if (config && config.uuid) document.getElementById('bd_uuid').value = config.uuid;
+    if (config) { const uuidVal = config.UUID || config.u; if (uuidVal) document.getElementById('bd_uuid').value = uuidVal; }
     toggleBatchInputs();
     document.getElementById('batch_deploy_modal').classList.remove('hidden');
     _lastFailedBatch = null;

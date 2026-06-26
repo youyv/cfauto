@@ -3,7 +3,7 @@
  */
 
 import { TEMPLATES, KV_KEYS } from '../config/templates';
-import { cf, getAuthHeaders, json } from '../lib/cloudflare-api';
+import { cf, getAuthHeaders, json, jsonError } from '../lib/cloudflare-api';
 import { getJSON, putJSON } from "../lib/kv-utils";
 import type { AppEnv } from "../config/env";
 
@@ -27,11 +27,9 @@ export async function handleGetRegionsData() {
                 regionPools[code].push({ line, code, ipPort });
             }
         }
-        return new Response(JSON.stringify({ success: true, data: regionPools }), {
-            headers: { 'content-type': 'application/json; charset=UTF-8' }
-        });
+        return json({ success: true, data: regionPools });
     } catch (e: any) {
-        return new Response(JSON.stringify({ success: false, msg: "Error fetching data: " + e.message }), { status: 500 });
+        return jsonError("Error fetching data: " + e.message, 500);
     }
 }
 
@@ -53,22 +51,22 @@ export async function handleSaveYxip(env: AppEnv, reqData: any) {
             await putJSON(env.CONFIG_KV, VARS_KEY, variables);
             return json([{ name: "Joey 全局变量 (无 KV 模式)", success: true, msg: "✅ 变量 [yx] 已成功覆盖至全体记录供稍后部署使用", type: 'joey' }]);
         } catch (e: any) {
-            return new Response(JSON.stringify([{ name: "写入错误", success: false, msg: e.message }]), { status: 500 });
+            return json([{ name: "写入错误", success: false, msg: e.message }], 500);
         }
     }
 
     // KV 模式：cmliu 或 joey
     if (type === 'cmliu' || type === 'joey') {
-        if (!accountId || !email || !globalKey) return new Response(JSON.stringify([{ name: "配置错误", success: false, msg: "未提供对应账户凭证" }]), { status: 400 });
+        if (!accountId || !email || !globalKey) return json([{ name: "配置错误", success: false, msg: "未提供对应账户凭证" }], 400);
 
         try {
             const accounts = await getJSON(env.CONFIG_KV, KV_KEYS.ACCOUNTS, []);
             const targetAccount = accounts.find((a: any) => a.accountId === accountId);
-            if (!targetAccount) return new Response(JSON.stringify([{ name: "查找错误", success: false, msg: "系统记录中找不到该账户" }]), { status: 404 });
+            if (!targetAccount) return json([{ name: "查找错误", success: false, msg: "系统记录中找不到该账户" }], 404);
 
             const targetWorkers = type === 'cmliu' ? targetAccount.workers_cmliu : targetAccount.workers_joey;
             const workerTypeName = type === 'cmliu' ? 'CMLiu' : 'Joey';
-            if (!targetWorkers || targetWorkers.length === 0) return new Response(JSON.stringify([{ name: "查找错误", success: false, msg: `该账号下未发现已部署的 ${workerTypeName} 项目` }]), { status: 200 });
+            if (!targetWorkers || targetWorkers.length === 0) return json([{ name: "查找错误", success: false, msg: `该账号下未发现已部署的 ${workerTypeName} 项目` }]);
 
             const logs: Array<{ name: string; success: boolean; msg: string }> = [];
             const jsonHeaders = getAuthHeaders(email, globalKey);
@@ -108,9 +106,9 @@ export async function handleSaveYxip(env: AppEnv, reqData: any) {
             }
             return json(logs);
         } catch (e: any) {
-            return new Response(JSON.stringify([{ name: "执行异常", success: false, msg: e.message }]), { status: 500 });
+            return json([{ name: "执行异常", success: false, msg: e.message }], 500);
         }
     }
 
-    return new Response(JSON.stringify([{ name: "参数错误", success: false, msg: "未知的请求类型: " + type }]), { status: 400 });
+    return json([{ name: "参数错误", success: false, msg: "未知的请求类型: " + type }], 400);
 }

@@ -1,9 +1,9 @@
 /**
  * Worker 智能中控 — 前后端分离版 入口
- * V10.12.0
+ * V10.14.1
  */
 
-import { requireAccessCode, requireCookie, checkCsrf } from './middleware/auth';
+import { requireAccessCode, requireCookie, checkCsrf, generateAuthToken } from './middleware/auth';
 import { jsonError } from './lib/cloudflare-api';
 import { getRoute } from './routes/index';
 import { handleCronJob } from './cron';
@@ -35,15 +35,16 @@ export default {
                 return new Response(JSON.stringify(MANIFEST), { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' } });
             }
 
-            // [公开] 登录接口 — 验证 ACCESS_CODE，成功则写入 Cookie
+            // [公开] 登录接口 — 验证 ACCESS_CODE，成功则写入 Cookie（存 SHA-256 token，不暴露明文密码）
             if (url.pathname === '/api/login' && request.method === 'POST') {
                 const body: any = await request.json();
                 const correctCode = env.ACCESS_CODE;
                 if (body.code === correctCode) {
+                    const token = await generateAuthToken(correctCode!);
                     return new Response(JSON.stringify({ success: true }), {
                         headers: {
                             'Content-Type': 'application/json',
-                            'Set-Cookie': `auth=${correctCode}; Path=/; HttpOnly; Secure; Max-Age=86400; SameSite=Lax`
+                            'Set-Cookie': `auth=${token}; Path=/; HttpOnly; Secure; Max-Age=86400; SameSite=Lax`
                         }
                     });
                 }
@@ -51,8 +52,10 @@ export default {
             }
 
             // [认证] 中间件链 — 任一检查不通过即返回对应错误
-            const authResult = requireAccessCode(env) || requireCookie(request, env) || checkCsrf(request, url);
-            if (authResult) return authResult;
+            const syncCheck = requireAccessCode(env) || checkCsrf(request, url);
+            if (syncCheck) return syncCheck;
+            const cookieCheck = await requireCookie(request, env);
+            if (cookieCheck) return cookieCheck;
 
             // [核心] 路由分发 — 按 METHOD + PATH 查找处理器（模块级缓存，仅构建一次）
             const handler = getRoute(request.method, url.pathname);
@@ -85,7 +88,7 @@ function mainHtml() {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="manifest" href="/manifest.json">
-    <title>Worker 智能中控 (V10.12.0)</title>
+    <title>Worker 智能中控 (V10.14.1)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
