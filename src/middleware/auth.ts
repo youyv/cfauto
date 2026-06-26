@@ -7,9 +7,9 @@ import type { AppEnv } from "../config/env";
 
 export function requireAccessCode(env: AppEnv): Response | null {
     if (!env.ACCESS_CODE) {
-        return new Response(
+        return jsonError(
             '未配置 ACCESS_CODE，请在 Cloudflare Dashboard → Workers & Pages → 设置 → 变量 中设置 ACCESS_CODE 密钥',
-            { status: 503 }
+            503
         );
     }
     return null;
@@ -26,7 +26,7 @@ export async function generateAuthToken(accessCode: string): Promise<string> {
 export async function requireCookie(request: Request, env: AppEnv): Promise<Response | null> {
     const cookieHeader = request.headers.get('Cookie') || '';
     // 提取 auth= 的值进行精确比对，避免子串/前缀绕过
-    const match = cookieHeader.match(/(?:^|;\s*)auth=([^;]*)/);
+    const match = cookieHeader.match(/(?:^|;\s*)__Host-auth=([^;]*)/);
     const cookieValue = match ? match[1] : null;
     const expectedToken = await generateAuthToken(env.ACCESS_CODE!);
     if (cookieValue !== expectedToken) {
@@ -37,13 +37,15 @@ export async function requireCookie(request: Request, env: AppEnv): Promise<Resp
     return null;
 }
 
-/** CSRF 防护 — POST 请求校验 Origin 与 Host 一致 */
+/** CSRF 防护 — 多层校验：Sec-Fetch-* 头 + Origin */
 export function checkCsrf(request: Request, url: URL): Response | null {
     if (request.method === 'POST') {
+        const secSite = request.headers.get('Sec-Fetch-Site');
+        if (secSite && secSite !== 'same-origin' && secSite !== 'none') return jsonError('CSRF rejected (Sec-Fetch-Site)', 403);
         const origin = request.headers.get('Origin');
-        if (origin && new URL(origin).host !== url.host) {
-            return jsonError('CSRF rejected', 403);
-        }
+        try {
+            if (origin && new URL(origin).host !== url.host) return jsonError('CSRF rejected (Origin)', 403);
+        } catch { return jsonError('CSRF rejected (Invalid Origin)', 403); }
     }
     return null;
 }

@@ -5,7 +5,9 @@ import { registerCrudRoutes } from './crud';
 import { registerLazyRoutes } from './loader';
 import type { AppEnv } from "../config/env";
 
-type Handler = (req: Request, env: AppEnv) => Promise<Response>;
+export type RouteHandler = (req: Request, env: AppEnv) => Promise<Response>;
+
+type Handler = RouteHandler;
 
 const ROUTES = new Map<string, Handler>();
 

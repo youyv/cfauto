@@ -2,7 +2,7 @@
  * 路由: 部署逻辑 — 手动部署、批量部署
  */
 
-import { KV_KEYS, TEMPLATES } from '../config/templates';
+import { KV_KEYS, TEMPLATES, BINDING } from '../config/templates';
 import { cf, getAuthHeaders } from '../lib/cloudflare-api';
 import { fetchGithubCode, applyTemplateTransform } from '../lib/github';
 import { uploadWorker, parseApiError } from '../lib/deploy-utils';

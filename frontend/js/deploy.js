@@ -90,12 +90,12 @@ async function fix1101(t) {
 // ===== 批量部署 =====
 let _lastFailedBatch = null;
 async function doBatchDeploy() {
-    const btn = document.getElementById('btn_do_batch');
-    const t = document.getElementById('bd_template').value;
-    const name = document.getElementById('bd_name').value;
-    const kvName = document.getElementById('bd_kv_name').value;
-    const enableKV = document.getElementById('bd_enable_kv').checked;
-    const useSavedVars = document.getElementById('bd_use_saved_vars').checked;
+    const btn = $('btn_do_batch');
+    const t = $('bd_template').value;
+    const name = $('bd_name').value;
+    const kvName = $('bd_kv_name').value;
+    const enableKV = $('bd_enable_kv').checked;
+    const useSavedVars = $('bd_use_saved_vars').checked;
 
     if (!name) return Swal.fire('提示', 'Worker名称必填', 'warning');
     if (enableKV && !kvName) return Swal.fire('提示', '开启 KV 绑定时必须填写 KV 名称', 'warning');
@@ -111,9 +111,9 @@ async function doBatchDeploy() {
        if(chks.length===0) throw new Error("至少选择一个账号");
        const targetAccounts = Array.from(chks).map(c => c.value);
        const config = {};
-       const uuidVal = document.getElementById('bd_uuid').value;
+       const uuidVal = $('bd_uuid').value;
        if (t === 'cmliu') {
-            config.admin = document.getElementById('bd_admin_pass').value;
+            config.admin = $('bd_admin_pass').value;
             if (uuidVal) config.UUID = uuidVal;
        } else if (t === 'joey') {
             if (uuidVal) config.u = uuidVal;
@@ -146,8 +146,8 @@ async function doBatchDeploy() {
                  kvName: kvName,
                  config: config,
                  targetAccounts: targetAccounts,
-                 disableWorkersDev: document.getElementById('bd_disable_workers_dev').checked,
-                 customDomainPrefix: document.getElementById('bd_domain_prefix').value,
+                 disableWorkersDev: $('bd_disable_workers_dev').checked,
+                 customDomainPrefix: $('bd_domain_prefix').value,
                  enableKV: enableKV,
                  savedVars: savedVars
              })
@@ -181,6 +181,32 @@ async function doBatchDeploy() {
     btn.innerText = "🚀 开始部署";
 }
 
+async function showDeployJournal() {
+    openWorkbench();
+    wbLog('📋 加载部署日志...', 'text-blue-400');
+    try {
+        const r = await fetch('/api/deploy_journal');
+        const journal = await r.json();
+        if (!Array.isArray(journal) || journal.length === 0) {
+            wbLog('📭 暂无部署记录', 'text-slate-400');
+            return;
+        }
+        wbLog('─── 最近 ' + journal.length + ' 次部署 ───', 'text-white');
+        journal.forEach(function(entry) {
+            const time = new Date(entry.time).toLocaleString([], {month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'});
+            const typeLabel = entry.type === 'cmliu' ? '🔴' : entry.type === 'joey' ? '🔵' : '🟢';
+            const shaShort = (entry.sha || '????').substring(0, 7);
+            wbLog(
+                time + ' ' + typeLabel + ' ' + entry.type +
+                ' | ' + shaShort +
+                ' | ' + entry.accounts + '/' + entry.total + ' OK' +
+                (entry.summary ? ' | ' + entry.summary : ''),
+                'text-slate-400'
+            );
+        });
+    } catch(e) { wbLog('❌ 日志加载失败: ' + e.message, 'text-red-500'); }
+}
+
 function openBatchDeployModal() {
     const m = document.getElementById('batch_deploy_modal');
     const list = document.getElementById('bd_account_list');
@@ -191,16 +217,16 @@ function openBatchDeployModal() {
         div.innerHTML = `<input type="checkbox" value="${a.alias}" class="bd-acc-chk" id="chk_${a.alias}"><label for="chk_${a.alias}">${a.alias}</label>`;
         list.appendChild(div);
     });
-    document.getElementById('bd_uuid').value = crypto.randomUUID();
+    $('bd_uuid').value = crypto.randomUUID();
     toggleBatchInputs();
     m.classList.remove('hidden');
 }
 
 function toggleBatchInputs() {
-    const t = document.getElementById('bd_template').value;
-    document.getElementById('bd_config_cmliu').classList.toggle('hidden', t !== 'cmliu');
-    document.getElementById('bd_config_joey').classList.toggle('hidden', t !== 'joey');
-    const kvCheck = document.getElementById('bd_enable_kv');
+    const t = $('bd_template').value;
+    $('bd_config_cmliu').classList.toggle('hidden', t !== 'cmliu');
+    $('bd_config_joey').classList.toggle('hidden', t !== 'joey');
+    const kvCheck = $('bd_enable_kv');
     if (t === 'joey') kvCheck.checked = false; else kvCheck.checked = true;
 }
 
@@ -213,15 +239,15 @@ function retryFailedBatch() {
     // Re-check only the failed accounts AND restore form fields
     document.querySelectorAll('.bd-acc-chk').forEach(c => { c.checked = failedAliases.includes(c.value); });
     // 恢复表单字段，避免用户重新填写
-    document.getElementById('bd_template').value = template || 'cmliu';
-    document.getElementById('bd_name').value = workerName || '';
-    document.getElementById('bd_kv_name').value = kvName || '';
-    document.getElementById('bd_enable_kv').checked = !!enableKV;
-    document.getElementById('bd_use_saved_vars').checked = !!useSavedVars;
-    document.getElementById('bd_domain_prefix').value = customDomainPrefix || '';
-    document.getElementById('bd_disable_workers_dev').checked = !!disableWorkersDev;
-    if (template === 'cmliu' && config && config.admin) document.getElementById('bd_admin_pass').value = config.admin;
-    if (config) { const uuidVal = config.UUID || config.u; if (uuidVal) document.getElementById('bd_uuid').value = uuidVal; }
+    $('bd_template').value = template || 'cmliu';
+    $('bd_name').value = workerName || '';
+    $('bd_kv_name').value = kvName || '';
+    $('bd_enable_kv').checked = !!enableKV;
+    $('bd_use_saved_vars').checked = !!useSavedVars;
+    $('bd_domain_prefix').value = customDomainPrefix || '';
+    $('bd_disable_workers_dev').checked = !!disableWorkersDev;
+    if (template === 'cmliu' && config && config.admin) $('bd_admin_pass').value = config.admin;
+    if (config) { const uuidVal = config.UUID || config.u; if (uuidVal) $('bd_uuid').value = uuidVal; }
     toggleBatchInputs();
     document.getElementById('batch_deploy_modal').classList.remove('hidden');
     _lastFailedBatch = null;

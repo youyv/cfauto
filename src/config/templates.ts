@@ -74,6 +74,14 @@ export const TEMPLATES: Record<string, {
         yxipBuildContent: (raw: string) => raw,
     }
 };
+
+/** 绑定类型常量 — 避免魔法字符串散落各处 */
+export const BINDING = {
+  PLAIN_TEXT: 'plain_text' as const,
+  SECRET_TEXT: 'secret_text' as const,
+  KV_NAMESPACE: 'kv_namespace' as const,
+};
+
 export const ECH_PROXIES = [
     { group: "Global", list: ["ProxyIP.CMLiussss.net", "ProxyIP.Aliyun.CMLiussss.net", "ProxyIP.Oracle.CMLiussss.net"] },
     { group: "HK (香港)", list: ["ProxyIP.HK.CMLiussss.net", "ProxyIP.Aliyun.HK.CMLiussss.net", "ProxyIP.Oracle.HK.CMLiussss.net"] },

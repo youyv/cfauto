@@ -3,15 +3,16 @@
  */
 import type { AccountCredentials } from '../config/env';
 import type { AppEnv } from "../config/env";
-import { handleCheckUpdate, handleGetCode, handleStats } from './check';
+import type { RouteHandler } from "./index";
+import { handleCheckUpdate, handleGetCode, handleStats, handleDiff } from './check';
 import { handleManualDeploy, handleBatchDeploy } from './deploy';
 import { handleGetZones, handleGetAllWorkers, handleDeleteWorker, handleFetchBindings, handleGetSubdomain, handleChangeSubdomain } from './zones';
 import { handleFix1101 } from './fix1101';
 import { handleGetRegionsData, handleSaveYxip } from './yxip';
 
-type Handler = (req: Request, env: AppEnv) => Promise<Response>;
 
-export function registerLazyRoutes(ROUTES: Map<string, Handler>) {
+
+export function registerLazyRoutes(ROUTES: Map<string, RouteHandler>) {
 
 ROUTES.set('GET /api/check_update', (req, env) => {
     const url = new URL(req.url);
@@ -66,6 +67,11 @@ ROUTES.set('POST /api/get_subdomain', async (req, _env) => {
 ROUTES.set('POST /api/change_subdomain', async (req, _env) => {
     const { newSubdomain, ...cred } = await req.json() as any;
     return handleChangeSubdomain(cred as AccountCredentials, newSubdomain);
+});
+
+ROUTES.set('GET /api/diff', (req, env) => {
+    const url = new URL(req.url);
+    return handleDiff(env, url.searchParams.get('type') || '');
 });
 
 ROUTES.set('GET /api/stats', (_req, env) => handleStats(env));

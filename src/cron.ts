@@ -41,7 +41,7 @@ export async function handleCronJob(env: AppEnv) {
                         await rotateUUIDAndDeploy(env, ft);
                     }
                     actionTaken = true;
-                    await sendFuseAlert(env, acc.alias, stat.total, limit, fuseThreshold);
+                    await sendFuseAlert(env, acc.alias, stat.total, limit, fuseThreshold, config);
                     break;
                 }
             }
@@ -67,9 +67,8 @@ export async function handleCronJob(env: AppEnv) {
     await putJSON(env.CONFIG_KV, GLOBAL_CONFIG_KEY, config);
 }
 
-async function sendFuseAlert(env: AppEnv, alias: string, total: number, limit: number, threshold: number) {
+async function sendFuseAlert(env: AppEnv, alias: string, total: number, limit: number, threshold: number, config: any) {
     try {
-        const config = await getJSON(env.CONFIG_KV, KV_KEYS.GLOBAL_CONFIG, {});
         const webhookUrl = config.fuseWebhook;
         if (!webhookUrl) return;
         const payload = {

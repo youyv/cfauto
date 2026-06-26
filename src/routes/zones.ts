@@ -2,7 +2,7 @@
  * 路由: Zones / Workers 管理 / 子域名
  */
 
-import { KV_KEYS, TEMPLATES } from '../config/templates';
+import { KV_KEYS, TEMPLATES, BINDING } from '../config/templates';
 import { cf, getAuthHeaders, jsonError, json } from '../lib/cloudflare-api';
 import type { AccountCredentials } from '../config/env';
 import { getJSON, putJSON } from "../lib/kv-utils";

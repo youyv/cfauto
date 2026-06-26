@@ -24,8 +24,8 @@ function wbLog(msg, colorClass) {
         const panel = document.getElementById('workbench_panel');
         isDragging = true;
         const rect = panel.getBoundingClientRect();
-        panel.style.transform = 'none';
-        panel.style.left = rect.left + 'px';
+        // 仅覆盖 translateY，保留 translateX(-50%) 水平居中
+        panel.style.transform = 'translateX(-50%)';
         panel.style.top = rect.top + 'px';
         startX = e.clientX; startY = e.clientY;
         startLeft = rect.left; startTop = rect.top;
@@ -34,8 +34,11 @@ function wbLog(msg, colorClass) {
     document.addEventListener('mousemove', e => {
         if (!isDragging) return;
         const panel = document.getElementById('workbench_panel');
-        panel.style.left = Math.max(0, startLeft + e.clientX - startX) + 'px';
-        panel.style.top = Math.max(0, startTop + e.clientY - startY) + 'px';
+        const panelW = panel.offsetWidth;
+        const panelH = panel.offsetHeight;
+        // 水平方向不再移动（保持 translateX 居中），仅约束垂直方向
+        const newTop = Math.max(0, Math.min(startTop + e.clientY - startY, window.innerHeight - panelH));
+        panel.style.top = newTop + 'px';
     });
     document.addEventListener('mouseup', () => { isDragging = false; });
 })();

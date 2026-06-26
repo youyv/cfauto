@@ -1,10 +1,10 @@
 /**
  * Worker 智能中控 — 前后端分离版 入口
- * V10.14.1
+ * V10.16.0
  */
 
 import { requireAccessCode, requireCookie, checkCsrf, generateAuthToken } from './middleware/auth';
-import { jsonError } from './lib/cloudflare-api';
+import { jsonError, json } from './lib/cloudflare-api';
 import { getRoute } from './routes/index';
 import { handleCronJob } from './cron';
 import { TEMPLATES, ECH_PROXIES, MANIFEST } from './config/templates';
@@ -25,7 +25,7 @@ export default {
         try {
             // KV 未绑定时拒绝所有请求
             if (!env.CONFIG_KV) {
-                return new Response('KV Not Bound (Error 1001)', { status: 500 });
+                return jsonError('KV Not Bound (Error 1001)', 500);
             }
 
             const url = new URL(request.url);
@@ -35,22 +35,31 @@ export default {
                 return new Response(JSON.stringify(MANIFEST), { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' } });
             }
 
-            // [公开] 登录接口 — 验证 ACCESS_CODE，成功则写入 Cookie（存 SHA-256 token，不暴露明文密码）
+            // [公开] 登录接口 — 验证 ACCESS_CODE + 速率限制（5次/5分钟/IP）
             if (url.pathname === '/api/login' && request.method === 'POST') {
-                const body: any = await request.json();
+                // 速率限制：基于 IP 最多 5 次/5分钟
+                const clientIp = request.headers.get('CF-Connecting-IP') || 'unknown';
+                const rateKey = 'RATE_LIMIT_' + clientIp;
+                const attemptStr = await env.CONFIG_KV.get(rateKey);
+                const attempts = attemptStr ? parseInt(attemptStr) : 0;
+                if (attempts >= 5) {
+                    return jsonError('登录尝试过于频繁，请 5 分钟后再试', 429);
+                }
+                await env.CONFIG_KV.put(rateKey, String(attempts + 1), { expirationTtl: 300 });
+
+                const body = await request.json() as Record<string, unknown>;
                 const correctCode = env.ACCESS_CODE;
                 if (body.code === correctCode) {
                     const token = await generateAuthToken(correctCode!);
-                    return new Response(JSON.stringify({ success: true }), {
+                    await env.CONFIG_KV.delete(rateKey);
+                    return json({ success: true }, {
                         headers: {
-                            'Content-Type': 'application/json',
-                            'Set-Cookie': `auth=${token}; Path=/; HttpOnly; Secure; Max-Age=86400; SameSite=Lax`
-                        }
+                        'Set-Cookie': `__Host-auth=${token}; Path=/; HttpOnly; Secure; Max-Age=86400; SameSite=Lax`
+                    }
                     });
                 }
                 return jsonError('密码错误', 401);
             }
-
             // [认证] 中间件链 — 任一检查不通过即返回对应错误
             const syncCheck = requireAccessCode(env) || checkCsrf(request, url);
             if (syncCheck) return syncCheck;
@@ -73,7 +82,9 @@ export default {
 // ==========================================
 // 前端页面（构建时由 frontend/ 拼接）
 // ==========================================
+let _htmlCache: string | null = null;
 function mainHtml() {
+    if (_htmlCache) return _htmlCache;
     const TEMPLATES_JSON = JSON.stringify(
         Object.fromEntries(
             Object.entries(TEMPLATES).map(([k, v]) => [k, { defaultVars: v.defaultVars, uuidField: v.uuidField, name: v.name }])
@@ -88,7 +99,7 @@ function mainHtml() {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="manifest" href="/manifest.json">
-    <title>Worker 智能中控 (V10.14.1)</title>
+    <title>Worker 智能中控 (V10.16.0)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
@@ -104,4 +115,6 @@ function mainHtml() {
       ${FRONTEND_JS}
     </script>
   </body></html>`;
+    _htmlCache = html;
+    return html;
 }

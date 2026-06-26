@@ -2,7 +2,7 @@
  * 自动更新核心逻辑 — cron 和 routes 共享
  */
 
-import { KV_KEYS, TEMPLATES } from '../config/templates';
+import { KV_KEYS, TEMPLATES, BINDING } from '../config/templates';
 import type { TemplateType } from '../config/templates';
 import { cf, getAuthHeaders } from './cloudflare-api';
 import { fetchGithubCode, applyTemplateTransform, getGithubUrls } from './github';
@@ -119,8 +119,10 @@ export async function coreDeployLogic(env: AppEnv, opts: DeployOptions) {
 }
 
 export async function fetchGithubVersion(env: AppEnv, type: TemplateType): Promise<{ localSha: string | null; localTime: string | null; remoteSha: string; remoteDate: string; remoteMsg: string; mode: string }> {
-    const deployConfig = await getJSON(env.CONFIG_KV, KV_KEYS.deployConfig(type), { mode: 'latest' });
-    const accounts = await getJSON(env.CONFIG_KV, KV_KEYS.ACCOUNTS, []);
+    const [deployConfig, accounts] = await Promise.all([
+        getJSON(env.CONFIG_KV, KV_KEYS.deployConfig(type), { mode: 'latest' }),
+        getJSON(env.CONFIG_KV, KV_KEYS.ACCOUNTS, []),
+    ]);
     const hasDeployed = accounts.some((a: any) => a['workers_' + type] && a['workers_' + type].length > 0);
     if (!hasDeployed && deployConfig.currentSha) {
         await putJSON(env.CONFIG_KV, KV_KEYS.deployConfig(type), { mode: 'latest' });

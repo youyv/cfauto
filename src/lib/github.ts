@@ -12,7 +12,8 @@ export function getGithubUrls(type: TemplateType, sha: string | null = null) {
     const apiUrl = `https://api.github.com/repos/${t.ghUser}/${t.ghRepo}/commits`;
     const ref = sha || t.ghBranch;
     const scriptUrl = `https://raw.githubusercontent.com/${t.ghUser}/${t.ghRepo}/${ref}/${safePath}`;
-    return { apiUrl, scriptUrl, branch: t.ghBranch };
+    const repoApiBase = `https://api.github.com/repos/${t.ghUser}/${t.ghRepo}`;
+    return { apiUrl, scriptUrl, repoApiBase, branch: t.ghBranch };
 }
 
 /** 从 GitHub 拉取代码 + 解析最新 SHA */

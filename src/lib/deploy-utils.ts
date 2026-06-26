@@ -33,6 +33,7 @@ export async function parseApiError(res: Response): Promise<string> {
         const body: any = await res.json();
         return "❌ " + (body.errors?.[0]?.message || "API error");
     } catch (_) {
+        console.error('[deploy-utils] parseApiError response.json() failed:', _);
         return "❌ HTTP " + res.status;
     }
 }

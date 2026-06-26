@@ -5,10 +5,9 @@ import { KV_KEYS, TEMPLATES } from '../config/templates';
 import { json, jsonError, cf, getAuthHeaders } from '../lib/cloudflare-api';
 import { getJSON, putJSON } from "../lib/kv-utils";
 import type { AppEnv } from "../config/env";
+import type { RouteHandler } from "./index";
 
-type Handler = (req: Request, env: AppEnv) => Promise<Response>;
-
-export function registerCrudRoutes(ROUTES: Map<string, Handler>) {
+export function registerCrudRoutes(ROUTES: Map<string, RouteHandler>) {
 // --- KV CRUD 路由（直接内联） ---
 ROUTES.set('GET /api/accounts', async (_req, env) =>
     new Response(await env.CONFIG_KV.get(KV_KEYS.ACCOUNTS) || '[]', { headers: { 'Content-Type': 'application/json' } }));
@@ -142,6 +141,35 @@ ROUTES.set('POST /api/restore', async (req, env) => {
         }
         return json({ success: true, restored });
     } catch (e: any) { return jsonError('恢复失败: ' + e.message); }
+});
+
+// --- 初始化数据合并端点：单次请求替代多次 fetch ---
+ROUTES.set('GET /api/init_data', async (_req, env) => {
+    try {
+        const templateTypes = Object.keys(TEMPLATES);
+        const [accountsRaw, globalCfgRaw] = await Promise.all([
+            env.CONFIG_KV.get(KV_KEYS.ACCOUNTS, {cacheTtl: 60}),
+            env.CONFIG_KV.get(KV_KEYS.GLOBAL_CONFIG, {cacheTtl: 60})
+        ]);
+        const varsPromises = templateTypes.map(t => env.CONFIG_KV.get(KV_KEYS.vars(t)));
+        const deployCfgPromises = templateTypes.map(t => env.CONFIG_KV.get(KV_KEYS.deployConfig(t)));
+        const [varsResults, deployCfgResults] = await Promise.all([
+            Promise.all(varsPromises),
+            Promise.all(deployCfgPromises)
+        ]);
+        const vars: Record<string, any> = {};
+        const deployConfigs: Record<string, any> = {};
+        templateTypes.forEach((t, i) => {
+            try { vars[t] = JSON.parse(varsResults[i] || 'null'); } catch (e) { vars[t] = null; }
+            try { deployConfigs[t] = JSON.parse(deployCfgResults[i] || 'null'); } catch (e) { deployConfigs[t] = null; }
+        });
+        return json({
+            accounts: JSON.parse(accountsRaw || '[]'),
+            autoConfig: JSON.parse(globalCfgRaw || '{}'),
+            vars,
+            deployConfigs
+        });
+    } catch (e: any) { return jsonError('init_data failed: ' + e.message); }
 });
 
 }

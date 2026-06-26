@@ -2,7 +2,7 @@
  * 路由: YXIP 优选节点 — 获取区域数据 + 保存节点
  */
 
-import { TEMPLATES, KV_KEYS } from '../config/templates';
+import { TEMPLATES, KV_KEYS, BINDING } from '../config/templates';
 import { cf, getAuthHeaders, json, jsonError } from '../lib/cloudflare-api';
 import { getJSON, putJSON } from "../lib/kv-utils";
 import type { AppEnv } from "../config/env";

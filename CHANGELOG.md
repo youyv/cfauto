@@ -4,6 +4,28 @@
 
 ---
 
+## V10.16.0 (2026-06-26)
+- 🐛 CRITICAL: 修复 5 个文件 BINDING 导入缺失导致的运行时 ReferenceError (deploy/fix1101/zones/yxip/auto-update)
+- 🐛 修复 addVarRow 第4参数 secret 被静默丢弃，刷新后 Secret 标记丢失
+- 🐛 修复 build.bat 路径拼写错误 distworker.js → dist/worker.js
+- ⚡ mainHtml() 模块级缓存，页面请求零字符串构造开销
+- ⚡ fetchGithubVersion 两次 KV 读取改为 Promise.all 并行
+- ⚡ loginHtml() 缓存
+- 🔒 前端 XSS 加固: accounts.js/yxip.js 用户数据 innerHTML 转义
+- 🔒 CSRF 新增 Sec-Fetch-Site 检测 + 畸形 Origin 头异常保护
+- 🔧 build.js 启用 compatibility_date 自动同步 → wrangler.local.toml (不污染 Git)
+- 🧹 cloudflare-api.ts 移除重复 CfApiResult 接口定义
+
+## V10.15.0 (2026-06-26)
+- ✨ 部署前代码差异对比 (GitHub Compare API)
+- 📜 部署操作日志面板
+- 🚀 /api/init_data 合并端点，首屏减少 HTTP 往返
+- ⚡ DOM 缓存 $() + 表格头部缓存
+- 🔒 ADMIN→secret_text, Cookie→__Host-前缀
+- 🐛 修复 Joey 批量部署变量名 u vs uuid 错误
+- 🔧 错误处理统一: 6处空catch→console.error + jsonError 统一
+- 🧹 代码质量: 消除重复函数声明、补全边界检查
+
 ## V10.14.1 (2026-06-26)
 - 🐛 修复 Joey 批量部署变量名错误：u 被误填为 uuid 导致 Worker 功能异常
 - 🔧 后端 uuidField 硬编码改为动态映射，消除模板特定分支
