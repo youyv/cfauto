@@ -4,7 +4,7 @@
 
 import { KV_KEYS, TEMPLATES, BINDING } from '../config/templates';
 import type { TemplateType } from '../config/templates';
-import { cf, getAuthHeaders } from '../lib/cloudflare-api';
+import { cf, getAuthHeaders, json } from '../lib/cloudflare-api';
 import { fetchGithubCode, applyTemplateTransform } from '../lib/github';
 import { uploadWorker, parseApiError } from '../lib/deploy-utils';
 import { getJSON, putJSON } from "../lib/kv-utils";
@@ -84,30 +84,15 @@ export async function handleFix1101(env: AppEnv, type: TemplateType) {
                 } catch (e) { steps.push("🌐 子域名: 跳过"); }
 
                 // Cloudflare API 删除是异步的，等待 2 秒确保删除完成再重建
-                await new Promise(r => setTimeout(r, 2000));
-
-                // Step 4: 重建 Worker + 恢复变量
-                const kvVars = await getJSON(env.CONFIG_KV, KV_KEYS.vars(type), []);
-                let deployCode = applyTemplateTransform(type, freshCode, kvVars, { echTokenEnabled: true });
-                const kvVarMap = new Map(kvVars.map((v: any) => [v.key, v.value]));
-
-                const restoredBindings = savedBindings.map((b: any) => {
-                    if (b.type === 'plain_text' || b.type === 'secret_text') {
-                        const kvVal = kvVarMap.get(b.name);
-                        const val = (kvVal !== undefined && kvVal !== '') ? kvVal : (b.text || '');
-                        return { name: b.name, type: 'plain_text', text: val };
-                    }
-                    if (b.type === 'kv_namespace') return { name: b.name, type: 'kv_namespace', namespace_id: b.namespace_id };
-                    return b;
-                });
-                for (const [key, value] of kvVarMap) {
-                    if (!restoredBindings.find((b: any) => b.name === key)) {
-                        restoredBindings.push({ name: key, type: 'plain_text', text: value || '' });
-                    }
+                
+                // 指数退避重试重建: 2s, 4s, 8s
+                let ok = false, uploadRes = new Response(null, { status: 500 });
+                for (let attempt = 0; attempt < 3; attempt++) {
+                    await new Promise(r => setTimeout(r, 2000 * Math.pow(2, attempt)));
+                    const result = await uploadWorker(acc, wName, deployCode, restoredBindings);
+                    if (result.ok) { ok = true; uploadRes = result.res; break; }
+                    uploadRes = result.res;
                 }
-                const restoredVarCount = restoredBindings.filter((b: any) => b.type === 'plain_text').length;
-
-                const { ok, res: uploadRes } = await uploadWorker(acc, wName, deployCode, restoredBindings);
 
                 if (ok) {
                     logItem.success = true;

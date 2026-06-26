@@ -15,7 +15,7 @@ async function init() {
 
         // 恢复 accounts
         accounts = d.accounts || [];
-        accounts.forEach(a => a.stats = a.stats || { total: 0, max: 100000 });
+        accounts.forEach(a => a.stats = a.stats || { total: 0, max: a.dailyLimit || 100000 });
 
         // 恢复 deployConfigs
         deployConfigs = d.deployConfigs || {};

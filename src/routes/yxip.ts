@@ -10,7 +10,14 @@ import type { AppEnv } from "../config/env";
 /** 提取并返回全球区域节点的基础数据 */
 export async function handleGetRegionsData() {
     try {
-        const response = await fetch("https://zip.cm.edu.kg/all.txt");
+        const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    let response: Response;
+    try {
+        response = await fetch("https://zip.cm.edu.kg/all.txt", { signal: controller.signal });
+    } finally {
+        clearTimeout(timeout);
+    }
         let text = await response.text();
         text = text.replace(/^\uFEFF/, '');
         const lines = text.split('\n');

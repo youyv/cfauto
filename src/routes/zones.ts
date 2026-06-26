@@ -160,22 +160,49 @@ export async function handleChangeSubdomain(cred: AccountCredentials, newSubdoma
             return json({ success: true, subdomain: data.result?.subdomain || newSubdomain });
         }
         const errMsg = data.errors?.[0]?.message || '修改失败';
-        // PUT 返回 "already has" 时，先删再建
+        // PUT 返回 "already has" 时，先保存旧值再删再建（含指数退避重试 + 失败恢复）
         if (errMsg.includes('already has')) {
+            // 保存当前子域名用于失败恢复
+            let oldSubdomain = '';
+            try {
+                const getRes = await fetch(cf.acctSubdomain(cred.accountId), { headers });
+                const getData = await getRes.json();
+                oldSubdomain = getData.result?.subdomain || '';
+            } catch (_) { /* best-effort */ }
+
             const delRes = await fetch(cf.acctSubdomain(cred.accountId), { method: 'DELETE', headers });
             if (!delRes.ok) {
                 return json({ success: false, msg: 'Cloudflare 不支持通过 API 修改已有子域名，请到 Dashboard → Workers & Pages → 设置中手动修改。' });
             }
-            res = await fetch(cf.acctSubdomain(cred.accountId), {
-                method: 'PUT',
-                headers,
-                body: JSON.stringify({ subdomain: newSubdomain })
-            });
-            data = await res.json();
-            if (data.success) {
+
+            // 指数退避重试 PUT（最多3次: 1s, 2s, 4s）
+            let putSuccess = false;
+            for (let attempt = 0; attempt < 3; attempt++) {
+                if (attempt > 0) await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt - 1)));
+                res = await fetch(cf.acctSubdomain(cred.accountId), {
+                    method: 'PUT',
+                    headers,
+                    body: JSON.stringify({ subdomain: newSubdomain })
+                });
+                data = await res.json();
+                if (data.success) { putSuccess = true; break; }
+            }
+
+            if (putSuccess) {
                 return json({ success: true, subdomain: data.result?.subdomain || newSubdomain });
             }
-            return json({ success: false, msg: '删除后重建子域名失败: ' + (data.errors?.[0]?.message || '未知错误') });
+
+            // 恢复旧子域名（尽最大努力）
+            if (oldSubdomain) {
+                try {
+                    await fetch(cf.acctSubdomain(cred.accountId), {
+                        method: 'PUT', headers,
+                        body: JSON.stringify({ subdomain: oldSubdomain })
+                    });
+                    return json({ success: false, msg: '新子域名设置失败，已恢复原子域名: ' + oldSubdomain + '。请稍后重试。' });
+                } catch (_) {}
+            }
+            return json({ success: false, msg: '子域名修改失败，且无法自动恢复。请到 Dashboard → Workers & Pages → 设置中手动设置。' });
         }
         return json({ success: false, msg: errMsg });
     } catch (e: any) { return jsonError(e.message); }

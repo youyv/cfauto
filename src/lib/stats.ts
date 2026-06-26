@@ -9,6 +9,7 @@ interface Account {
     accountId: string;
     email: string;
     globalKey: string;
+    dailyLimit?: number;
 }
 
 export interface StatResult {
@@ -34,12 +35,12 @@ export async function fetchInternalStats(accounts: Account[]): Promise<StatResul
             });
             const data: any = await res.json();
             // GraphQL 返回的错误信息（API Key 无权限等）
-            if (data.errors) return { alias: acc.alias, total: 0, max: 100000, error: data.errors[0]?.message || "GraphQL error" };
+            if (data.errors) return { alias: acc.alias, total: 0, max: acc.dailyLimit || 100000, error: data.errors[0]?.message || "GraphQL error" };
             const accountData = data.data?.viewer?.accounts?.[0];
-            if (!accountData) return { alias: acc.alias, total: 0, max: 100000, error: "无数据(检查 Account ID 是否正确)" };
+            if (!accountData) return { alias: acc.alias, total: 0, max: acc.dailyLimit || 100000, error: "无数据(检查 Account ID 是否正确)" };
             const workerReqs = accountData.workersInvocationsAdaptive?.reduce((a: number, b: any) => a + (b.sum.requests || 0), 0) || 0;
             const pagesReqs = accountData.pagesFunctionsInvocationsAdaptiveGroups?.reduce((a: number, b: any) => a + (b.sum.requests || 0), 0) || 0;
-            return { alias: acc.alias, total: workerReqs + pagesReqs, max: 100000 };
-        } catch (e: any) { return { alias: acc.alias, total: 0, max: 100000, error: e.message }; }
+            return { alias: acc.alias, total: workerReqs + pagesReqs, max: acc.dailyLimit || 100000 };
+        } catch (e: any) { return { alias: acc.alias, total: 0, max: acc.dailyLimit || 100000, error: e.message }; }
     }));
 }

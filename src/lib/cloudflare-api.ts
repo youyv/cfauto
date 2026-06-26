@@ -29,7 +29,7 @@ export function getAuthHeaders(email: string, key: string, upload = false) {
 export function jsonError(msg: string, status = 500) {
     return new Response(JSON.stringify({ success: false, msg }), {
         status,
-        headers: { "Content-Type": "application/json" }
+        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
     });
 }
 
@@ -37,6 +37,6 @@ export function jsonError(msg: string, status = 500) {
 export function json(data: unknown, status = 200) {
     return new Response(JSON.stringify(data), {
         status,
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
     });
 }

@@ -1,6 +1,29 @@
 // ===== 变量管理 =====
 
-function renderProxySelector(){ const c=document.getElementById('ech_proxy_selector_container'); let h='<select id="ech_proxy_select" onchange="applyEchProxy()" class="w-full text-xs border rounded p-1 mb-1"><option value="">-- Select ProxyIP --</option>'; ECH_PROXIES.forEach(g=>{ h+=`<optgroup label="${g.group}">`; g.list.forEach(i=>h+=`<option value="${i.split(' ')[0]}">${i}</option>`); h+='</optgroup>'; }); c.innerHTML=h+'</select>'; }
+function renderProxySelector(){
+  const c=document.getElementById('ech_proxy_selector_container');
+  c.innerHTML='';
+  const sel=document.createElement('select');
+  sel.id='ech_proxy_select';
+  sel.className='w-full text-xs border rounded p-1 mb-1';
+  sel.onchange=function(){ applyEchProxy(); };
+  const defOpt=document.createElement('option');
+  defOpt.value='';
+  defOpt.textContent='-- Select ProxyIP --';
+  sel.appendChild(defOpt);
+  ECH_PROXIES.forEach(function(g){
+    const grp=document.createElement('optgroup');
+    grp.label=g.group;
+    g.list.forEach(function(i){
+      const o=document.createElement('option');
+      o.value=i.split(' ')[0];
+      o.textContent=i;
+      grp.appendChild(o);
+    });
+    sel.appendChild(grp);
+  });
+  c.appendChild(sel);
+}
 function applyEchProxy(){ const v=document.getElementById('ech_proxy_select').value; if(v)addVarRow('ech','PROXYIP',v); }
 
 // 使用 DOM API 构建变量行，避免 innerHTML 的 XSS 风险

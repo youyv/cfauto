@@ -74,7 +74,8 @@ export default {
             return new Response(mainHtml(), { headers: { 'Content-Type': 'text/html;charset=UTF-8', 'Cache-Control': 'no-store, must-revalidate' } });
 
         } catch (err: any) {
-            return jsonError(err.message);
+            console.error('[Worker] Unhandled error:', err);
+            return jsonError('Internal server error', 500);
         }
     }
 };
@@ -92,29 +93,30 @@ function mainHtml() {
     );
     const ECH_PROXIES_JSON = JSON.stringify(ECH_PROXIES);
 
-    return `
-  <!DOCTYPE html>
-  <html lang="zh-CN">
-  <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="manifest" href="/manifest.json">
-    <title>Worker 智能中控 (${FRONTEND_VERSION})</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    <style>
-      ${FRONTEND_CSS}
-    </style>
-  </head>
-  <body class="bg-slate-100 p-2 md:p-4 min-h-screen text-slate-700">
-    <canvas id="starfield"></canvas>
-    ${FRONTEND_HTML}
-    <script>
-      const TEMPLATES = ${TEMPLATES_JSON};
-      const ECH_PROXIES = ${ECH_PROXIES_JSON};
-      ${FRONTEND_JS}
-    </script>
-  </body></html>`;
+const html = `
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="manifest" href="/manifest.json">
+  <title>Worker 智能中控 (${FRONTEND_VERSION})</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <style>
+    ${FRONTEND_CSS}
+  </style>
+</head>
+<body class="bg-slate-100 p-2 md:p-4 min-h-screen text-slate-700">
+  <canvas id="starfield"></canvas>
+  ${FRONTEND_HTML}
+  <script>
+    const TEMPLATES = ${TEMPLATES_JSON};
+    const ECH_PROXIES = ${ECH_PROXIES_JSON};
+    ${FRONTEND_JS}
+  </script>
+</body></html>`;
+  
     _htmlCache = html;
     return html;
 }

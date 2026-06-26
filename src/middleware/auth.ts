@@ -39,7 +39,8 @@ export async function requireCookie(request: Request, env: AppEnv): Promise<Resp
 
 /** CSRF 防护 — 多层校验：Sec-Fetch-* 头 + Origin */
 export function checkCsrf(request: Request, url: URL): Response | null {
-    if (request.method === 'POST') {
+    const WRITE_METHODS = ['POST', 'PUT', 'DELETE', 'PATCH'];
+    if (WRITE_METHODS.includes(request.method)) {
         const secSite = request.headers.get('Sec-Fetch-Site');
         if (secSite && secSite !== 'same-origin' && secSite !== 'none') return jsonError('CSRF rejected (Sec-Fetch-Site)', 403);
         const origin = request.headers.get('Origin');

@@ -10,14 +10,14 @@ import type { RouteHandler } from "./index";
 export function registerCrudRoutes(ROUTES: Map<string, RouteHandler>) {
 // --- KV CRUD 路由（直接内联） ---
 ROUTES.set('GET /api/accounts', async (_req, env) =>
-    new Response(await env.CONFIG_KV.get(KV_KEYS.ACCOUNTS) || '[]', { headers: { 'Content-Type': 'application/json' } }));
+    new Response(await env.CONFIG_KV.get(KV_KEYS.ACCOUNTS, {cacheTtl: 60}) || '[]', { headers: { 'Content-Type': 'application/json' } }));
 ROUTES.set('POST /api/accounts', async (req, env) => {
     await putJSON(env.CONFIG_KV, KV_KEYS.ACCOUNTS, await req.json());
     return json({ success: true });
 });
 ROUTES.set('GET /api/settings', async (req, env) => {
     const type = new URL(req.url).searchParams.get('type');
-    return new Response(await env.CONFIG_KV.get(KV_KEYS.vars(type || '')) || 'null', { headers: { 'Content-Type': 'application/json' } });
+    return new Response(await env.CONFIG_KV.get(KV_KEYS.vars(type || ''), {cacheTtl: 60}) || 'null', { headers: { 'Content-Type': 'application/json' } });
 });
 ROUTES.set('POST /api/settings', async (req, env) => {
     const type = new URL(req.url).searchParams.get('type');
@@ -28,11 +28,11 @@ ROUTES.set('GET /api/deploy_config', async (req, env) => {
     const type = new URL(req.url).searchParams.get('type');
     const key = KV_KEYS.deployConfig(type || '');
     const defaultCfg = { mode: 'latest', currentSha: null, deployTime: null };
-    return new Response(await env.CONFIG_KV.get(key) || JSON.stringify(defaultCfg), { headers: { 'Content-Type': 'application/json' } });
+    return new Response(await env.CONFIG_KV.get(key, {cacheTtl: 60}) || JSON.stringify(defaultCfg), { headers: { 'Content-Type': 'application/json' } });
 });
 ROUTES.set('GET /api/favorites', async (req, env) => {
     const type = new URL(req.url).searchParams.get('type');
-    return new Response(await env.CONFIG_KV.get(KV_KEYS.favorites(type || '')) || '[]', { headers: { 'Content-Type': 'application/json' } });
+    return new Response(await env.CONFIG_KV.get(KV_KEYS.favorites(type || ''), {cacheTtl: 60}) || '[]', { headers: { 'Content-Type': 'application/json' } });
 });
 ROUTES.set('POST /api/favorites', async (req, env) => {
     const type = new URL(req.url).searchParams.get('type');
@@ -45,7 +45,7 @@ ROUTES.set('POST /api/favorites', async (req, env) => {
     return json({ success: true, favorites: favs });
 });
 ROUTES.set('GET /api/auto_config', async (_req, env) =>
-    new Response(await env.CONFIG_KV.get(KV_KEYS.GLOBAL_CONFIG) || '{}', { headers: { 'Content-Type': 'application/json' } }));
+    new Response(await env.CONFIG_KV.get(KV_KEYS.GLOBAL_CONFIG, {cacheTtl: 60}) || '{}', { headers: { 'Content-Type': 'application/json' } }));
 ROUTES.set('POST /api/auto_config', async (req, env) => {
     await putJSON(env.CONFIG_KV, KV_KEYS.GLOBAL_CONFIG, await req.json());
     return json({ success: true });
@@ -89,7 +89,7 @@ ROUTES.set('GET /api/diag', async (_req, env) => {
 
 // --- 部署操作日志 ---
 ROUTES.set('GET /api/deploy_journal', async (_req, env) =>
-    new Response(await env.CONFIG_KV.get(KV_KEYS.DEPLOY_JOURNAL) || '[]', { headers: { 'Content-Type': 'application/json' } }));
+    new Response(await env.CONFIG_KV.get(KV_KEYS.DEPLOY_JOURNAL, {cacheTtl: 60}) || '[]', { headers: { 'Content-Type': 'application/json' } }));
 
 // --- 账号导入导出 ---
 ROUTES.set('GET /api/accounts/export', async (_req, env) => {
@@ -144,9 +144,12 @@ ROUTES.set('POST /api/restore', async (req, env) => {
 });
 
 // --- 初始化数据合并端点：单次请求替代多次 fetch ---
-ROUTES.set('GET /api/init_data', async (_req, env) => {
+ROUTES.set('GET /api/init_data', async (req, env) => {
     try {
-        const templateTypes = Object.keys(TEMPLATES);
+        const requestedTypes = new URL(req.url).searchParams.get('types');
+        const templateTypes = requestedTypes
+            ? requestedTypes.split(',').filter(t => TEMPLATES[t]).map(t => t.trim())
+            : Object.keys(TEMPLATES);
         const [accountsRaw, globalCfgRaw] = await Promise.all([
             env.CONFIG_KV.get(KV_KEYS.ACCOUNTS, {cacheTtl: 60}),
             env.CONFIG_KV.get(KV_KEYS.GLOBAL_CONFIG, {cacheTtl: 60})
