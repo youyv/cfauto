@@ -1,6 +1,6 @@
 /**
  * Worker 智能中控 — 前后端分离版 入口
- * V10.16.0
+ * ${FRONTEND_VERSION}
  */
 
 import { requireAccessCode, requireCookie, checkCsrf, generateAuthToken } from './middleware/auth';
@@ -8,7 +8,7 @@ import { jsonError, json } from './lib/cloudflare-api';
 import { getRoute } from './routes/index';
 import { handleCronJob } from './cron';
 import { TEMPLATES, ECH_PROXIES, MANIFEST } from './config/templates';
-import { FRONTEND_HTML, FRONTEND_CSS, FRONTEND_JS } from './frontend-bundle';
+import { FRONTEND_HTML, FRONTEND_CSS, FRONTEND_JS, FRONTEND_VERSION } from './frontend-bundle';
 import type { AppEnv } from "./config/env";
 
 export default {
@@ -99,7 +99,7 @@ function mainHtml() {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="manifest" href="/manifest.json">
-    <title>Worker 智能中控 (V10.16.0)</title>
+    <title>Worker 智能中控 (${FRONTEND_VERSION})</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
