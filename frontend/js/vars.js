@@ -51,15 +51,15 @@ function addVarRow(t,k,v,s){
   secChk.className='secret-chk';
   secChk.title='标记为Secret变量';
   secChk.onchange=function(){ this.parentElement.nextElementSibling.value=this.checked?'1':''; };
-  if(s) { secChk.checked=true; secHidden.value='1'; }
+  const secHidden=document.createElement('input');
+  secHidden.type='hidden';
+  secHidden.className='is-secret';
+  d.appendChild(secHidden);if(s) { secChk.checked=true; secHidden.value='1'; }
   secLabel.appendChild(secChk);
   secLabel.appendChild(document.createTextNode('\uD83D\uDD12'));
   d.appendChild(secLabel);
 
-  const secHidden=document.createElement('input');
-  secHidden.type='hidden';
-  secHidden.className='is-secret';
-  d.appendChild(secHidden);
+  
 
   if(t==='cmliu'&&(k==='PROXYIP'||k==='DOH')){
     const pool=k==='DOH'
