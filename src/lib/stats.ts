@@ -12,6 +12,14 @@ interface Account {
     dailyLimit?: number;
 }
 
+/** 根据 GraphQL 返回的 plan 推算每日配额上限 */
+function planToDailyLimit(plan: any): number {
+    const name = typeof plan === 'string' ? plan.toLowerCase() : (plan?.name || '').toLowerCase();
+    if (name.includes('free')) return 100000;
+    if (name.includes('pro') || name.includes('business') || name.includes('enterprise') || name.includes('standard')) return 10000000;
+    return 0; // unknown plan — fall through to default
+}
+
 export interface StatResult {
     alias: string;
     total: number;
@@ -24,6 +32,7 @@ export async function fetchInternalStats(accounts: Account[]): Promise<StatResul
     const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0));
     const query = `query getBillingMetrics($AccountID: String!, $filter: AccountWorkersInvocationsAdaptiveFilter_InputObject) {
          viewer { accounts(filter: {accountTag: $AccountID}) {
+             plan
              workersInvocationsAdaptive(limit: 10000, filter: $filter) { sum { requests } }
              pagesFunctionsInvocationsAdaptiveGroups(limit: 1000, filter: $filter) { sum { requests } }
          }}}`;
@@ -40,7 +49,8 @@ export async function fetchInternalStats(accounts: Account[]): Promise<StatResul
             if (!accountData) return { alias: acc.alias, total: 0, max: acc.dailyLimit || 100000, error: "无数据(检查 Account ID 是否正确)" };
             const workerReqs = accountData.workersInvocationsAdaptive?.reduce((a: number, b: any) => a + (b.sum.requests || 0), 0) || 0;
             const pagesReqs = accountData.pagesFunctionsInvocationsAdaptiveGroups?.reduce((a: number, b: any) => a + (b.sum.requests || 0), 0) || 0;
-            return { alias: acc.alias, total: workerReqs + pagesReqs, max: acc.dailyLimit || 100000 };
+            const planLimit = planToDailyLimit(accountData.plan);
+            return { alias: acc.alias, total: workerReqs + pagesReqs, max: acc.dailyLimit || planLimit || 100000 };
         } catch (e: any) { return { alias: acc.alias, total: 0, max: acc.dailyLimit || 100000, error: e.message }; }
     }));
 }
