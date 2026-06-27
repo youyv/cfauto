@@ -7,6 +7,7 @@ import { cf, getAuthHeaders } from '../lib/cloudflare-api';
 import { fetchGithubCode, applyTemplateTransform } from '../lib/github';
 import { uploadWorker, parseApiError } from '../lib/deploy-utils';
 import { getJSON, putJSON } from "../lib/kv-utils";
+import { validateRequired } from "../lib/validate";
 import type { AppEnv } from "../config/env";
 import { coreDeployLogic, DeployOptions } from '../lib/auto-update';
 
@@ -20,6 +21,9 @@ export async function handleManualDeploy(env: AppEnv, opts: DeployOptions) {
  * 批量部署 — 创建全新的 Worker（含 KV 命名空间创建/绑定）
  */
 export async function handleBatchDeploy(env: AppEnv, reqData: any) {
+    const validationError = validateRequired(reqData, ["template", "workerName", "targetAccounts"]);
+    if (validationError) return validationError;
+
     const { template, workerName, kvName, config, targetAccounts, disableWorkersDev, customDomainPrefix, enableKV, savedVars } = reqData;
     const allAccounts = await getJSON(env.CONFIG_KV, KV_KEYS.ACCOUNTS, []);
 

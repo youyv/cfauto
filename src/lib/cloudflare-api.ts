@@ -25,14 +25,17 @@ export function getAuthHeaders(email: string, key: string, upload = false) {
     return upload ? base : { ...base, "Content-Type": "application/json" };
 }
 
+/** 标准化错误码 — 便于前端区分错误类型 */
+export type ErrorCode = 'AUTH_FAILED' | 'KV_NOT_BOUND' | 'GITHUB_API_ERROR' | 'CF_API_ERROR' | 'VALIDATION_ERROR' | 'RATE_LIMITED';
+
 /** 统一 JSON 错误响应 */
-export function jsonError(msg: string, status = 500) {
-    return new Response(JSON.stringify({ success: false, msg }), {
+export function jsonError(msg: string, status = 500, code?: ErrorCode) {
+    const body = { success: false, msg, ...(code ? { code } : {}) };
+    return new Response(JSON.stringify(body), {
         status,
         headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
     });
 }
-
 /** 统一 JSON 成功响应 */
 export function json(data: unknown, statusOrInit?: number | ResponseInit): Response {
     if (typeof statusOrInit === 'number') {

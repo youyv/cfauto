@@ -9,6 +9,17 @@ const path = require('path');
 // 读取版本号（单一来源：package.json）
 const version = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf-8')).version;
 
+// === Pre-build verification ===
+console.log("Running pre-build verification...");
+try {
+    require("child_process").execSync("node verify.js", { stdio: "inherit", cwd: __dirname });
+    console.log("Pre-build verification passed");
+} catch (e) {
+    console.error("Verification failed - fix errors above before building");
+    process.exit(1);
+}
+
+
 // 读取前端文件（{{VERSION}} 占位符由构建时替换）
 const htmlContent = fs.readFileSync(path.join(__dirname, 'frontend/index.html'), 'utf-8')
     .replace('V{{VERSION}}', 'V' + version);

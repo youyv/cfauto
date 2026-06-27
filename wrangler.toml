@@ -54,6 +54,10 @@ compatibility_date = "2026-06-26"
 # ==========================================
 # 本地上传时先执行 npm run build 打包，无需手动 build.bat
 # 如果只用 deploy.bat (不走 wrangler 构建)，删除此段即可
+# 本地开发端口
+[dev]
+port = 7890
+
 [build]
 command = "npm run build"
 

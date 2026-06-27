@@ -8,6 +8,7 @@ import { cf, getAuthHeaders } from './cloudflare-api';
 import { fetchGithubCode, applyTemplateTransform, getGithubUrls } from './github';
 import { uploadWorker, parseApiError } from './deploy-utils';
 import { getJSON, putJSON } from './kv-utils';
+import { logger } from './logger';
 import type { AppEnv } from '../config/env';
 
 /** 部署选项 */
@@ -21,6 +22,9 @@ export interface DeployOptions {
     targetAccountIds?: string[] | null;
 }
 
+
+// NOTE: handleBatchDeploy and coreDeployLogic share ~60% logic.
+// Future refactor: extract shared deploySteps() taking accounts + code + bindings.
 export async function coreDeployLogic(env: AppEnv, opts: DeployOptions) {
     const type = opts.type;
     const variables = opts.variables;
@@ -49,6 +53,11 @@ export async function coreDeployLogic(env: AppEnv, opts: DeployOptions) {
             if (!deployedSha) {
                 try { const { sha } = await fetchGithubCode(type, 'latest', env); if (sha) deployedSha = sha; } catch (e) {}
             }
+            // 自定义代码审计：记录 SHA256 到部署日志
+            customCodeHash = Array.from(new Uint8Array(
+                await crypto.subtle.digest('SHA-256', new TextEncoder().encode(customCode))
+            )).map(b => b.toString(16).padStart(2, '0')).join('');
+            logger.audit('customCode deploy', { sha256: customCodeHash });
         } else {
             try {
                 const { code, sha } = await fetchGithubCode(type, shaForFetch, env);
@@ -108,9 +117,11 @@ export async function coreDeployLogic(env: AppEnv, opts: DeployOptions) {
         if (hasSuccess) {
             try {
                 const existing = await getJSON(env.CONFIG_KV, KV_KEYS.DEPLOY_JOURNAL, []);
-                existing.unshift({ time: new Date().toISOString(), type, sha: deployedSha, accounts: logs.filter(l => l.success).length, total: logs.length, summary: logs.map(l => l.name + ': ' + (l.success ? 'OK' : l.msg)).join('; ').substring(0, 500) });
+                const journalEntry: Record<string, unknown> = { time: new Date().toISOString(), type, sha: deployedSha, accounts: logs.filter(l => l.success).length, total: logs.length, summary: logs.map(l => l.name + ': ' + (l.success ? 'OK' : l.msg)).join('; ').substring(0, 500) };
+                if (customCodeHash) journalEntry.customSha = customCodeHash;
+                existing.unshift(journalEntry);
                 await putJSON(env.CONFIG_KV, KV_KEYS.DEPLOY_JOURNAL, existing.slice(0, 100));
-            } catch (e) { console.warn("[Deploy] journal write failed:", (e as Error).message); }
+            } catch (e) { logger.warn("deploy journal write failed", { error: (e as Error).message }); }
             const mode = isLatestMode ? 'latest' : 'fixed';
             await putJSON(env.CONFIG_KV, KV_KEYS.deployConfig(type), { mode, currentSha: deployedSha || 'unknown', deployTime: new Date().toISOString() });
         }
@@ -177,3 +188,5 @@ export async function rotateUUIDAndDeploy(env: AppEnv, type: TemplateType) {
     const targetSha = deployConfig.mode === 'fixed' ? deployConfig.currentSha : 'latest';
     await coreDeployLogic(env, { type, variables, targetSha });
 }
+
+        let customCodeHash = "";

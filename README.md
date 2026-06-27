@@ -1,9 +1,9 @@
-# 🚀 Cloudflare Worker 智能部署中控 (V10.15.0)
+# 🚀 Cloudflare Worker 智能部署中控 (V11.0.0)
 
 > 全部代码为 Claude Code 完成
 > 自行修改延伸功能
 
-> **版本状态**: V10.15.0 Stable
+> **版本状态**: V11.0.0 Stable — 架构升级版
 > **核心进化**: 内置 `yxip` 全球优选下发 + CMLiu KV直写 + Joey 双轨制并存(KV直接下发/全局架构变量覆写)。
 
 本项目是一个基于 Cloudflare Worker 构建的深度集成化部署管理平台。它不仅能管理多个 Cloudflare 账号，还支持一键批量部署、版本回滚、自动化流量熔断以及代码级的混淆加固，是管理大规模 Worker 节点的终极工具。
@@ -323,6 +323,33 @@ A: 因为中控需要执行创建 KV、绑定域名、管理 Worker 脚本等多
 ### Q: 修改子域名后 Worker 访问不了？
 
 A: 子域名修改后需要 **数分钟** 到 **数小时** 才能生效（DNS 传播延迟）。修改期间旧域名和新域名都可能不可用，请耐心等待。
+
+---
+
+## 🏗️ V11.0.0 架构升级
+
+### 新增模块
+| 模块 | 用途 |
+|------|------|
+|  | 结构化 JSON 日志 (info/warn/error/audit) |
+|  | 请求体校验 (validateRequired/validateNonEmpty) |
+|  | Vitest 单元测试 (npm test) |
+|  | TypeScript strict 类型检查 |
+
+### 新增命令
+
+
+### 改进清单
+- ✅ ErrorCode 错误分类枚举 (AUTH_FAILED/KV_NOT_BOUND/GITHUB_API_ERROR 等)
+- ✅ 速率限制可配置化 (LOGIN_RATE_LIMIT 常量)
+- ✅ 自定义代码 SHA-256 审计日志
+- ✅ 构建前自动验证 (verify.js 集成)
+- ✅ 请求体校验层 (validateRequired)
+- ✅ TypeScript 类型安全提升 (消除 any)
+- ✅ KV 缓存策略统一 (cacheTtl: 60)
+- ✅ 前端 innerHTML 安全修补
+- ✅ 开发端口固定 7890
+
 
 ---
 

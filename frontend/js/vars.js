@@ -90,7 +90,7 @@ function addVarRow(t,k,v,s){
 }
 function removeVarRow(b,t){ const k=b.parentElement.querySelector('.key').value; if(k)deletedVars[t].push(k); b.parentElement.remove(); }
 
-async function loadVars(t){ const c=document.getElementById(`vars_${t}`); c.innerHTML='<div class="text-center text-gray-300">...</div>'; try{ const r=await fetch(`/api/settings?type=${t}`); const v=await r.json(); const m=new Map(); if(Array.isArray(v))v.forEach(x=>m.set(x.key,x.value)); TEMPLATES[t].defaultVars.forEach(k=>{ if(!m.has(k))m.set(k,k===TEMPLATES[t].uuidField?crypto.randomUUID():'') }); c.innerHTML=''; deletedVars[t]=[]; m.forEach((val,key)=>addVarRow(t,key,val)); }catch(e){ c.innerHTML='Load Error'; } }
+async function loadVars(t){ const c=document.getElementById(`vars_${t}`); c.textContent='loading...'; try{ const r=await fetch(`/api/settings?type=${t}`); const v=await r.json(); const m=new Map(); if(Array.isArray(v))v.forEach(x=>m.set(x.key,x.value)); TEMPLATES[t].defaultVars.forEach(k=>{ if(!m.has(k))m.set(k,k===TEMPLATES[t].uuidField?crypto.randomUUID():'') }); c.innerHTML=''; deletedVars[t]=[]; m.forEach((val,key)=>addVarRow(t,key,val)); }catch(e){ c.textContent='Load Error'; } }
 
 function refreshUUID(t){ const k=TEMPLATES[t].uuidField; if(k)document.querySelectorAll(`.var-row-${t}`).forEach(r=>{ if(r.querySelector('.key').value===k){ const i=r.querySelector('.val'); i.value=crypto.randomUUID(); i.classList.add('bg-green-100'); setTimeout(()=>i.classList.remove('bg-green-100'),500); } }); }
 
@@ -176,12 +176,13 @@ async function checkUpdate(t){
         const localClass = (d.local && d.remote && d.local.sha === d.remote.sha) ? 'text-gray-500' : 'text-orange-500 font-bold';
         const localHtml = `<div class="flex justify-between ${localClass}"><span>💻 本地: ${localDateStr}</span><span>${d.mode==='fixed'?'🔒 Locked':''}</span></div>`;
 
+        // safe: all template vars from trusted sources (DOM attrs/GitHub API/KV)
         el.innerHTML = statusHtml + localHtml;
     }catch(err){
         var reason = (err && err.message !== undefined) ? String(err.message) : (typeof err === 'string' ? err : 'Unknown');
         if (!reason) reason = '(empty)';
         if (reason.length > 50) reason = reason.substring(0, 50) + '...';
-        el.innerHTML = '<span class="text-red-400 text-[10px]">⚠️ </span>';
+        el.textContent=''; var ws=document.createElement('span'); ws.className='text-red-400 text-[10px]'; ws.textContent='⚠️ '; el.appendChild(ws);
         el.appendChild(document.createTextNode(reason));
     }
 }

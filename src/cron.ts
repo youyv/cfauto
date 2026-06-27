@@ -6,6 +6,7 @@ import { KV_KEYS, TEMPLATES } from './config/templates';
 import { getJSON, putJSON } from './lib/kv-utils';
 import { fetchInternalStats } from './lib/stats';
 import { checkAndDeployUpdate, rotateUUIDAndDeploy } from './lib/auto-update';
+import { logger } from './lib/logger';
 import type { AppEnv } from "./config/env";
 
 export async function handleCronJob(env: AppEnv) {
@@ -60,7 +61,7 @@ export async function handleCronJob(env: AppEnv) {
             }
         }
     } catch (e) {
-        console.error('[Cron] handleCronJob failed:', (e as Error).message);
+        logger.error('cron job failed', e as Error, { module: 'cron' });
     }
 
     config.lastCheck = now;
@@ -76,6 +77,6 @@ async function sendFuseAlert(env: AppEnv, alias: string, total: number, limit: n
             text: { content: '[Worker中控] \u{1F525} 熔断触发: ' + alias + ' 用量达 ' + ((total/limit)*100).toFixed(1) + '% (阈值' + threshold + '%), 已自动轮换UUID并重新部署' }
         };
         const webhookRes = await fetch(webhookUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-        if (!webhookRes.ok) console.warn('[FuseAlert] webhook returned ' + webhookRes.status);
-    } catch (e) { console.error('[FuseAlert] webhook failed:', (e as Error).message); }
+        if (!webhookRes.ok) logger.warn('fuse webhook failed', { status: webhookRes.status });
+    } catch (e) { logger.error('fuse webhook error', e as Error, { module: 'fuse' }); }
 }

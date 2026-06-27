@@ -34,13 +34,16 @@ ROUTES.set('GET /api/favorites', async (req, env) => {
     const type = new URL(req.url).searchParams.get('type');
     return new Response(await env.CONFIG_KV.get(KV_KEYS.favorites(type || ''), {cacheTtl: 60}) || '[]', { headers: { 'Content-Type': 'application/json' } });
 });
+interface FavoriteItem { sha: string; alias?: string; type?: string; name?: string; date?: string; message?: string; }
+interface FavoriteAction { action: 'add' | 'remove'; item: FavoriteItem; }
+
 ROUTES.set('POST /api/favorites', async (req, env) => {
     const type = new URL(req.url).searchParams.get('type');
     const key = KV_KEYS.favorites(type || '');
     const { action, item } = await req.json() as any;
     let favs = await getJSON(env.CONFIG_KV, key, []);
-    if (action === 'add') { if (!favs.find((f: any) => f.sha === item.sha)) favs.unshift(item); }
-    else if (action === 'remove') { favs = favs.filter((f: any) => f.sha !== item.sha); }
+    if (action === 'add') { if (!favs.find((f: FavoriteItem) => f.sha === item.sha)) favs.unshift(item); }
+    else if (action === 'remove') { favs = favs.filter((f: FavoriteItem) => f.sha !== item.sha); }
     await putJSON(env.CONFIG_KV, key, favs);
     return json({ success: true, favorites: favs });
 });
@@ -162,7 +165,7 @@ ROUTES.set('GET /api/init_data', async (req, env) => {
         ]);
         const vars: Record<string, any> = {};
         const deployConfigs: Record<string, any> = {};
-        templateTypes.forEach((t, i) => {
+        templateTypes.forEach((t: string, i: number) => {
             try { vars[t] = JSON.parse(varsResults[i] || 'null'); } catch (e) { vars[t] = null; }
             try { deployConfigs[t] = JSON.parse(deployCfgResults[i] || 'null'); } catch (e) { deployConfigs[t] = null; }
         });
