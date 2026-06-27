@@ -6,8 +6,8 @@
 # ---------- 项目名称 ----------
 # 必须与 Cloudflare 上已创建的 Worker 名称一致
 # 例如在 CF 创建了名为 "manager" 的 Worker，这里就填 "manager"
-name = "改成你的Worker名"
-# account_id = "改成你的Account ID"     # 要部署到哪个 CF 账号 (取消注释并填写)
+name = "your-worker-name"
+# account_id = "your-account-id"     # 要部署到哪个 CF 账号 (取消注释并填写)
 
 # ---------- 入口文件 ----------
 # 由 build.bat 生成，无需修改
