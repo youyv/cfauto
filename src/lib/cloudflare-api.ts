@@ -34,9 +34,18 @@ export function jsonError(msg: string, status = 500) {
 }
 
 /** 统一 JSON 成功响应 */
-export function json(data: unknown, status = 200) {
-    return new Response(JSON.stringify(data), {
-        status,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-    });
+export function json(data: unknown, statusOrInit?: number | ResponseInit): Response {
+    if (typeof statusOrInit === 'number') {
+        return new Response(JSON.stringify(data), {
+            status: statusOrInit,
+            headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+        });
+    }
+    const init = statusOrInit || {} as ResponseInit;
+    const headers = new Headers(init.headers);
+    headers.set('Content-Type', 'application/json');
+    if (!headers.has('Access-Control-Allow-Origin')) {
+        headers.set('Access-Control-Allow-Origin', '*');
+    }
+    return new Response(JSON.stringify(data), { ...init, headers });
 }
