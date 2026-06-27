@@ -86,7 +86,7 @@ export async function handleFix1101(env: AppEnv, type: TemplateType) {
                 // Cloudflare API 删除是异步的，等待 2 秒确保删除完成再重建
                 
                 // 指数退避重试重建: 2s, 4s, 8s
-                let ok = false, uploadRes = new Response(null, { status: 500 });
+                let ok = false, uploadRes = new Response('', { status: 500 });
                 for (let attempt = 0; attempt < 3; attempt++) {
                     await new Promise(r => setTimeout(r, 2000 * Math.pow(2, attempt)));
                     const result = await uploadWorker(acc, wName, deployCode, restoredBindings);
