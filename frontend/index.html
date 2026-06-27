@@ -82,6 +82,10 @@
                     <input id="in_email" placeholder="Login Email" class="input-field w-1/2">
                     <input id="in_gkey" type="password" placeholder="Global API Key" class="input-field w-1/2">
                  </div>
+                 <div class="flex gap-2 items-center">
+                    <span class="text-xs text-gray-500 w-20">日配额上限:</span>
+                    <input id="in_daily_limit" placeholder="100000 (免费计划默认10万)" class="input-field flex-1">
+                 </div>
                  <div class="bg-purple-50 p-2 rounded border border-purple-100 flex gap-2 items-center">
                     <span class="text-purple-700 font-bold w-20">预设域名:</span>
                     <select id="in_zone_select" class="input-field w-full" onchange="updateZoneInfo()">

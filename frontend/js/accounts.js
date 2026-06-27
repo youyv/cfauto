@@ -92,7 +92,8 @@ async function saveAccount() {
         globalKey:$('in_gkey').value,
         defaultZoneName:$('in_zone_name').value,
         defaultZoneId:$('in_zone_id').value,
-        stats:(editingIndex>=0 && accounts[editingIndex]) ? (accounts[editingIndex].stats || {total:0,max:100000}) : {total:0,max:100000}
+        dailyLimit:parseInt($('in_daily_limit').value) || 0,
+        stats:(editingIndex>=0 && accounts[editingIndex]) ? (accounts[editingIndex].stats || {total:0,max:parseInt($('in_daily_limit').value)||100000}) : {total:0,max:parseInt($('in_daily_limit').value)||100000}
     };
     Object.keys(TEMPLATES).forEach(t=>o['workers_'+t]=$('in_workers_'+t).value.split(/,|，/).map(s=>s.trim()).filter(s=>s));
     if(editingIndex>=0)accounts[editingIndex]=o; else accounts.push(o);
@@ -107,6 +108,7 @@ function editAccount(i){
     $('in_id').value=a.accountId;
     $('in_email').value=a.email||"";
     $('in_gkey').value=a.globalKey||"";
+    $('in_daily_limit').value=a.dailyLimit||"";
     $('in_zone_name').value=a.defaultZoneName||"";
     $('in_zone_id').value=a.defaultZoneId||"";
 
