@@ -75,7 +75,7 @@ export default {
 
         } catch (err: any) {
             console.error('[Worker] Unhandled error:', err);
-            return jsonError('Internal server error', 500);
+            return jsonError(err.message || 'Unknown error', 500);
         }
     }
 };
