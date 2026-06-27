@@ -28,7 +28,7 @@ const jsFiles = [
     'dom.js', 'state.js', 'accounts.js', 'deploy.js', 'vars.js',
     'history.js', 'yxip.js', 'workbench.js', 'starfield.js'
 ];
-const jsContent = jsFiles
+const jsContent = '"use strict";\n\n' + jsFiles
     .map(f => fs.readFileSync(path.join(__dirname, 'frontend/js', f), 'utf-8'))
     .join('\n\n');
 

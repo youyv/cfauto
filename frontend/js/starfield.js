@@ -184,3 +184,8 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e)
 
 // 应用入口（init 定义于 state.js，在所有 JS 文件拼接后调用）
 init();
+
+// @exports
+window.initStarfield = initStarfield;
+window.toggleTheme = toggleTheme;
+window.applyTheme = applyTheme;

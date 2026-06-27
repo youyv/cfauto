@@ -71,7 +71,7 @@ export default {
 
             // [核心] 路由分发 — 按 METHOD + PATH 查找处理器（模块级缓存，仅构建一次）
             const handler = getRoute(request.method, url.pathname);
-            if (handler) return handler(request, env);
+            if (handler) return await handler(request, env);
 
             // [回退] 无匹配路由 → 返回管理面板 HTML
             return new Response(mainHtml(), { headers: { 'Content-Type': 'text/html;charset=UTF-8', 'Cache-Control': 'no-store, must-revalidate' } });

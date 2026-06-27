@@ -3,9 +3,9 @@
  */
 
 import { KV_KEYS, TEMPLATES, BINDING } from '../config/templates';
-import { cf, getAuthHeaders } from '../lib/cloudflare-api';
+import { cf, getAuthHeaders, json } from '../lib/cloudflare-api';
 import { fetchGithubCode, applyTemplateTransform } from '../lib/github';
-import { uploadWorker, parseApiError } from '../lib/deploy-utils';
+import { uploadWorker, parseApiError, mergeVariableBindings } from '../lib/deploy-utils';
 import { getJSON, putJSON } from "../lib/kv-utils";
 import { validateRequired } from "../lib/validate";
 import type { AppEnv } from "../config/env";
@@ -61,21 +61,17 @@ export async function handleBatchDeploy(env: AppEnv, reqData: any) {
                 }
             }
 
-            const bindings: Array<Record<string, unknown>> = [];
+            let bindings: Array<Record<string, unknown>> = [];
             if (enableKV && nsId) {
                 const bindingName = TEMPLATES[template].kvBindingName;
                 if (bindingName) bindings.push({ name: bindingName, type: "kv_namespace", namespace_id: nsId });
             }
 
             if (savedVars && Array.isArray(savedVars) && savedVars.length > 0) {
-                savedVars.forEach((v: any) => {
-                    if (v.key && !bindings.find(b => b.name === v.key)) {
-                        bindings.push({ name: v.key, type: "plain_text", text: v.value || "" });
-                    }
-                });
+                bindings = mergeVariableBindings(bindings, savedVars);
             } else {
                 const t = TEMPLATES[template];
-                if (config.admin) bindings.push({ name: "ADMIN", type: "plain_text", text: config.admin });
+                if (config.ADMIN) bindings.push({ name: "ADMIN", type: "plain_text", text: config.ADMIN });
                 if (t.uuidField && config[t.uuidField]) {
                     bindings.push({ name: t.uuidField, type: "plain_text", text: config[t.uuidField] });
                 }

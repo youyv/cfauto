@@ -94,7 +94,7 @@ export async function handleFix1101(env: AppEnv, type: TemplateType) {
                     if (b.type === 'plain_text' || b.type === 'secret_text') {
                         const kvVal = kvVarMap.get(b.name);
                         const val = (kvVal !== undefined && kvVal !== '') ? kvVal : (b.text || '');
-                        return { name: b.name, type: 'plain_text', text: val };
+                        return { name: b.name, type: b.type, text: val };
                     }
                     if (b.type === 'kv_namespace') return { name: b.name, type: 'kv_namespace', namespace_id: b.namespace_id };
                     return b;

@@ -11,7 +11,7 @@ import type { AppEnv } from "../config/env";
 export async function handleGetRegionsData() {
     try {
         const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
+        const timeout = setTimeout(() => controller.abort(), 8000);
     let response: Response;
     try {
         response = await fetch("https://zip.cm.edu.kg/all.txt", { signal: controller.signal });

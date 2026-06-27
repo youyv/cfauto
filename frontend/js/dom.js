@@ -8,3 +8,8 @@ function $(id) {
 // 清空缓存（动态添加/删除元素后调用）
 function $clear(id) { delete $cache[id]; }
 function $clearAll() { for (const k in $cache) delete $cache[k]; }
+
+// @exports
+window.$ = $;
+window.$clear = $clear;
+window.$clearAll = $clearAll;

@@ -6,7 +6,7 @@ import { KV_KEYS, TEMPLATES, BINDING } from '../config/templates';
 import type { TemplateType } from '../config/templates';
 import { cf, getAuthHeaders } from './cloudflare-api';
 import { fetchGithubCode, applyTemplateTransform, getGithubUrls } from './github';
-import { uploadWorker, parseApiError } from './deploy-utils';
+import { uploadWorker, parseApiError, mergeVariableBindings } from './deploy-utils';
 import { getJSON, putJSON } from './kv-utils';
 import { logger } from './logger';
 import type { AppEnv } from '../config/env';
@@ -34,6 +34,7 @@ export async function coreDeployLogic(env: AppEnv, opts: DeployOptions) {
     const echTokenEnabled = opts.ech?.tokenEnabled || false;
     const echDisableWorkersDev = opts.ech?.disableWorkersDev || false;
     const targetAccountIds = opts.targetAccountIds || null;
+    let customCodeHash = "";
 
     try {
         const isLatestMode = !targetSha || targetSha === 'latest';
@@ -77,20 +78,10 @@ export async function coreDeployLogic(env: AppEnv, opts: DeployOptions) {
                     const baseUrl = cf.workerScript(acc.accountId, wName);
                     const jsonHeaders = getAuthHeaders(acc.email, acc.globalKey);
                     const bindingsRes = await fetch(baseUrl + '/bindings', { headers: jsonHeaders });
-                    let currentBindings = bindingsRes.ok ? (await bindingsRes.json()).result : [];
-                    if (deletedVariables.length > 0) {
-                        currentBindings = currentBindings.filter((b: any) => !deletedVariables.includes(b.name));
-                    }
-                    if (variables) {
-                        variables.forEach(v => {
-                            if (v.value && v.value.trim() !== "") {
-                                const bindingType = (v as any).secret ? "secret_text" : "plain_text";
-                                const idx = currentBindings.findIndex((b: any) => b.name === v.key);
-                                if (idx !== -1) currentBindings[idx] = { name: v.key, type: bindingType, text: v.value };
-                                else currentBindings.push({ name: v.key, type: bindingType, text: v.value });
-                            }
-                        });
-                    }
+                    const rawBindings = bindingsRes.ok ? (await bindingsRes.json()).result : [];
+                    const currentBindings = variables
+                        ? mergeVariableBindings(rawBindings, variables, deletedVariables)
+                        : rawBindings;
                     const { ok, res: updateRes } = await uploadWorker(acc, wName, githubScriptContent, currentBindings);
                     if (ok) {
                         logItem.success = true;
@@ -168,7 +159,7 @@ export async function checkAndDeployUpdate(env: AppEnv, type: TemplateType) {
             const variables = await getJSON(env.CONFIG_KV, KV_KEYS.vars(type), []);
             await coreDeployLogic(env, { type, variables });
         }
-    } catch (e) { console.error('[Update Error] ' + type + ': ' + (e as Error).message); }
+    } catch (e) { logger.error('update check failed for ' + type, e as Error, { module: 'auto-update' }); }
 }
 
 export async function rotateUUIDAndDeploy(env: AppEnv, type: TemplateType) {
@@ -188,5 +179,3 @@ export async function rotateUUIDAndDeploy(env: AppEnv, type: TemplateType) {
     const targetSha = deployConfig.mode === 'fixed' ? deployConfig.currentSha : 'latest';
     await coreDeployLogic(env, { type, variables, targetSha });
 }
-
-        let customCodeHash = "";

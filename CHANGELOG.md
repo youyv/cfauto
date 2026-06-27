@@ -1,4 +1,24 @@
-# 版本更新日志 (Changelog)
+# 版本更新日志
+
+## V11.1.0 (2026-06-27)
+
+### 🐛 关键修复
+
+- **P0 并发安全**: `customCodeHash` 修复为函数局部变量，消除多请求数据竞态
+- **异常透明**: `index.ts` 路由分发加 `await`，异常不再被 CF 运行时吞为 HTML 500
+- **缺失导入**: `deploy.ts` 补回 `json` 导入 (ReferenceError)
+- **前端防御**: `logs.forEach` 前加 `Array.isArray` 检查，避免错误消息被 `forEach is not a function` 掩盖
+- **变量名统一**: 批量部署 `admin` → `ADMIN` (大小写一致)，消除重复变量
+- **fix1101 Secret 保留**: 1101 修复后不再丢失 `secret_text` 类型
+
+### 🛠️ 代码质量
+
+- **部署去重**: 提取 `mergeVariableBindings` 共享函数，消除 60% 部署逻辑重复
+- **前端加固**: 拼接 JS 加 `"use strict"` + 73 个 `window.xxx` 显式导出声明
+- **日志统一**: 自动更新错误改用 `logger.error` 替代 `console.error`
+- **缩进修正**: `yxip.ts` 缩进对齐
+
+ (Changelog)
 
 > 倒序排列，最新版本在前。
 

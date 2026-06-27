@@ -113,7 +113,7 @@ async function doBatchDeploy() {
        const config = {};
        const uuidVal = $('bd_uuid').value;
        if (t === 'cmliu') {
-            config.admin = $('bd_admin_pass').value;
+            config.ADMIN = $('bd_admin_pass').value;
             if (uuidVal) config.UUID = uuidVal;
        } else if (t === 'joey') {
             if (uuidVal) config.u = uuidVal;
@@ -152,7 +152,11 @@ async function doBatchDeploy() {
                  savedVars: savedVars
              })
          });
-        const logs = await res.json();
+        const result = await res.json();
+         if (!Array.isArray(result)) {
+             throw new Error(result.msg || result.error || 'Server error: ' + JSON.stringify(result));
+         }
+         const logs = result;
          logs.forEach(l => {
              if (l.success && l.msg.startsWith('✅')) wbLog(`✅ ${l.msg.replace('✅ ', '')}`, 'text-white');
              else wbLog(`[${l.success ? 'OK' : 'ERR'}] ${l.name}: ${l.msg}`, l.success ? '' : 'text-red-400');
@@ -252,3 +256,15 @@ function retryFailedBatch() {
     document.getElementById('batch_deploy_modal').classList.remove('hidden');
     _lastFailedBatch = null;
 }
+
+// @exports
+window.deploy = deploy;
+window.fix1101 = fix1101;
+window.openBatchDeployModal = openBatchDeployModal;
+window.doBatchDeploy = doBatchDeploy;
+window.toggleBatchInputs = toggleBatchInputs;
+window.toggleEchToken = toggleEchToken;
+window.promptChangeSubdomain = promptChangeSubdomain;
+window.previewDeploy = previewDeploy;
+window.showDeployJournal = showDeployJournal;
+window.retryFailedBatch = retryFailedBatch;

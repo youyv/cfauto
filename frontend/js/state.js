@@ -58,3 +58,11 @@ async function init() {
     loadStats();
     Object.keys(TEMPLATES).filter(t => TEMPLATES[t].uuidField).forEach(t => { checkDeployConfig(t); checkUpdate(t); });
 }
+
+// @exports
+window.accounts = accounts;
+window.editingIndex = editingIndex;
+window.deletedVars = deletedVars;
+window.deployConfigs = deployConfigs;
+window.currentHistoryType = currentHistoryType;
+window.init = init;

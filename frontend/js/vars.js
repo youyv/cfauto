@@ -188,3 +188,16 @@ async function checkUpdate(t){
 }
 
 async function checkDeployConfig(t){ try{ const r=await fetch('/api/deploy_config?type='+t); const c=await r.json(); deployConfigs[t]=c; const b=document.getElementById('badge_'+t); if(c.mode==='fixed'){ b.className='text-[9px] px-1.5 py-0.5 rounded text-white bg-orange-500 font-bold'; b.innerText='Locked'; }else{ b.className='text-[9px] px-1.5 py-0.5 rounded text-white bg-green-500'; b.innerText='Auto Update'; } }catch(e){ console.error('[checkDeployConfig]', t, e); } }
+
+// @exports
+window.renderProxySelector = renderProxySelector;
+window.applyEchProxy = applyEchProxy;
+window.addVarRow = addVarRow;
+window.removeVarRow = removeVarRow;
+window.loadVars = loadVars;
+window.refreshUUID = refreshUUID;
+window.checkUpdate = checkUpdate;
+window.checkDeployConfig = checkDeployConfig;
+window.selectSyncAccount = selectSyncAccount;
+window.doSync = doSync;
+window.previewDiff = previewDiff;

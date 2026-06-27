@@ -94,3 +94,10 @@ async function toggleFavorite(type,item,isRemove){
         refreshHistory();
     }
 }
+
+// @exports
+window.openVersionHistory = openVersionHistory;
+window.refreshHistory = refreshHistory;
+window.toggleFavorite = toggleFavorite;
+window.openFavoritesPanel = openFavoritesPanel;
+window.closeFavoritesPanel = closeFavoritesPanel;

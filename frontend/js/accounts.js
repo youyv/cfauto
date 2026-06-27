@@ -441,3 +441,28 @@ async function confirmDeleteWorker(alias, workerId, accIndex) {
 function updateAutoToggleLabel(){ const el=document.getElementById("auto_toggle_label"); const master=document.getElementById("auto_update_toggle"); if(el&&master){ const on=master.checked; el.textContent=on?"开":"关"; el.className=on?"text-[10px] font-bold text-green-600":"text-[10px] font-bold text-gray-400"; document.getElementById("auto_cmliu_toggle").checked=on; document.getElementById("auto_joey_toggle").checked=on; document.getElementById("auto_ech_toggle").checked=on; } }
 async function loadGlobalConfig(){ try{ const r=await fetch('/api/auto_config'); const c=await r.json(); document.getElementById('auto_update_toggle').checked=!!c.enabled; updateAutoToggleLabel(); document.getElementById('auto_update_interval').value=c.interval||30; document.getElementById('fuse_threshold').value=c.fuseThreshold||0; document.getElementById('fuse_webhook').value=c.fuseWebhook||''; document.getElementById('auto_cmliu_toggle').checked=c.enabled&&c.autoCmliu!==false; document.getElementById('auto_joey_toggle').checked=c.enabled&&c.autoJoey!==false; document.getElementById('auto_ech_toggle').checked=c.enabled&&c.autoEch!==false; }catch(e){ console.error('[loadGlobalConfig]', e); } }
 async function saveAutoConfig(){ await fetch('/api/auto_config',{method:'POST',body:JSON.stringify({enabled:document.getElementById('auto_update_toggle').checked, interval:document.getElementById('auto_update_interval').value, fuseThreshold:document.getElementById('fuse_threshold').value, fuseWebhook:document.getElementById('fuse_webhook').value, autoCmliu:document.getElementById('auto_cmliu_toggle').checked, autoJoey:document.getElementById('auto_joey_toggle').checked, autoEch:document.getElementById('auto_ech_toggle').checked})}); Swal.fire({icon:'success',title:'已保存',timer:1200,showConfirmButton:false}); setTimeout(()=>location.reload(),1300); }
+
+// @exports
+window.safeHtml = safeHtml;
+window.doSearch = doSearch;
+window.clearSearch = clearSearch;
+window.renderTable = renderTable;
+window.loadAccounts = loadAccounts;
+window.loadStats = loadStats;
+window.loadGlobalConfig = loadGlobalConfig;
+window.updateAutoToggleLabel = updateAutoToggleLabel;
+window.saveAccount = saveAccount;
+window.editAccount = editAccount;
+window.delAccount = delAccount;
+window.resetFormForAdd = resetFormForAdd;
+window.cancelEdit = cancelEdit;
+window.selectAllAccounts = selectAllAccounts;
+window.deselectAllAccounts = deselectAllAccounts;
+window.batchDeleteAccounts = batchDeleteAccounts;
+window.exportAccounts = exportAccounts;
+window.importAccounts = importAccounts;
+window.backupAll = backupAll;
+window.restoreBackup = restoreBackup;
+window.openAccountManage = openAccountManage;
+window.confirmDeleteWorker = confirmDeleteWorker;
+window.verifyAllCredentials = verifyAllCredentials;

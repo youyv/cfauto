@@ -37,3 +37,26 @@ export async function parseApiError(res: Response): Promise<string> {
         return "❌ HTTP " + res.status;
     }
 }
+
+/** 将变量列表合并到现有 bindings — 覆盖同名、新增、排除已删除项。
+ *  消除 coreDeployLogic 和 handleBatchDeploy 的重复逻辑。 */
+export function mergeVariableBindings(
+    currentBindings: Array<Record<string, unknown>>,
+    variables: Array<{ key: string; value: string; secret?: boolean }>,
+    deletedVariables: string[] = []
+): Array<Record<string, unknown>> {
+    let bindings = currentBindings
+        .filter((b: any) => !deletedVariables.includes(b.name));
+
+    for (const v of variables) {
+        if (!v.value || v.value.trim() === "") continue;
+        const bindingType = v.secret ? "secret_text" : "plain_text";
+        const idx = bindings.findIndex((b: any) => b.name === v.key);
+        if (idx !== -1) {
+            bindings[idx] = { name: v.key, type: bindingType, text: v.value };
+        } else {
+            bindings.push({ name: v.key, type: bindingType, text: v.value });
+        }
+    }
+    return bindings;
+}

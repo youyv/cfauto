@@ -177,7 +177,8 @@ async function doYxipDeploy() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ type: 'joey_var', rawContent })
             });
-            const logs = await res.json();
+            const result1 = await res.json();
+            const logs = Array.isArray(result1) ? result1 : [{ name: 'Error', success: false, msg: result1.msg || 'Unknown error' }];
             logs.forEach(l => {
                 wbLog(l.msg, l.success ? 'text-green-300' : 'text-red-500');
             });
@@ -218,8 +219,9 @@ async function doYxipDeploy() {
                         rawContent
                     })
                 });
-                const logs = await res.json();
-                logs.forEach(l => {
+                const result2 = await res.json();
+                const deployLogs = Array.isArray(result2) ? result2 : [{ name: 'Error', success: false, msg: result2.msg || 'Unknown error' }];
+                deployLogs.forEach(l => {
                     wbLog(l.msg, l.success ? 'text-green-300' : 'text-red-500');
                 });
             }
@@ -241,3 +243,14 @@ async function doYxipDeploy() {
         btnIcon.innerHTML = '⚡';
     }
 }
+
+// @exports
+window.showYxipModal = showYxipModal;
+window.toggleYxipAccountSelect = toggleYxipAccountSelect;
+window.fetchYxipRegions = fetchYxipRegions;
+window.doYxipSearch = doYxipSearch;
+window.clearYxipSearch = clearYxipSearch;
+window.yxipSelectAll = yxipSelectAll;
+window.yxipSelectNone = yxipSelectNone;
+window.toggleYxipRegion = toggleYxipRegion;
+window.doYxipDeploy = doYxipDeploy;

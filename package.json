@@ -1,6 +1,6 @@
 {
   "name": "worker-pro-refactor",
-  "version": "11.0.0",
+  "version": "11.1.0",
   "description": "Worker 智能中控 — 前后端分离版 (架构升级)",
   "scripts": {
     "build": "node build.js",

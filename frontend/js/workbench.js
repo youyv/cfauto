@@ -42,3 +42,8 @@ function wbLog(msg, colorClass) {
     });
     document.addEventListener('mouseup', () => { isDragging = false; });
 })();
+
+// @exports
+window.openWorkbench = openWorkbench;
+window.closeWorkbench = closeWorkbench;
+window.wbLog = wbLog;
