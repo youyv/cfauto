@@ -12,12 +12,10 @@ interface Account {
     dailyLimit?: number;
 }
 
-/** 根据 GraphQL 返回的 plan 推算每日配额上限 */
-function planToDailyLimit(plan: any): number {
-    const name = typeof plan === 'string' ? plan.toLowerCase() : (plan?.name || '').toLowerCase();
-    if (name.includes('free')) return 100000;
-    if (name.includes('pro') || name.includes('business') || name.includes('enterprise') || name.includes('standard')) return 10000000;
-    return 0; // unknown plan — fall through to default
+/** 根据当日实际用量推算每日配额上限：超过10万必然不是免费计划 */
+function guessDailyLimit(total: number): number {
+    if (total > 100000) return 10000000; // paid plan: 每天可能达千万级
+    return 100000;                       // free plan: 硬限制 100K/天
 }
 
 export interface StatResult {
@@ -48,7 +46,8 @@ export async function fetchInternalStats(accounts: Account[]): Promise<StatResul
             if (!accountData) return { alias: acc.alias, total: 0, max: acc.dailyLimit || 100000, error: "无数据(检查 Account ID 是否正确)" };
             const workerReqs = accountData.workersInvocationsAdaptive?.reduce((a: number, b: any) => a + (b.sum.requests || 0), 0) || 0;
             const pagesReqs = accountData.pagesFunctionsInvocationsAdaptiveGroups?.reduce((a: number, b: any) => a + (b.sum.requests || 0), 0) || 0;
-            return { alias: acc.alias, total: workerReqs + pagesReqs, max: acc.dailyLimit || 100000 };
+            const total = workerReqs + pagesReqs;
+            return { alias: acc.alias, total, max: acc.dailyLimit || guessDailyLimit(total) };
         } catch (e: any) { return { alias: acc.alias, total: 0, max: acc.dailyLimit || 100000, error: e.message }; }
     }));
 }
