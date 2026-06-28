@@ -2,7 +2,7 @@
  * 用量统计 — Cloudflare GraphQL 查询
  */
 
-import { cf, getAuthHeaders } from './cloudflare-api';
+import { cf, getAuthHeaders, fetchWithTimeout } from './cloudflare-api';
 
 interface Account {
     alias: string;
@@ -35,7 +35,7 @@ export async function fetchInternalStats(accounts: Account[]): Promise<StatResul
          }}}`;
     return await Promise.all(accounts.map(async (acc) => {
         try {
-            const res = await fetch(cf.graphql(), {
+            const res = await fetchWithTimeout(cf.graphql(), {
                 method: "POST", headers: getAuthHeaders(acc.email, acc.globalKey),
                 body: JSON.stringify({ query: query, variables: { AccountID: acc.accountId, filter: { datetime_geq: todayStart.toISOString(), datetime_leq: now.toISOString() } } })
             });

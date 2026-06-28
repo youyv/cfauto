@@ -3,6 +3,7 @@
  */
 
 import { TEMPLATES } from '../config/templates';
+import { fetchWithTimeout } from './cloudflare-api';
 import type { TemplateType } from '../config/templates';
 import type { AppEnv } from "../config/env";
 
@@ -21,7 +22,7 @@ export async function fetchGithubCode(type: TemplateType, targetSha: string | nu
     const isLatest = !targetSha || targetSha === 'latest';
     const { scriptUrl, apiUrl } = getGithubUrls(type, isLatest ? null : targetSha);
     
-    const codeRes = await fetch(scriptUrl + `?t=${Date.now()}`);
+    const codeRes = await fetchWithTimeout(scriptUrl + `?t=${Date.now()}`);
     if (!codeRes.ok) throw new Error(`代码下载失败: ${codeRes.status}`);
     const code = await codeRes.text();
     
@@ -30,7 +31,7 @@ export async function fetchGithubCode(type: TemplateType, targetSha: string | nu
         const headers: Record<string, string> = { "User-Agent": "CF-Worker" };
         if (env.GITHUB_TOKEN) headers["Authorization"] = `token ${env.GITHUB_TOKEN}`;
         try {
-            const apiRes = await fetch(apiUrl + `?sha=${TEMPLATES[type].ghBranch}&per_page=1`, { headers });
+            const apiRes = await fetchWithTimeout(apiUrl + `?sha=${TEMPLATES[type].ghBranch}&per_page=1`, { headers });
             if (apiRes.ok) sha = (await apiRes.json())[0].sha;
         } catch (e) { console.warn('[GitHub] SHA fetch failed:', (e as Error).message); }
     }

@@ -8,7 +8,10 @@ import { cf, getAuthHeaders } from './cloudflare-api';
 import { fetchGithubCode, applyTemplateTransform, getGithubUrls } from './github';
 import { uploadWorker, parseApiError, mergeVariableBindings } from './deploy-utils';
 import { getJSON, putJSON } from './kv-utils';
+import { readAccounts } from './account-store';
 import { logger } from './logger';
+import { fetchWithTimeout } from './cloudflare-api';
+import type { DeployLogEntry, JournalEntry, DeployConfig } from './types';
 import type { AppEnv } from '../config/env';
 
 /** 部署选项 */
@@ -40,7 +43,7 @@ export async function coreDeployLogic(env: AppEnv, opts: DeployOptions) {
         const isLatestMode = !targetSha || targetSha === 'latest';
         const shaForFetch = isLatestMode ? null : targetSha;
 
-        let accounts = await getJSON(env.CONFIG_KV, KV_KEYS.ACCOUNTS, []);
+        let accounts = await readAccounts(env);
         if (targetAccountIds && targetAccountIds.length > 0) {
             accounts = accounts.filter((a: any) => targetAccountIds.includes(a.accountId));
         }
@@ -69,7 +72,7 @@ export async function coreDeployLogic(env: AppEnv, opts: DeployOptions) {
 
         githubScriptContent = applyTemplateTransform(type, githubScriptContent, variables, { echTokenEnabled });
 
-        const logs: Array<{ name: string; success: boolean; msg: string }> = [];
+        const logs: DeployLogEntry[] = [];
         for (const acc of accounts) {
             const targetWorkers = acc['workers_' + type] || [];
             for (const wName of targetWorkers) {
@@ -108,13 +111,14 @@ export async function coreDeployLogic(env: AppEnv, opts: DeployOptions) {
         if (hasSuccess) {
             try {
                 const existing = await getJSON(env.CONFIG_KV, KV_KEYS.DEPLOY_JOURNAL, []);
-                const journalEntry: Record<string, unknown> = { time: new Date().toISOString(), type, sha: deployedSha, accounts: logs.filter(l => l.success).length, total: logs.length, summary: logs.map(l => l.name + ': ' + (l.success ? 'OK' : l.msg)).join('; ').substring(0, 500) };
+                const journalEntry: JournalEntry & Record<string, unknown> = { time: new Date().toISOString(), type, sha: deployedSha, accounts: logs.filter(l => l.success).length, total: logs.length, summary: logs.map(l => l.name + ': ' + (l.success ? 'OK' : l.msg)).join('; ').substring(0, 500) };
                 if (customCodeHash) journalEntry.customSha = customCodeHash;
                 existing.unshift(journalEntry);
                 await putJSON(env.CONFIG_KV, KV_KEYS.DEPLOY_JOURNAL, existing.slice(0, 100));
             } catch (e) { logger.warn("deploy journal write failed", { error: (e as Error).message }); }
             const mode = isLatestMode ? 'latest' : 'fixed';
-            await putJSON(env.CONFIG_KV, KV_KEYS.deployConfig(type), { mode, currentSha: deployedSha || 'unknown', deployTime: new Date().toISOString() });
+            const dp: DeployConfig = { mode, currentSha: deployedSha || 'unknown', deployTime: new Date().toISOString() };
+            await putJSON(env.CONFIG_KV, KV_KEYS.deployConfig(type), dp);
         }
         return logs;
     } catch (e: any) { return [{ name: "系统错误", success: false, msg: e.message }]; }
@@ -123,7 +127,7 @@ export async function coreDeployLogic(env: AppEnv, opts: DeployOptions) {
 export async function fetchGithubVersion(env: AppEnv, type: TemplateType): Promise<{ localSha: string | null; localTime: string | null; remoteSha: string; remoteDate: string; remoteMsg: string; mode: string }> {
     const [deployConfig, accounts] = await Promise.all([
         getJSON(env.CONFIG_KV, KV_KEYS.deployConfig(type), { mode: 'latest' }),
-        getJSON(env.CONFIG_KV, KV_KEYS.ACCOUNTS, []),
+        readAccounts(env),
     ]);
     const hasDeployed = accounts.some((a: any) => a['workers_' + type] && a['workers_' + type].length > 0);
     if (!hasDeployed && deployConfig.currentSha) {
@@ -135,7 +139,7 @@ export async function fetchGithubVersion(env: AppEnv, type: TemplateType): Promi
     const { apiUrl, branch } = getGithubUrls(type);
     const headers: Record<string, string> = { 'User-Agent': 'Cloudflare-Worker-Manager' };
     if (env.GITHUB_TOKEN) headers['Authorization'] = 'token ' + env.GITHUB_TOKEN;
-    const ghRes = await fetch(apiUrl + '?sha=' + branch + '&per_page=1&t=' + Date.now(), { headers });
+    const ghRes = await fetchWithTimeout(apiUrl + '?sha=' + branch + '&per_page=1&t=' + Date.now(), { headers });
     if (!ghRes.ok) throw new Error('GitHub API Error: ' + ghRes.status);
     const ghData: any = await ghRes.json();
     const latestCommit = Array.isArray(ghData) ? ghData[0] : ghData;

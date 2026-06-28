@@ -7,9 +7,11 @@ import { cf, getAuthHeaders, json } from '../lib/cloudflare-api';
 import { fetchGithubCode, applyTemplateTransform } from '../lib/github';
 import { uploadWorker, parseApiError, mergeVariableBindings } from '../lib/deploy-utils';
 import { getJSON, putJSON } from "../lib/kv-utils";
+import { readAccounts, writeAccounts } from "../lib/account-store";
 import { validateRequired } from "../lib/validate";
 import type { AppEnv } from "../config/env";
 import { coreDeployLogic, DeployOptions } from '../lib/auto-update';
+import type { BatchDeployRequest, DeployLogEntry } from '../lib/types';
 
 /** 手动部署 — HTTP handler，调用核心部署逻辑 */
 export async function handleManualDeploy(env: AppEnv, opts: DeployOptions) {
@@ -20,14 +22,18 @@ export async function handleManualDeploy(env: AppEnv, opts: DeployOptions) {
 /**
  * 批量部署 — 创建全新的 Worker（含 KV 命名空间创建/绑定）
  */
-export async function handleBatchDeploy(env: AppEnv, reqData: any) {
+export async function handleBatchDeploy(env: AppEnv, reqData: BatchDeployRequest) {
     const validationError = validateRequired(reqData, ["template", "workerName", "targetAccounts"]);
     if (validationError) return validationError;
 
     const { template, workerName, kvName, config, targetAccounts, disableWorkersDev, customDomainPrefix, enableKV, savedVars } = reqData;
-    const allAccounts = await getJSON(env.CONFIG_KV, KV_KEYS.ACCOUNTS, []);
+    const allAccounts = await readAccounts(env);
 
     const accountsToDeploy = allAccounts.filter((a: any) => targetAccounts.includes(a.alias));
+    // Decrypt API keys for Cloudflare API calls
+    await Promise.all(accountsToDeploy.map(async (a: any) => {
+        if (a.globalKey) a.globalKey = await decryptKey(env, a.globalKey);
+    }));
     if (accountsToDeploy.length === 0) return json([{ name: "错误", success: false, msg: "未选择有效账号" }]);
 
     let scriptContent = "";
@@ -38,7 +44,7 @@ export async function handleBatchDeploy(env: AppEnv, reqData: any) {
         return json([{ name: "网络错误", success: false, msg: e.message }]);
     }
 
-    const logs: Array<{ name: string; success: boolean; msg: string }> = [];
+    const logs: DeployLogEntry[] = [];
     let updatedAccounts = false;
 
     for (const acc of accountsToDeploy) {
@@ -128,7 +134,7 @@ export async function handleBatchDeploy(env: AppEnv, reqData: any) {
             const updated = accountsToDeploy.find((u: any) => u.alias === a.alias);
             return updated ? updated : a;
         });
-        await putJSON(env.CONFIG_KV, KV_KEYS.ACCOUNTS, finalAccounts);
+        await writeAccounts(env, finalAccounts);
     }
     return json(logs);
 }

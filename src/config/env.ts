@@ -3,6 +3,8 @@ export interface AppEnv {
     CONFIG_KV: KVNamespace;
     ACCESS_CODE?: string;
     GITHUB_TOKEN?: string;
+    /** 可选：独立数据加密密钥，设置后改 ACCESS_CODE 不影响已加密数据 */
+    ENCRYPTION_SECRET?: string;
 }
 
 /** Cloudflare KV Namespace 最小接口 */

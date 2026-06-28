@@ -4,6 +4,8 @@
 
 import { KV_KEYS, TEMPLATES } from './config/templates';
 import { getJSON, putJSON } from './lib/kv-utils';
+import { readAccounts } from './lib/account-store';
+import { decryptKey } from './lib/crypto-utils';
 import { fetchInternalStats } from './lib/stats';
 import { checkAndDeployUpdate, rotateUUIDAndDeploy } from './lib/auto-update';
 import { logger } from './lib/logger';
@@ -17,18 +19,26 @@ export async function handleCronJob(env: AppEnv) {
 
     const now = Date.now();
     const lastCheck = config.lastCheck || 0;
-    const intervalMs = (parseInt(config.interval) || 30) * 60 * 1000;
+    const intervalMs = (parseInt(String(config.interval), 10) || 30) * 60 * 1000;
 
     if (now - lastCheck <= intervalMs) return;
 
-    const accounts = await getJSON(env.CONFIG_KV, KV_KEYS.ACCOUNTS, []);
+    const accounts = await readAccounts(env);
     if (accounts.length === 0) return;
 
     try {
+        await Promise.all(accounts.map(async (a: any) => { if (a.globalKey) a.globalKey = await decryptKey(env, a.globalKey); }));
         const statsData = await fetchInternalStats(accounts);
+        const allErrored = statsData.length > 0 && statsData.every(s => s.error);
+        if (allErrored) {
+            logger.warn('cron: all accounts stats errored, skipping this cycle', { count: statsData.length });
+            config.lastCheck = now;
+            await putJSON(env.CONFIG_KV, GLOBAL_CONFIG_KEY, config);
+            return;
+        }
         let actionTaken = false;
 
-        const fuseThreshold = parseInt(config.fuseThreshold || 0);
+        const fuseThreshold = parseInt(String(config.fuseThreshold || 0), 10);
         if (fuseThreshold > 0) {
             for (const acc of accounts) {
                 const stat = statsData.find(s => s.alias === acc.alias);

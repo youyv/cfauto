@@ -1,5 +1,65 @@
 # 版本更新日志
 
+## V11.3.0 (2026-06-28)
+
+### 🔒 加密层进化
+- **密钥版本化**: v1: 版本前缀，支持多版本共存 + 兼容存量无前缀密文
+- **ENCRYPTION_SECRET**: 独立加密密钥，改 ACCESS_CODE 不影响已加密数据
+- **CryptoKey 缓存**: WeakMap 缓存，9 账号场景 9 次 SHA-256 → 1 次
+- **decryptKey 日志**: 解密失败时写 warn 日志，可观测密钥变更问题
+- **KV cacheTtl**: readAccounts 30s 缓存，减少重复 KV 读取
+
+### 🛡️ 安全修复
+- **yxip.ts 凭证伪造**: API 调用强制使用服务端存储的凭证，拒绝客户端传入
+- **登录限速改进**: CF-Connecting-IP 回退到 X-Forwarded-For
+- **diag 信息泄露**: 移除 __kv_keys 暴露
+
+### 🐛 Bug 修复
+- **import 双重加密**: 导入已加密数据→writeAccounts 再加密→数据损坏 → 添加 decrypt→encrypt 标准化
+- **重复 decryptKey**: deploy.ts/cron.ts/yxip.ts 移除 readAccounts 之后的冗余解密
+- **fix1101 N+1 KV**: kvVars 从内层循环移到外层，5账号×3Worker 场景 15x→1x
+- **fix1101 死代码**: 移除未使用的 ACCOUNTS_KEY
+- **settings 返回值**: null→[]，前端 JSON.parse 更安全
+
+### ⚡ 性能优化
+- **verify_credentials 并行化**: 串行 for→Promise.all，9 账号延迟降低 8x
+- **handleGetCode 加 Token**: 添加 GITHUB_TOKEN 认证头 + fetchWithTimeout
+- **前端 init_data**: 批量加载，10+ 请求合并为 1 个
+
+### 🧹 代码清理
+- safeJson 去重到 cloudflare-api.ts（原 3 处重复）
+- 4 处未使用 import 删除
+- index.ts 登录处理缩进修复
+
+
+---
+
+## V11.2.0 (2026-06-28)
+
+### 🔒 安全加固
+- **API Key AES-256-GCM 加密存储**: globalKey 密文存入 KV，仅 ACCESS_CODE 可解密
+- **统一数据访问层 account-store**: readAccounts/writeAccounts 自动加解密，杜绝遗漏
+- **XSS 防护**: safeHtml/safeJsStr 转义 Zone 名称和 onclick 属性
+- **JSON 异常处理**: 所有 POST 端点使用 safeJson()，畸形 JSON 返回 400
+
+### 🐛 修复 (本轮 20+ 项)
+- 9 处密钥解密遗漏 → 统一 readAccounts 自动解密
+- 12 处 request.json() 无异常处理 → safeJson()
+- fix1101 失败时 Worker 永久删除 → KV 恢复快照
+- 定时任务全部 stats 错误仍消耗 API → 提前退出
+- parseInt 无 radix → parseInt(x,10)
+- HTTP 调用无超时 → fetchWithTimeout()
+- 前端 JS 语法错误 → 修复换行符
+- 空列表工具栏隐藏 → 始终渲染
+
+### 🏗️ 架构
+- shared types.ts (8 interfaces)
+- migrate_encrypt_keys 端点 + UI 按钮
+- 导入导出加密一致性
+
+
+---
+
 ## V11.1.0 (2026-06-27)
 
 ### 🐛 关键修复

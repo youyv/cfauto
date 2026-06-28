@@ -19,6 +19,19 @@ export const cf = {
     graphql:        ()                               => `${CF_API}/graphql`,
 };
 
+
+/** 带超时的 fetch 封装 — 默认 15s，防止挂起耗尽 Worker CPU 预算 */
+export async function fetchWithTimeout(url: string, init?: RequestInit, timeoutMs = 15000): Promise<Response> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        const res = await fetch(url, { ...init, signal: controller.signal });
+        return res;
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
 /** 获取 CF API 认证头，upload=true 时不含 Content-Type（由 FormData 自动设置） */
 export function getAuthHeaders(email: string, key: string, upload = false) {
     const base = { "X-Auth-Email": email, "X-Auth-Key": key };
@@ -27,6 +40,12 @@ export function getAuthHeaders(email: string, key: string, upload = false) {
 
 /** 标准化错误码 — 便于前端区分错误类型 */
 export type ErrorCode = 'AUTH_FAILED' | 'KV_NOT_BOUND' | 'GITHUB_API_ERROR' | 'CF_API_ERROR' | 'VALIDATION_ERROR' | 'RATE_LIMITED';
+
+/** 安全解析 JSON */
+export async function safeJson(req: Request): Promise<any> {
+    try { return await req.json(); }
+    catch { throw new Response(JSON.stringify({ success: false, msg: 'Invalid JSON' }), { status: 400, headers: { 'Content-Type': 'application/json' } }); }
+}
 
 /** 统一 JSON 错误响应 */
 export function jsonError(msg: string, status = 500, code?: ErrorCode) {

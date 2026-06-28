@@ -158,7 +158,7 @@ async function doBatchDeploy() {
          }
          const logs = result;
          logs.forEach(l => {
-             if (l.success && l.msg.startsWith('✅')) wbLog(`✅ ${l.msg.replace('✅ ', '')}`, 'text-white');
+             if (l.success && l.msg && l.msg.startsWith('✅')) wbLog(`✅ ${l.msg.replace('✅ ', '')}`, 'text-white');
              else wbLog(`[${l.success ? 'OK' : 'ERR'}] ${l.name}: ${l.msg}`, l.success ? '' : 'text-red-400');
          });
 

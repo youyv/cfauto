@@ -4,7 +4,7 @@
  */
 
 import { requireAccessCode, requireCookie, checkCsrf, generateAuthToken } from './middleware/auth';
-import { jsonError, json } from './lib/cloudflare-api';
+import { jsonError, json, safeJson } from './lib/cloudflare-api';
 import { getRoute } from './routes/index';
 import { handleCronJob } from './cron';
 import { TEMPLATES, ECH_PROXIES, MANIFEST } from './config/templates';
@@ -38,19 +38,19 @@ export default {
             // [公开] 登录接口 — 验证 ACCESS_CODE + 速率限制（5次/5分钟/IP）
             if (url.pathname === '/api/login' && request.method === 'POST') {
                 // 速率限制：基于 IP 最多 5 次/5分钟
-                const clientIp = request.headers.get('CF-Connecting-IP') || 'unknown';
+                const clientIp = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For')?.split(',')[0]?.trim() || 'unknown';
                 const rateKey = 'RATE_LIMIT_' + clientIp;
                             // 登录速率限制配置
             const LOGIN_RATE_LIMIT = { MAX_ATTEMPTS: 5, WINDOW_SECONDS: 300 };
 
             const attemptStr = await env.CONFIG_KV.get(rateKey);
-                const attempts = attemptStr ? parseInt(attemptStr) : 0;
+                const attempts = attemptStr ? parseInt(attemptStr, 10) : 0;
                 if (attempts >= LOGIN_RATE_LIMIT.MAX_ATTEMPTS) {
                     return jsonError('登录尝试过于频繁，请 5 分钟后再试', 429);
                 }
                 await env.CONFIG_KV.put(rateKey, String(attempts + 1), { expirationTtl: LOGIN_RATE_LIMIT.WINDOW_SECONDS });
 
-                const body = await request.json() as Record<string, unknown>;
+                const body = await safeJson(request);
                 const correctCode = env.ACCESS_CODE;
                 if (body.code === correctCode) {
                     const token = await generateAuthToken(correctCode!);

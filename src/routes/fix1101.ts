@@ -4,15 +4,16 @@
 
 import { KV_KEYS, TEMPLATES, BINDING } from '../config/templates';
 import type { TemplateType } from '../config/templates';
-import { cf, getAuthHeaders, json } from '../lib/cloudflare-api';
+import { cf, getAuthHeaders, json, fetchWithTimeout } from '../lib/cloudflare-api';
 import { fetchGithubCode, applyTemplateTransform } from '../lib/github';
 import { uploadWorker, parseApiError } from '../lib/deploy-utils';
 import { getJSON, putJSON } from "../lib/kv-utils";
+import { readAccounts } from "../lib/account-store";
+import { decryptKey } from "../lib/crypto-utils";
 import type { AppEnv } from "../config/env";
 
 export async function handleFix1101(env: AppEnv, type: TemplateType) {
-    const ACCOUNTS_KEY = KV_KEYS.ACCOUNTS;
-    const accounts = await getJSON(env.CONFIG_KV, ACCOUNTS_KEY, []);
+    const accounts = await readAccounts(env);
     if (accounts.length === 0) return json([{ name: "提示", success: false, msg: "无账号" }]);
 
     const logs: Array<{ name: string; success: boolean; msg: string }> = [];
@@ -26,6 +27,7 @@ export async function handleFix1101(env: AppEnv, type: TemplateType) {
         return json([{ name: "系统", success: false, msg: `代码下载失败: ${e.message}` }]);
     }
 
+    const kvVars = await getJSON(env.CONFIG_KV, KV_KEYS.vars(type), []);
     for (const acc of accounts) {
         const targetWorkers = acc[`workers_${type}`] || [];
         if (targetWorkers.length === 0) {
@@ -44,7 +46,7 @@ export async function handleFix1101(env: AppEnv, type: TemplateType) {
                 // Step 1: 记录当前变量绑定
                 let savedBindings: any[] = [];
                 try {
-                    const bindRes = await fetch(`${baseUrl}/bindings`, { headers });
+                    const bindRes = await fetchWithTimeout(`${baseUrl}/bindings`, { headers });
                     if (bindRes.ok) {
                         savedBindings = (await bindRes.json()).result || [];
                     }
@@ -55,7 +57,7 @@ export async function handleFix1101(env: AppEnv, type: TemplateType) {
                 // Step 1.5: 记录自定义域名
                 let savedDomains: any[] = [];
                 try {
-                    const domainsRes = await fetch(cf.workerDomains(acc.accountId), { headers });
+                    const domainsRes = await fetchWithTimeout(cf.workerDomains(acc.accountId), { headers });
                     if (domainsRes.ok) {
                         const allDomains = (await domainsRes.json()).result || [];
                         savedDomains = allDomains.filter((d: any) => d.service === wName);
@@ -64,7 +66,7 @@ export async function handleFix1101(env: AppEnv, type: TemplateType) {
                 if (savedDomains.length > 0) steps.push(`🔗 记录 ${savedDomains.length} 个自定义域名`);
 
                 // Step 2: 删除 Worker（不删 KV）
-                const delRes = await fetch(baseUrl, { method: "DELETE", headers });
+                const delRes = await fetchWithTimeout(baseUrl, { method: "DELETE", headers });
                 if (!delRes.ok) {
                     const err = await delRes.json();
                     throw new Error(`删除失败: ${err.errors?.[0]?.message || delRes.status}`);
@@ -73,9 +75,9 @@ export async function handleFix1101(env: AppEnv, type: TemplateType) {
 
                 // Step 3: 随机修改子域名
                 try {
-                    await fetch(cf.acctSubdomain(acc.accountId), { method: 'DELETE', headers });
+                    await fetchWithTimeout(cf.acctSubdomain(acc.accountId), { method: 'DELETE', headers });
                     const randomSub = 'w' + Math.random().toString(36).substring(2, 8) + Math.floor(Math.random() * 99);
-                    const subRes = await fetch(cf.acctSubdomain(acc.accountId), {
+                    const subRes = await fetchWithTimeout(cf.acctSubdomain(acc.accountId), {
                         method: 'PUT', headers,
                         body: JSON.stringify({ subdomain: randomSub })
                     });
@@ -86,7 +88,6 @@ export async function handleFix1101(env: AppEnv, type: TemplateType) {
                 // Cloudflare API 删除是异步的 — 等待后重建
 
                 // Step 4: 准备部署代码和绑定
-                const kvVars = await getJSON(env.CONFIG_KV, KV_KEYS.vars(type), []);
                 let deployCode = applyTemplateTransform(type, freshCode, kvVars, { echTokenEnabled: true });
                 const kvVarMap = new Map(kvVars.map((v: any) => [v.key, v.value]));
 
@@ -123,7 +124,7 @@ export async function handleFix1101(env: AppEnv, type: TemplateType) {
                         let domainOk = 0;
                         for (const d of savedDomains) {
                             try {
-                                const dRes = await fetch(cf.workerDomains(acc.accountId), {
+                                const dRes = await fetchWithTimeout(cf.workerDomains(acc.accountId), {
                                     method: 'PUT', headers,
                                     body: JSON.stringify({ hostname: d.hostname, service: wName, zone_id: d.zone_id, environment: d.environment || 'production' })
                                 });

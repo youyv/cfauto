@@ -9,7 +9,7 @@ export function requireAccessCode(env: AppEnv): Response | null {
     if (!env.ACCESS_CODE) {
         return jsonError(
             '未配置 ACCESS_CODE，请在 Cloudflare Dashboard → Workers & Pages → 设置 → 变量 中设置 ACCESS_CODE 密钥',
-            503
+            500
         );
     }
     return null;

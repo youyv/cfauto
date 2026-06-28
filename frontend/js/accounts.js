@@ -2,6 +2,7 @@
 
 // HTML 转义辅助函数 — 防止 XSS
 function safeHtml(s) { if(!s && s!==0) return ""; const d=document.createElement("div"); d.textContent=String(s); return d.innerHTML; }
+function safeJsStr(s) { return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"'); }
 
 
 
@@ -42,7 +43,7 @@ document.addEventListener('keydown', function(e) {
 let _tableHeaderCache = '';
 function _getTableHeader() {
     if (!_tableHeaderCache) {
-        _tableHeaderCache = '<tr><td colspan="7" class="p-1"><div class="flex gap-1 mb-1"><button onclick="selectAllAccounts()" class="text-xs bg-gray-100 px-2 py-0.5 rounded">全选</button><button onclick="deselectAllAccounts()" class="text-xs bg-gray-100 px-2 py-0.5 rounded">取消</button><button onclick="batchDeleteAccounts()" class="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded">批量删除</button><button onclick="exportAccounts()" class="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded ml-auto">导出</button><button onclick="importAccounts()" class="text-xs bg-green-100 text-green-600 px-2 py-0.5 rounded">导入</button><button onclick="backupAll()" class="text-xs bg-purple-100 text-purple-600 px-2 py-0.5 rounded">备份</button><button onclick="restoreBackup()" class="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded">恢复</button><span id="batch_count" class="text-[10px] text-gray-400 ml-1"></span></div></td></tr>' +
+        _tableHeaderCache = '<tr><td colspan="7" class="p-1"><div class="flex gap-1 mb-1"><button onclick="selectAllAccounts()" class="text-xs bg-gray-100 px-2 py-0.5 rounded">全选</button><button onclick="deselectAllAccounts()" class="text-xs bg-gray-100 px-2 py-0.5 rounded">取消</button><button onclick="batchDeleteAccounts()" class="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded">批量删除</button><button onclick="migrateEncryptKeys()" class="text-xs bg-orange-100 text-orange-600 px-2 py-0.5 rounded font-bold" title="加密所有明文 API Key">🔐 加密迁移</button><button onclick="exportAccounts()" class="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded ml-auto">导出</button><button onclick="importAccounts()" class="text-xs bg-green-100 text-green-600 px-2 py-0.5 rounded">导入</button><button onclick="backupAll()" class="text-xs bg-purple-100 text-purple-600 px-2 py-0.5 rounded">备份</button><button onclick="restoreBackup()" class="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded">恢复</button><span id="batch_count" class="text-[10px] text-gray-400 ml-1"></span></div></td></tr>' +
         '<tr><td colspan="7" class="p-1"><div class="flex gap-1 items-center"><input id="account_search" placeholder="🔍 搜索账号/别名/邮箱/域名..." class="flex-1 text-xs border rounded px-2 py-1"><button id="search_clear" onclick="clearSearch()" class="text-xs text-gray-400 hover:text-red-500 px-1" title="清除搜索 (Esc)">✕</button><button onclick="doSearch()" class="text-xs bg-blue-500 text-white px-2 py-0.5 rounded" title="搜索 (Enter)">搜索</button><span id="search_count" class="text-[10px] text-gray-400"></span></div></td></tr>';
     }
     return _tableHeaderCache;
@@ -51,7 +52,7 @@ function _getTableHeader() {
 function renderTable() {
     const tb = document.getElementById('account_body');
     if (accounts.length === 0) {
-        tb.innerHTML = '<tr><td colspan="7" class="text-center text-gray-300 py-4">无数据</td></tr>';
+        tb.innerHTML = _getTableHeader() + '<tr><td colspan="7" class="text-center text-gray-300 py-4">无数据</td></tr>';
         return;
     }
     const sortedAccounts = [...accounts].sort((a, b) => b.stats.total - a.stats.total);
@@ -92,8 +93,8 @@ async function saveAccount() {
         globalKey:$('in_gkey').value,
         defaultZoneName:$('in_zone_name').value,
         defaultZoneId:$('in_zone_id').value,
-        dailyLimit:parseInt($('in_daily_limit').value) || 0,
-        stats:(editingIndex>=0 && accounts[editingIndex]) ? (accounts[editingIndex].stats || {total:0,max:parseInt($('in_daily_limit').value)||100000}) : {total:0,max:parseInt($('in_daily_limit').value)||100000}
+        dailyLimit:parseInt($('in_daily_limit').value, 10) || 0,
+        stats:(editingIndex>=0 && accounts[editingIndex]) ? (accounts[editingIndex].stats || {total:0,max:parseInt($('in_daily_limit').value, 10)||100000}) : {total:0,max:parseInt($('in_daily_limit').value)||100000}
     };
     Object.keys(TEMPLATES).forEach(t=>o['workers_'+t]=$('in_workers_'+t).value.split(/,|，/).map(s=>s.trim()).filter(s=>s));
     if(editingIndex>=0)accounts[editingIndex]=o; else accounts.push(o);
@@ -113,7 +114,7 @@ function editAccount(i){
     $('in_zone_id').value=a.defaultZoneId||"";
 
     const select = $('in_zone_select');
-    if(a.defaultZoneName) { select.innerHTML = `<option value="${a.defaultZoneId}" data-name="${safeHtml(a.defaultZoneName)}" selected>${safeHtml(a.defaultZoneName)}</option>`; } else { select.innerHTML = '<option value="">(请点击读取)</option>'; }
+    if(a.defaultZoneName) { select.innerHTML = `<option value="${safeHtml(a.defaultZoneId)}" data-name="${safeHtml(a.defaultZoneName)}" selected>${safeHtml(a.defaultZoneName)}</option>`; } else { select.innerHTML = '<option value="">(请点击读取)</option>'; }
 
     Object.keys(TEMPLATES).forEach(t=>$('in_workers_'+t).value=(a['workers_'+t]||[]).join(','));
     $('account_form').classList.remove('hidden');
@@ -143,7 +144,7 @@ async function fetchZonesForAccount() {
         const d = await res.json();
         if (d.success) {
             select.innerHTML = '<option value="">-- 请选择预设域名 --</option>' +
-                d.zones.map(z => `<option value="${z.id}" data-name="${z.name}">${z.name}</option>`).join('');
+                d.zones.map(z => `<option value="${safeHtml(z.id)}" data-name="${safeHtml(z.name)}">${safeHtml(z.name)}</option>`).join('');
         } else {
             select.innerHTML = '<option>读取失败</option>';
             Swal.fire('错误', d.msg, 'error');
@@ -320,7 +321,7 @@ async function openAccountManage(i) {
                         <td>${new Date(w.created_on).toLocaleDateString()}</td>
                         <td>${new Date(w.modified_on).toLocaleDateString()}</td>
                         <td class="text-right">
-                            <button onclick="confirmDeleteWorker('${acc.alias}', '${w.id}', ${i})" class="text-xs bg-red-100 text-red-600 px-2 py-1 rounded hover:bg-red-200">🗑️ 删除</button>
+                            <button onclick="confirmDeleteWorker('${safeJsStr(acc.alias)}', '${safeJsStr(w.id)}', ${i})" class="text-xs bg-red-100 text-red-600 px-2 py-1 rounded hover:bg-red-200">🗑️ 删除</button>
                         </td>
                     </tr>
                 `).join('');
@@ -397,7 +398,7 @@ async function confirmDeleteWorker(alias, workerId, accIndex) {
     const result = await Swal.fire({
         title: '危险操作',
         html: `
-          <p>确认要删除 <b>${workerId}</b> 吗？</p>
+          <p>确认要删除 <b>${safeHtml(workerId)}</b> 吗？</p>
           <div class="mt-4 text-left bg-gray-50 p-2 rounded text-xs">
               <label class="flex items-center space-x-2">
                   <input type="checkbox" id="del_kv_chk" checked class="form-checkbox text-red-600">
@@ -441,6 +442,29 @@ async function confirmDeleteWorker(alias, workerId, accIndex) {
 function updateAutoToggleLabel(){ const el=document.getElementById("auto_toggle_label"); const master=document.getElementById("auto_update_toggle"); if(el&&master){ const on=master.checked; el.textContent=on?"开":"关"; el.className=on?"text-[10px] font-bold text-green-600":"text-[10px] font-bold text-gray-400"; document.getElementById("auto_cmliu_toggle").checked=on; document.getElementById("auto_joey_toggle").checked=on; document.getElementById("auto_ech_toggle").checked=on; } }
 async function loadGlobalConfig(){ try{ const r=await fetch('/api/auto_config'); const c=await r.json(); document.getElementById('auto_update_toggle').checked=!!c.enabled; updateAutoToggleLabel(); document.getElementById('auto_update_interval').value=c.interval||30; document.getElementById('fuse_threshold').value=c.fuseThreshold||0; document.getElementById('fuse_webhook').value=c.fuseWebhook||''; document.getElementById('auto_cmliu_toggle').checked=c.enabled&&c.autoCmliu!==false; document.getElementById('auto_joey_toggle').checked=c.enabled&&c.autoJoey!==false; document.getElementById('auto_ech_toggle').checked=c.enabled&&c.autoEch!==false; }catch(e){ console.error('[loadGlobalConfig]', e); } }
 async function saveAutoConfig(){ await fetch('/api/auto_config',{method:'POST',body:JSON.stringify({enabled:document.getElementById('auto_update_toggle').checked, interval:document.getElementById('auto_update_interval').value, fuseThreshold:document.getElementById('fuse_threshold').value, fuseWebhook:document.getElementById('fuse_webhook').value, autoCmliu:document.getElementById('auto_cmliu_toggle').checked, autoJoey:document.getElementById('auto_joey_toggle').checked, autoEch:document.getElementById('auto_ech_toggle').checked})}); Swal.fire({icon:'success',title:'已保存',timer:1200,showConfirmButton:false}); setTimeout(()=>location.reload(),1300); }
+
+
+async function migrateEncryptKeys() {
+    if (!confirm('将加密所有账号的 API Key 到 KV？\n\n加密后密钥以密文存储，即使 KV 泄露也无法解密。\n仅需执行一次。')) return;
+    const btn = event.target;
+    const orig = btn.innerText;
+    btn.innerText = '⏳ 迁移中...';
+    btn.disabled = true;
+    try {
+        const r = await fetch('/api/migrate_encrypt_keys', { method: 'POST' });
+        const d = await r.json();
+        if (d.success) {
+            Swal.fire('✅ 迁移完成', '加密: ' + d.encrypted + ' | 已加密: ' + d.alreadyEncrypted + ' | 总计: ' + d.total, 'success');
+        } else {
+            Swal.fire('❌ 失败', d.msg, 'error');
+        }
+    } catch(e) {
+        Swal.fire('❌ 错误', e.message, 'error');
+    }
+    btn.innerText = orig;
+    btn.disabled = false;
+}
+window.migrateEncryptKeys = migrateEncryptKeys;
 
 // @exports
 window.safeHtml = safeHtml;

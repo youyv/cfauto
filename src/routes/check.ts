@@ -5,10 +5,12 @@
 import { KV_KEYS } from '../config/templates';
 import type { TemplateType } from '../config/templates';
 import { getGithubUrls } from '../lib/github';
-import { jsonError, json } from '../lib/cloudflare-api';
+import { jsonError, json, fetchWithTimeout } from '../lib/cloudflare-api';
 import { getJSON, putJSON } from "../lib/kv-utils";
+import { readAccounts } from "../lib/account-store";
 import type { AppEnv } from "../config/env";
 import { fetchGithubVersion } from '../lib/auto-update';
+import { decryptKey } from '../lib/crypto-utils';
 import { fetchInternalStats } from '../lib/stats';
 
 export async function handleGetCode(env: AppEnv, type: TemplateType) {
@@ -99,7 +101,7 @@ export async function handleDiff(env: AppEnv, type: TemplateType) {
 
 export async function handleStats(env: AppEnv) {
     try {
-        const accounts = await getJSON(env.CONFIG_KV, KV_KEYS.ACCOUNTS, []);
+        const accounts = await readAccounts(env);
         const results = await fetchInternalStats(accounts);
         return json(results);
     } catch (e: any) { return jsonError(e.message); }

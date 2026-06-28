@@ -5,6 +5,8 @@
 import { TEMPLATES, KV_KEYS, BINDING } from '../config/templates';
 import { cf, getAuthHeaders, json, jsonError } from '../lib/cloudflare-api';
 import { getJSON, putJSON } from "../lib/kv-utils";
+import { readAccounts } from "../lib/account-store";
+import { decryptKey } from "../lib/crypto-utils";
 import type { AppEnv } from "../config/env";
 
 /** 提取并返回全球区域节点的基础数据 */
@@ -67,8 +69,9 @@ export async function handleSaveYxip(env: AppEnv, reqData: any) {
         if (!accountId || !email || !globalKey) return json([{ name: "配置错误", success: false, msg: "未提供对应账户凭证" }], 400);
 
         try {
-            const accounts = await getJSON(env.CONFIG_KV, KV_KEYS.ACCOUNTS, []);
+            const accounts = await readAccounts(env);
             const targetAccount = accounts.find((a: any) => a.accountId === accountId);
+            // Decrypt API key before use
             if (!targetAccount) return json([{ name: "查找错误", success: false, msg: "系统记录中找不到该账户" }], 404);
 
             const targetWorkers = type === 'cmliu' ? targetAccount.workers_cmliu : targetAccount.workers_joey;
@@ -76,12 +79,13 @@ export async function handleSaveYxip(env: AppEnv, reqData: any) {
             if (!targetWorkers || targetWorkers.length === 0) return json([{ name: "查找错误", success: false, msg: `该账号下未发现已部署的 ${workerTypeName} 项目` }]);
 
             const logs: Array<{ name: string; success: boolean; msg: string }> = [];
-            const jsonHeaders = getAuthHeaders(email, globalKey);
+            // 使用服务端存储的凭证，而非请求体中的（防止凭证伪造）
+            const jsonHeaders = getAuthHeaders(targetAccount.email, targetAccount.globalKey);
 
             for (const wName of targetWorkers) {
                 const logItem = { name: `[${workerTypeName}] ${wName}`, success: false, msg: "" };
                 try {
-                    const bindRes = await fetch(cf.workerBindings(accountId, wName), { headers: jsonHeaders });
+                    const bindRes = await fetch(cf.workerBindings(targetAccount.accountId, wName), { headers: jsonHeaders });
                     if (!bindRes.ok) throw new Error("无法读取绑定的变量");
 
                     const t = TEMPLATES[type];
@@ -95,7 +99,7 @@ export async function handleSaveYxip(env: AppEnv, reqData: any) {
                         const finalContent = t.yxipBuildContent ? t.yxipBuildContent(rawContent) : rawContent;
                         const contentType = t.yxipContentType || 'text/plain';
 
-                        const putRes = await fetch(cf.kvValue(accountId, nsId, targetKey), {
+                        const putRes = await fetch(cf.kvValue(targetAccount.accountId, nsId, targetKey), {
                             method: "PUT",
                             headers: { ...jsonHeaders, "Content-Type": contentType },
                             body: finalContent

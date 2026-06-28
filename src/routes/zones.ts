@@ -3,6 +3,7 @@
  */
 
 import { KV_KEYS, TEMPLATES, BINDING } from '../config/templates';
+import { readAccounts, writeAccounts } from '../lib/account-store';
 import { cf, getAuthHeaders, jsonError, json } from '../lib/cloudflare-api';
 import type { AccountCredentials } from '../config/env';
 import { getJSON, putJSON } from "../lib/kv-utils";
@@ -59,8 +60,7 @@ export async function handleDeleteWorker(env: AppEnv, cred: AccountCredentials, 
         });
 
         if (delWorkerRes.ok) {
-            const ACCOUNTS_KEY = KV_KEYS.ACCOUNTS;
-            const accounts = await getJSON(env.CONFIG_KV, ACCOUNTS_KEY, []);
+            const accounts = await readAccounts(env);
             let updated = false;
 
             for (const acc of accounts) {
@@ -75,7 +75,7 @@ export async function handleDeleteWorker(env: AppEnv, cred: AccountCredentials, 
             }
 
             if (updated) {
-                await putJSON(env.CONFIG_KV, ACCOUNTS_KEY, accounts);
+                await writeAccounts(env, accounts);
                 // 检查各类型Worker是否已全部删除，是则清理关联的派生状态
                 const allTypes = Object.keys(TEMPLATES);
                 for (const t of allTypes) {

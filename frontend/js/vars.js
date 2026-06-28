@@ -28,6 +28,8 @@ function applyEchProxy(){ const v=document.getElementById('ech_proxy_select').va
 
 // 使用 DOM API 构建变量行，避免 innerHTML 的 XSS 风险
 function addVarRow(t,k,v,s){
+  // Remove from deletedVars if this key was previously marked for deletion
+  if(k && deletedVars[t]) { const idx = deletedVars[t].indexOf(k); if(idx !== -1) deletedVars[t].splice(idx, 1); }
   const c=document.getElementById('vars_'+t);
   const d=document.createElement('div');
   d.className='flex gap-1 items-center mb-1 var-row-'+t;
