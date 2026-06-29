@@ -55,7 +55,7 @@ export async function coreDeployLogic(env: AppEnv, opts: DeployOptions) {
         if (customCode) {
             githubScriptContent = customCode;
             if (!deployedSha) {
-                try { const { sha } = await fetchGithubCode(type, 'latest', env); if (sha) deployedSha = sha; } catch (e) {}
+                try { const { sha } = await fetchGithubCode(type, 'latest', env); if (sha) deployedSha = sha; } catch (e) { console.warn('[coreDeployLogic] SHA fetch for customCode fallback failed:', (e as Error).message); }
             }
             // 自定义代码审计：记录 SHA256 到部署日志
             customCodeHash = Array.from(new Uint8Array(
@@ -161,7 +161,7 @@ export async function checkAndDeployUpdate(env: AppEnv, type: TemplateType) {
         const version = await fetchGithubVersion(env, type);
         if (version.remoteSha && (!version.localSha || version.remoteSha !== version.localSha)) {
             const variables = await getJSON(env.CONFIG_KV, KV_KEYS.vars(type), []);
-            await coreDeployLogic(env, { type, variables });
+            await coreDeployLogic(env, { type, variables, deletedVariables: [] });
         }
     } catch (e) { logger.error('update check failed for ' + type, e as Error, { module: 'auto-update' }); }
 }
@@ -181,5 +181,5 @@ export async function rotateUUIDAndDeploy(env: AppEnv, type: TemplateType) {
 
     const deployConfig = await getJSON(env.CONFIG_KV, KV_KEYS.deployConfig(type), { mode: 'latest' });
     const targetSha = deployConfig.mode === 'fixed' ? deployConfig.currentSha : 'latest';
-    await coreDeployLogic(env, { type, variables, targetSha });
+    await coreDeployLogic(env, { type, variables, deletedVariables: [], targetSha });
 }

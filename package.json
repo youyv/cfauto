@@ -1,7 +1,7 @@
 {
   "name": "worker-pro-refactor",
-  "version": "11.4.0",
-  "description": "Worker 智能中控 — DNS自适应修复 · 加解密层清理 · 架构升级",
+  "version": "11.5.0",
+  "description": "Worker 智能中控 — 安全加固版 (XSS防护 · 信息泄露封堵 · 加密层优化)",
   "scripts": {
     "build": "node build.js",
     "dev": "wrangler dev --port 7890",
@@ -13,6 +13,7 @@
   },
   "devDependencies": {
     "esbuild": "^0.24.2",
+    "typescript": "^6.0.3",
     "vitest": "^4.1.9",
     "wrangler": "^4.99.0"
   }

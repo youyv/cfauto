@@ -45,18 +45,20 @@ export function mergeVariableBindings(
     variables: Array<{ key: string; value: string; secret?: boolean }>,
     deletedVariables: string[] = []
 ): Array<Record<string, unknown>> {
-    let bindings = currentBindings
-        .filter((b: any) => !deletedVariables.includes(b.name));
+    const deletedSet = new Set(deletedVariables);
+    // 使用 Map 替代 findIndex 将 O(n*m) 降为 O(n+m)
+    const bindingMap = new Map<string, Record<string, unknown>>();
+    for (const b of currentBindings) {
+        const name = b.name as string;
+        if (!deletedSet.has(name)) {
+            bindingMap.set(name, b);
+        }
+    }
 
     for (const v of variables) {
         if (!v.value || v.value.trim() === "") continue;
         const bindingType = v.secret ? "secret_text" : "plain_text";
-        const idx = bindings.findIndex((b: any) => b.name === v.key);
-        if (idx !== -1) {
-            bindings[idx] = { name: v.key, type: bindingType, text: v.value };
-        } else {
-            bindings.push({ name: v.key, type: bindingType, text: v.value });
-        }
+        bindingMap.set(v.key, { name: v.key, type: bindingType, text: v.value });
     }
-    return bindings;
+    return Array.from(bindingMap.values());
 }

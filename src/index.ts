@@ -52,6 +52,9 @@ export default {
 
                 const body = await safeJson(request);
                 const correctCode = env.ACCESS_CODE;
+                if (!correctCode) {
+                    return jsonError('未配置 ACCESS_CODE，请在 Cloudflare Dashboard → Workers & Pages → 设置 → 变量 中设置 ACCESS_CODE 密钥', 500);
+                }
                 if (body.code === correctCode) {
                     const token = await generateAuthToken(correctCode!);
                     await env.CONFIG_KV.delete(rateKey);
@@ -78,7 +81,7 @@ export default {
 
         } catch (err: any) {
             console.error('[Worker] Unhandled error:', err);
-            return jsonError(err.message || 'Unknown error', 500);
+            return jsonError('Internal server error', 500);
         }
     }
 };
@@ -87,8 +90,9 @@ export default {
 // 前端页面（构建时由 frontend/ 拼接）
 // ==========================================
 let _htmlCache: string | null = null;
+let _htmlCacheVersion: string | null = null;
 function mainHtml() {
-    if (_htmlCache) return _htmlCache;
+    if (_htmlCache && _htmlCacheVersion === FRONTEND_VERSION) return _htmlCache;
     const TEMPLATES_JSON = JSON.stringify(
         Object.fromEntries(
             Object.entries(TEMPLATES).map(([k, v]) => [k, { defaultVars: v.defaultVars, uuidField: v.uuidField, name: v.name }])
@@ -121,5 +125,6 @@ const html = `
 </body></html>`;
   
     _htmlCache = html;
+    _htmlCacheVersion = FRONTEND_VERSION;
     return html;
 }

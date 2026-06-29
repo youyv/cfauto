@@ -139,7 +139,7 @@ async function fetchZonesForAccount() {
     try {
         const res = await fetch('/api/zones', {
             method: 'POST',
-            body: JSON.stringify({ accountId: id, email: email, globalKey: key })
+            body: JSON.stringify({ accountId: id })
         });
         const d = await res.json();
         if (d.success) {
@@ -292,11 +292,11 @@ async function openAccountManage(i) {
         const [workersRes, subRes] = await Promise.all([
             fetch('/api/all_workers', {
                 method: 'POST',
-                body: JSON.stringify({ accountId: acc.accountId, email: acc.email, globalKey: acc.globalKey })
+                body: JSON.stringify({ accountId: acc.accountId })
             }),
             fetch('/api/get_subdomain', {
                 method: 'POST',
-                body: JSON.stringify({ accountId: acc.accountId, email: acc.email, globalKey: acc.globalKey })
+                body: JSON.stringify({ accountId: acc.accountId })
             })
         ]);
 
@@ -317,9 +317,9 @@ async function openAccountManage(i) {
             } else {
                 tbody.innerHTML = d.workers.map(w => `
                     <tr class="hover:bg-gray-50 border-b">
-                        <td class="font-bold text-indigo-600">${w.id}</td>
-                        <td>${new Date(w.created_on).toLocaleDateString()}</td>
-                        <td>${new Date(w.modified_on).toLocaleDateString()}</td>
+                        <td class="font-bold text-indigo-600">${safeHtml(w.id)}</td>
+                        <td>${safeHtml(new Date(w.created_on).toLocaleDateString())}</td>
+                        <td>${safeHtml(new Date(w.modified_on).toLocaleDateString())}</td>
                         <td class="text-right">
                             <button onclick="confirmDeleteWorker('${safeJsStr(acc.alias)}', '${safeJsStr(w.id)}', ${i})" class="text-xs bg-red-100 text-red-600 px-2 py-1 rounded hover:bg-red-200">🗑️ 删除</button>
                         </td>
@@ -380,7 +380,7 @@ async function promptChangeSubdomain() {
         Swal.fire({ title: '修改中...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
         const res = await fetch('/api/change_subdomain', {
             method: 'POST',
-            body: JSON.stringify({ accountId: acc.accountId, email: acc.email, globalKey: acc.globalKey, newSubdomain: newSub })
+            body: JSON.stringify({ accountId: acc.accountId, newSubdomain: newSub })
         });
         const data = await res.json();
         if (data.success) {
@@ -419,8 +419,6 @@ async function confirmDeleteWorker(alias, workerId, accIndex) {
                 method: 'POST',
                 body: JSON.stringify({
                     accountId: acc.accountId,
-                    email: acc.email,
-                    globalKey: acc.globalKey,
                     workerName: workerId,
                     deleteKv: deleteKv
                 })

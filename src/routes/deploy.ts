@@ -59,7 +59,7 @@ export async function handleBatchDeploy(env: AppEnv, reqData: BatchDeployRequest
                     const createNsRes = await fetch(cf.kvNamespaces(acc.accountId), {
                         method: 'POST', headers: jsonHeaders, body: JSON.stringify({ title: kvName })
                     });
-                    if (!createNsRes.ok) { let kvMsg; try { const e = await createNsRes.json(); kvMsg = e.errors?.[0]?.message; } catch(_) {} throw new Error("创建KV失败: " + (kvMsg || createNsRes.statusText)); }
+                    if (!createNsRes.ok) { let kvMsg; try { const e = await createNsRes.json(); kvMsg = e.errors?.[0]?.message; } catch(_) { console.warn('[BatchDeploy] KV creation error parse failed, using statusText fallback'); } throw new Error("创建KV失败: " + (kvMsg || createNsRes.statusText)); }
                     nsId = (await createNsRes.json()).result.id;
                 }
             }

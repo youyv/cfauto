@@ -81,6 +81,7 @@ async function sendFuseAlert(env: AppEnv, alias: string, total: number, limit: n
     try {
         const webhookUrl = config.fuseWebhook;
         if (!webhookUrl) return;
+        if (!webhookUrl.startsWith("https://")) { logger.warn("fuseWebhook URL must use https", { url: webhookUrl }); return; }
         const payload = {
             msgtype: 'text',
             text: { content: '[Worker中控] \u{1F525} 熔断触发: ' + alias + ' 用量达 ' + ((total/limit)*100).toFixed(1) + '% (阈值' + threshold + '%), 已自动轮换UUID并重新部署' }

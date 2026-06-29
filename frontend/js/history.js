@@ -35,7 +35,7 @@ async function refreshHistory() {
               renderHistoryItem(type,item,hList,false,isFav);
           });
       }
-    }catch(e){hList.innerHTML='<div class="text-red-400 text-xs">网络错误: ' + e.message + '</div>';}
+    }catch(e){hList.innerHTML='<div class="text-red-400 text-xs">网络错误: ' + safeHtml(e.message) + '</div>';}
 }
 
 function openFavoritesPanel() {
@@ -78,7 +78,7 @@ function renderHistoryItem(type,item,container,isFavSection,isFavInHist){
 
     const content=document.createElement('div');
     content.className="flex-1 cursor-pointer overflow-hidden";
-    content.innerHTML=`<div class="flex justify-between items-center mb-0.5"><span class="font-mono text-[10px] bg-slate-100 px-1 rounded text-slate-600">${shortSha}</span><span class="text-[9px] text-gray-400">${date}</span></div><div class="text-[10px] text-gray-700 truncate">${item.message}</div>`;
+    content.innerHTML=`<div class="flex justify-between items-center mb-0.5"><span class="font-mono text-[10px] bg-slate-100 px-1 rounded text-slate-600">${safeHtml(shortSha)}</span><span class="text-[9px] text-gray-400">${safeHtml(date)}</span></div><div class="text-[10px] text-gray-700 truncate">${safeHtml(item.message)}</div>`;
     content.onclick=()=>{if(confirm(`确认回滚/锁定到版本 [${shortSha}]？`)){document.getElementById('history_modal').classList.add('hidden');deploy(type,item.sha);}};
 
     el.appendChild(starBtn);el.appendChild(content);container.appendChild(el);

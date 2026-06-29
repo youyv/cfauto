@@ -56,9 +56,11 @@ export function applyTemplateTransform(
         const proxyVar = variables ? variables.find(v => v.key === 'PROXYIP') : null;
         const targetIP = (proxyVar && proxyVar.value) ? proxyVar.value.trim() : 'ProxyIP.CMLiussss.net';
         const beforeCF = result;
+        // 使用回调函数避免 targetIP 中的 $ 被 String.replace 的替换语法解析
+        const escapedTargetIP = targetIP.replace(/\$/g, '$$$$');
         result = result.replace(
             /const\s+CF_FALLBACK_IPS\s*=\s*\[.*?\];/s,
-            `const CF_FALLBACK_IPS = ['${targetIP}'];`
+            () => `const CF_FALLBACK_IPS = ['${escapedTargetIP}'];`
         );
         if (result === beforeCF) {
             console.warn('[TemplateTransform] ECH CF_FALLBACK_IPS pattern not matched — upstream code may have changed, deploy uses unmodified code');
@@ -68,9 +70,10 @@ export function applyTemplateTransform(
         const tokenVal = (tokenVar && tokenVar.value && tokenVar.value.trim() && options.echTokenEnabled)
             ? tokenVar.value.trim() : '';
         const beforeToken = result;
+        const escapedTokenVal = tokenVal.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
         result = result.replace(
             /const\s+token\s*=\s*['"]{1}.*?['"]{1};/,
-            `const token = '${tokenVal}';`
+            () => `const token = '${escapedTokenVal}';`
         );
         if (result === beforeToken) {
             console.warn('[TemplateTransform] ECH token pattern not matched — upstream code may have changed, token not injected');

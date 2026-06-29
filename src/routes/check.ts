@@ -15,11 +15,11 @@ import { fetchInternalStats } from '../lib/stats';
 export async function handleGetCode(env: AppEnv, type: TemplateType) {
     try {
         const { scriptUrl } = getGithubUrls(type);
-        const res = await fetch(scriptUrl);
+        const res = await fetchWithTimeout(scriptUrl);
         if (!res.ok) throw new Error("Fetch failed: " + res.status);
         const code = await res.text();
         return json({ success: true, code });
-    } catch (e: any) { return jsonError(e.message || 'Fetch failed'); }
+    } catch (e: any) { console.error('[handleGetCode]', e); return jsonError('Code fetch failed'); }
 }
 
 export async function handleCheckUpdate(env: AppEnv, type: TemplateType, mode?: string, limit = 10) {
@@ -47,7 +47,7 @@ export async function handleCheckUpdate(env: AppEnv, type: TemplateType, mode?: 
             mode: ver.mode
         });
     } catch (e: any) {
-        return jsonError(e.message || 'GitHub API unreachable', 500);
+        console.error('[handleCheckUpdate]', e); return jsonError('Version check failed', 500);
     }
 }
 
@@ -95,7 +95,7 @@ export async function handleDiff(env: AppEnv, type: TemplateType) {
             localSha: localSha?.substring(0, 7),
             remoteSha: remoteSha?.substring(0, 7)
         });
-    } catch (e: any) { return jsonError('diff failed: ' + (e.message || 'Unknown')); }
+    } catch (e: any) { console.error('[handleDiff]', e); return jsonError('Diff failed'); }
 }
 
 export async function handleStats(env: AppEnv) {
@@ -103,5 +103,5 @@ export async function handleStats(env: AppEnv) {
         const accounts = await readAccounts(env);
         const results = await fetchInternalStats(accounts);
         return json(results);
-    } catch (e: any) { return jsonError(e.message); }
+    } catch (e: any) { console.error('[handleStats]', e); return jsonError('Stats fetch failed'); }
 }

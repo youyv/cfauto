@@ -54,7 +54,7 @@ async function fetchYxipRegions() {
             yxipData = data.data;
             renderYxipRegions();
         } else {
-            container.innerHTML = '<div class="col-span-full text-center py-4 text-red-500">❌ 获取失败: ' + data.msg + '</div>';
+            container.innerHTML = '<div class="col-span-full text-center py-4 text-red-500">❌ 获取失败: ' + safeHtml(data.msg) + '</div>';
         }
     } catch(e) {
         container.innerHTML = '<div class="col-span-full text-center py-4 text-red-500">❌ 网络异常，获取节点数据失败</div>';

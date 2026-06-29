@@ -218,7 +218,7 @@ function openBatchDeployModal() {
     accounts.forEach(a => {
         const div = document.createElement('div');
         div.className = "flex items-center gap-1";
-        div.innerHTML = `<input type="checkbox" value="${a.alias}" class="bd-acc-chk" id="chk_${a.alias}"><label for="chk_${a.alias}">${a.alias}</label>`;
+        div.innerHTML = `<input type="checkbox" value="${safeHtml(a.alias)}" class="bd-acc-chk" id="chk_${safeHtml(a.alias)}"><label for="chk_${safeHtml(a.alias)}">${safeHtml(a.alias)}</label>`;
         list.appendChild(div);
     });
     $('bd_uuid').value = crypto.randomUUID();

@@ -1,21 +1,30 @@
 /**
  * 路由: Zones / Workers 管理 / 子域名
+ * 
+ * 安全约束: 所有 handler 使用服务端 KV 存储的凭据（通过 accountId 查找），
+ * 不再接受请求体中的 email/globalKey，防止已登录用户操作未授权账号。
  */
 
 import { KV_KEYS, TEMPLATES, BINDING } from '../config/templates';
-import { readAccounts, writeAccounts } from '../lib/account-store';
+import { readAccounts, writeAccounts, findAccount } from '../lib/account-store';
 import { cf, getAuthHeaders, jsonError, json } from '../lib/cloudflare-api';
-import type { AccountCredentials } from '../config/env';
 import { getJSON, putJSON } from "../lib/kv-utils";
 import type { AppEnv } from "../config/env";
 
-export async function handleGetZones(cred: AccountCredentials) {
+/** 从服务端 KV 查找账号凭据并返回认证头，未找到则抛出 Response 错误 */
+async function resolveCredentials(env: AppEnv, accountId: string) {
+    const acc = await findAccount(env, accountId);
+    if (!acc) throw new Response(JSON.stringify({ success: false, msg: '账号未在服务端配置' }), { status: 404, headers: { 'Content-Type': 'application/json' } });
+    return { accountId: acc.accountId, email: acc.email, globalKey: acc.globalKey, headers: getAuthHeaders(acc.email, acc.globalKey) };
+}
+
+export async function handleGetZones(env: AppEnv, accountId: string) {
     try {
-        const headers = getAuthHeaders(cred.email, cred.globalKey);
+        const { headers, accountId: aid } = await resolveCredentials(env, accountId);
         let allZones: Array<{ id: string; name: string }> = [];
         let page = 1;
         while (true) {
-            const res = await fetch(cf.zones(cred.accountId) + '&page=' + page, { headers });
+            const res = await fetch(cf.zones(aid) + '&page=' + page, { headers });
             const data: any = await res.json();
             if (!data.result || data.result.length === 0) break;
             data.result.forEach((z: any) => allZones.push({ id: z.id, name: z.name }));
@@ -24,14 +33,13 @@ export async function handleGetZones(cred: AccountCredentials) {
             page++;
         }
         return json({ success: true, zones: allZones });
-    } catch (e: any) { return jsonError(e.message); }
+    } catch (e: any) { console.error('[handleGetZones]', e); return jsonError('Zones fetch failed'); }
 }
 
-export async function handleGetAllWorkers(cred: AccountCredentials) {
+export async function handleGetAllWorkers(env: AppEnv, accountId: string) {
     try {
-        const res = await fetch(cf.workerScripts(cred.accountId), {
-            headers: getAuthHeaders(cred.email, cred.globalKey)
-        });
+        const { headers, accountId: aid } = await resolveCredentials(env, accountId);
+        const res = await fetch(cf.workerScripts(aid), { headers });
         const data: any = await res.json();
         const workers = data.result.map((w: any) => ({
             id: w.id,
@@ -39,23 +47,23 @@ export async function handleGetAllWorkers(cred: AccountCredentials) {
             modified_on: w.modified_on
         }));
         return json({ success: true, workers });
-    } catch (e: any) { return jsonError(e.message); }
+    } catch (e: any) { console.error('[zones]', e); return jsonError('Operation failed'); }
 }
 
-export async function handleDeleteWorker(env: AppEnv, cred: AccountCredentials, workerName: string, deleteKv: boolean) {
+export async function handleDeleteWorker(env: AppEnv, accountId: string, workerName: string, deleteKv: boolean) {
     try {
-        const headers = getAuthHeaders(cred.email, cred.globalKey);
+        const { headers, accountId: aid } = await resolveCredentials(env, accountId);
 
         let kvNamespaceIds: string[] = [];
         if (deleteKv) {
-            const bindRes = await fetch(cf.workerBindings(cred.accountId, workerName), { headers });
+            const bindRes = await fetch(cf.workerBindings(aid, workerName), { headers });
             if (bindRes.ok) {
                 const binds = (await bindRes.json()).result;
                 kvNamespaceIds = binds.filter((b: any) => b.type === 'kv_namespace').map((b: any) => b.namespace_id);
             }
         }
 
-        const delWorkerRes = await fetch(cf.workerScript(cred.accountId, workerName), {
+        const delWorkerRes = await fetch(cf.workerScript(aid, workerName), {
             method: "DELETE", headers
         });
 
@@ -64,7 +72,7 @@ export async function handleDeleteWorker(env: AppEnv, cred: AccountCredentials, 
             let updated = false;
 
             for (const acc of accounts) {
-                if (acc.accountId === cred.accountId) {
+                if (acc.accountId === aid) {
                     Object.keys(TEMPLATES).map(k => 'workers_' + k).forEach(type => {
                         if (acc[type] && acc[type].includes(workerName)) {
                             acc[type] = acc[type].filter((n: string) => n !== workerName);
@@ -76,7 +84,6 @@ export async function handleDeleteWorker(env: AppEnv, cred: AccountCredentials, 
 
             if (updated) {
                 await writeAccounts(env, accounts);
-                // 检查各类型Worker是否已全部删除，是则清理关联的派生状态
                 const allTypes = Object.keys(TEMPLATES);
                 for (const t of allTypes) {
                     const hasAny = accounts.some((a: any) => a['workers_' + t] && a['workers_' + t].length > 0);
@@ -88,18 +95,16 @@ export async function handleDeleteWorker(env: AppEnv, cred: AccountCredentials, 
                 }
             }
 
-            // 删除关联的 KV 命名空间（轮询等待 CF 异步解绑，避免竞态失败）
             let kvDeleteErrors: string[] = [];
             if (deleteKv && kvNamespaceIds.length > 0) {
                 for (const nsId of kvNamespaceIds) {
                     let deleted = false;
                     for (let attempt = 0; attempt < 5; attempt++) {
                         if (attempt > 0) await new Promise(r => setTimeout(r, 2000));
-                        const delRes = await fetch(cf.kvNamespace(cred.accountId, nsId), {
+                        const delRes = await fetch(cf.kvNamespace(aid, nsId), {
                             method: "DELETE", headers
                         });
                         if (delRes.ok) { deleted = true; break; }
-                        // 409 Conflict = 命名空间仍处于绑定状态，等待后重试
                         if (delRes.status !== 409) break;
                     }
                     if (!deleted) {
@@ -117,40 +122,41 @@ export async function handleDeleteWorker(env: AppEnv, cred: AccountCredentials, 
             const err = await delWorkerRes.json();
             return json({ success: false, msg: err.errors[0]?.message || "删除失败" });
         }
-    } catch (e: any) { return jsonError(e.message); }
+    } catch (e: any) {
+        if (e instanceof Response) return e;
+        console.error('[handleDeleteWorker]', e); return jsonError('Delete worker failed');
+    }
 }
 
-export async function handleFetchBindings(cred: AccountCredentials, workerName: string) {
+export async function handleFetchBindings(env: AppEnv, accountId: string, workerName: string) {
     try {
-        const res = await fetch(cf.workerBindings(cred.accountId, workerName), {
-            headers: getAuthHeaders(cred.email, cred.globalKey)
-        });
+        const { headers, accountId: aid } = await resolveCredentials(env, accountId);
+        const res = await fetch(cf.workerBindings(aid, workerName), { headers });
         const data: any = await res.json();
         const bindings = data.result
             .filter((b: any) => b.type === "plain_text" || b.type === "secret_text")
             .map((b: any) => ({ key: b.name, value: b.type === "plain_text" ? b.text : "" }));
         return json({ success: true, data: bindings });
-    } catch (e: any) { return jsonError(e.message); }
+    } catch (e: any) { console.error('[zones]', e); return jsonError('Operation failed'); }
 }
 
-export async function handleGetSubdomain(cred: AccountCredentials) {
+export async function handleGetSubdomain(env: AppEnv, accountId: string) {
     try {
-        const headers = getAuthHeaders(cred.email, cred.globalKey);
-        const res = await fetch(cf.acctSubdomain(cred.accountId), { headers });
+        const { headers, accountId: aid } = await resolveCredentials(env, accountId);
+        const res = await fetch(cf.acctSubdomain(aid), { headers });
         const data: any = await res.json();
         if (data.success) {
             return json({ success: true, subdomain: data.result?.subdomain || '' });
         } else {
             return json({ success: false, msg: data.errors?.[0]?.message || '查询失败' });
         }
-    } catch (e: any) { return jsonError(e.message); }
+    } catch (e: any) { console.error('[zones]', e); return jsonError('Operation failed'); }
 }
 
-export async function handleChangeSubdomain(cred: AccountCredentials, newSubdomain: string) {
+export async function handleChangeSubdomain(env: AppEnv, accountId: string, newSubdomain: string) {
     try {
-        const headers = getAuthHeaders(cred.email, cred.globalKey);
-        // 先尝试直接 PUT（覆盖），避免无故删除已有子域名
-        let res = await fetch(cf.acctSubdomain(cred.accountId), {
+        const { headers, accountId: aid } = await resolveCredentials(env, accountId);
+        let res = await fetch(cf.acctSubdomain(aid), {
             method: 'PUT',
             headers,
             body: JSON.stringify({ subdomain: newSubdomain })
@@ -160,26 +166,23 @@ export async function handleChangeSubdomain(cred: AccountCredentials, newSubdoma
             return json({ success: true, subdomain: data.result?.subdomain || newSubdomain });
         }
         const errMsg = data.errors?.[0]?.message || '修改失败';
-        // PUT 返回 "already has" 时，先保存旧值再删再建（含指数退避重试 + 失败恢复）
         if (errMsg.includes('already has')) {
-            // 保存当前子域名用于失败恢复
             let oldSubdomain = '';
             try {
-                const getRes = await fetch(cf.acctSubdomain(cred.accountId), { headers });
+                const getRes = await fetch(cf.acctSubdomain(aid), { headers });
                 const getData = await getRes.json();
                 oldSubdomain = getData.result?.subdomain || '';
             } catch (_) { /* best-effort */ }
 
-            const delRes = await fetch(cf.acctSubdomain(cred.accountId), { method: 'DELETE', headers });
+            const delRes = await fetch(cf.acctSubdomain(aid), { method: 'DELETE', headers });
             if (!delRes.ok) {
                 return json({ success: false, msg: 'Cloudflare 不支持通过 API 修改已有子域名，请到 Dashboard → Workers & Pages → 设置中手动修改。' });
             }
 
-            // 指数退避重试 PUT（最多3次: 1s, 2s, 4s）
             let putSuccess = false;
             for (let attempt = 0; attempt < 3; attempt++) {
                 if (attempt > 0) await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt - 1)));
-                res = await fetch(cf.acctSubdomain(cred.accountId), {
+                res = await fetch(cf.acctSubdomain(aid), {
                     method: 'PUT',
                     headers,
                     body: JSON.stringify({ subdomain: newSubdomain })
@@ -192,18 +195,17 @@ export async function handleChangeSubdomain(cred: AccountCredentials, newSubdoma
                 return json({ success: true, subdomain: data.result?.subdomain || newSubdomain });
             }
 
-            // 恢复旧子域名（尽最大努力）
             if (oldSubdomain) {
                 try {
-                    await fetch(cf.acctSubdomain(cred.accountId), {
+                    await fetch(cf.acctSubdomain(aid), {
                         method: 'PUT', headers,
                         body: JSON.stringify({ subdomain: oldSubdomain })
                     });
                     return json({ success: false, msg: '新子域名设置失败，已恢复原子域名: ' + oldSubdomain + '。请稍后重试。' });
-                } catch (_) {}
+                } catch (_) { console.warn('[ChangeSubdomain] Failed to restore old subdomain:', oldSubdomain); }
             }
             return json({ success: false, msg: '子域名修改失败，且无法自动恢复。请到 Dashboard → Workers & Pages → 设置中手动设置。' });
         }
         return json({ success: false, msg: errMsg });
-    } catch (e: any) { return jsonError(e.message); }
+    } catch (e: any) { console.error('[zones]', e); return jsonError('Operation failed'); }
 }

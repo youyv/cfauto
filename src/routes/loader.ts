@@ -1,8 +1,6 @@
 /**
  * 路由注册 — 业务处理器（构建时已打包，统一静态导入）
  */
-import { safeJson } from '../lib/cloudflare-api';
-import type { AccountCredentials } from '../config/env';
 import type { AppEnv } from "../config/env";
 import type { RouteHandler } from "./index";
 import { handleCheckUpdate, handleGetCode, handleStats, handleDiff } from './check';
@@ -45,34 +43,34 @@ ROUTES.set('POST /api/deploy', async (req, env) => {
 ROUTES.set('POST /api/batch_deploy', async (req, env) =>
     handleBatchDeploy(env, await safeJson(req)));
 
-ROUTES.set('POST /api/zones', async (req, _env) => {
-    const cred: AccountCredentials = await safeJson(req);
-    return handleGetZones(cred);
+ROUTES.set('POST /api/zones', async (req, env) => {
+    const { accountId } = await safeJson(req) as any;
+    return handleGetZones(env, accountId);
 });
 
-ROUTES.set('POST /api/all_workers', async (req, _env) => {
-    const cred: AccountCredentials = await safeJson(req);
-    return handleGetAllWorkers(cred);
+ROUTES.set('POST /api/all_workers', async (req, env) => {
+    const { accountId } = await safeJson(req) as any;
+    return handleGetAllWorkers(env, accountId);
 });
 
 ROUTES.set('POST /api/delete_worker', async (req, env) => {
-    const { workerName, deleteKv, ...cred } = await safeJson(req) as any;
-    return handleDeleteWorker(env, cred as AccountCredentials, workerName, deleteKv);
+    const { accountId, workerName, deleteKv } = await safeJson(req) as any;
+    return handleDeleteWorker(env, accountId, workerName, deleteKv);
 });
 
-ROUTES.set('POST /api/fetch_bindings', async (req, _env) => {
-    const { workerName, ...cred } = await safeJson(req) as any;
-    return handleFetchBindings(cred as AccountCredentials, workerName);
+ROUTES.set('POST /api/fetch_bindings', async (req, env) => {
+    const { accountId, workerName } = await safeJson(req) as any;
+    return handleFetchBindings(env, accountId, workerName);
 });
 
-ROUTES.set('POST /api/get_subdomain', async (req, _env) => {
-    const cred: AccountCredentials = await safeJson(req);
-    return handleGetSubdomain(cred);
+ROUTES.set('POST /api/get_subdomain', async (req, env) => {
+    const { accountId } = await safeJson(req) as any;
+    return handleGetSubdomain(env, accountId);
 });
 
-ROUTES.set('POST /api/change_subdomain', async (req, _env) => {
-    const { newSubdomain, ...cred } = await safeJson(req) as any;
-    return handleChangeSubdomain(cred as AccountCredentials, newSubdomain);
+ROUTES.set('POST /api/change_subdomain', async (req, env) => {
+    const { accountId, newSubdomain } = await safeJson(req) as any;
+    return handleChangeSubdomain(env, accountId, newSubdomain);
 });
 
 ROUTES.set('GET /api/diff', (req, env) => {

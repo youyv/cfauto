@@ -1,5 +1,18 @@
 # 版本更新日志
 
+## V11.5.0 (2026-06-29)
+
+### 🛡️ 安全加固 (审计驱动)
+- **XSS 防护**: 修复 5 处 innerHTML 未转义注入点 (GitHub commit msg, CF Worker名, 账号别名, API错误消息)
+- **信息泄露封堵**: 15 处 catch 块不再将内部错误消息返回客户端，改为通用消息 + console.error
+- **后端加固**: /api/diag 只显示键存在性不暴露KV内容; /api/restore 增加 KV 键白名单; CRUD 端点 type 参数校验
+- **认证修复**: 登录接口增加 ACCESS_CODE 缺失检查，防止空密钥时绕过认证
+- **加密层优化**: writeAccounts 不原地修改调用方数组; 移除 yxip.ts 死 import; 导入解密守卫改为版本通配 /^v\d+:/
+
+### 🐛 Bug 修复
+- **github.ts**: 修复 applyTemplateTransform 函数代码损坏 (字符串未闭合 + CF_FALLBACK_IPS 死代码)
+- **空 catch**: 3 处空 catch 块增加日志输出 (auto-update, zones, deploy)
+
 ## V11.4.0 (2026-06-29)
 
 ### DNS 自动修复

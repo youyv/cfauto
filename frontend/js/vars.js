@@ -119,7 +119,7 @@ async function doSync(a, t, n) {
     if (!confirm('确认覆盖当前变量配置?')) return;
     const r = await fetch('/api/fetch_bindings', {
         method: 'POST',
-        body: JSON.stringify({ accountId: a.accountId, email: a.email, globalKey: a.globalKey, workerName: n })
+        body: JSON.stringify({ accountId: a.accountId, workerName: n })
     });
     const d = await r.json();
     if (d.success) {

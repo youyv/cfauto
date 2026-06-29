@@ -6,7 +6,6 @@ import { TEMPLATES, KV_KEYS, BINDING } from '../config/templates';
 import { cf, getAuthHeaders, json, jsonError } from '../lib/cloudflare-api';
 import { getJSON, putJSON } from "../lib/kv-utils";
 import { readAccounts } from "../lib/account-store";
-import { decryptKey } from "../lib/crypto-utils";
 import type { AppEnv } from "../config/env";
 
 /** 提取并返回全球区域节点的基础数据 */
@@ -38,7 +37,7 @@ export async function handleGetRegionsData() {
         }
         return json({ success: true, data: regionPools });
     } catch (e: any) {
-        return jsonError("Error fetching data: " + e.message, 500);
+        console.error('[handleGetRegionsData]', e); return jsonError("Region data fetch failed", 500);
     }
 }
 
