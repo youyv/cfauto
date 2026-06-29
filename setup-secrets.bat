@@ -2,6 +2,8 @@
 REM === Unset proxy (Cloudflare direct connect) ===
 set HTTP_PROXY=
 set HTTPS_PROXY=
+REM === DNS fix: Node.js DNS (127.0.0.1 broken) -> auto fallback ===
+set NODE_OPTIONS=--require %~dp0dns-fix.js
 
 REM Setup secrets (first time only)
 REM Sets ACCESS_CODE and GITHUB_TOKEN via wrangler secret
