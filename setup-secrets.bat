@@ -1,4 +1,8 @@
 @echo off
+REM === Unset proxy (Cloudflare direct connect) ===
+set HTTP_PROXY=
+set HTTPS_PROXY=
+
 REM Setup secrets (first time only)
 REM Sets ACCESS_CODE and GITHUB_TOKEN via wrangler secret
 cd /d %~dp0
