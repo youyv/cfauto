@@ -1,5 +1,21 @@
 # 版本更新日志
 
+## V11.4.0 (2026-06-29)
+
+### DNS 自动修复
+- 新增 dns-fix.js: Node.js preload hook，自动检测 127.0.0.1:53 可用性
+- 智能 fallback: 当本地 DNS 代理未运行时，自动降级到系统真实 DNS
+- 无硬编码: 通过 PowerShell + ipconfig 自动发现网关 DNS，适配任意网络环境
+- deploy.bat 集成 NODE_OPTIONS=--require 加载 DNS 修复
+
+### 加解密层清理
+- 移除 deploy.ts 和 cron.ts 中 readAccounts 后的冗余 decryptKey 调用
+- 移除 check.ts 和 fix1101.ts 中未使用的 decryptKey import
+- crud.ts 导入端点仅对 import 条目解密，跳过已解密的存量条目
+
+### 其他改进
+- deploy.bat 优化: 集成 DNS 修复，移除冗余代理变量设置
+
 ## V11.3.0 (2026-06-28)
 
 ### 🔒 加密层进化

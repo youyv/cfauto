@@ -30,10 +30,7 @@ export async function handleBatchDeploy(env: AppEnv, reqData: BatchDeployRequest
     const allAccounts = await readAccounts(env);
 
     const accountsToDeploy = allAccounts.filter((a: any) => targetAccounts.includes(a.alias));
-    // Decrypt API keys for Cloudflare API calls
-    await Promise.all(accountsToDeploy.map(async (a: any) => {
-        if (a.globalKey) a.globalKey = await decryptKey(env, a.globalKey);
-    }));
+    // readAccounts 已自动解密 globalKey，无需再次解密
     if (accountsToDeploy.length === 0) return json([{ name: "错误", success: false, msg: "未选择有效账号" }]);
 
     let scriptContent = "";

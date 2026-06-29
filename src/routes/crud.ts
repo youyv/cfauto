@@ -115,14 +115,15 @@ ROUTES.set('POST /api/accounts/import', async (req, env) => {
         const existing = await readAccounts(env);
         const merged = [...existing];
         let added = 0, skipped = 0;
+        const importedIdx: number[] = [];
         for (const item of imported) {
             if (!item.alias || !item.accountId) { skipped++; continue; }
             const dupIdx = merged.findIndex((a: any) => a.alias === item.alias || a.accountId === item.accountId);
-            if (dupIdx >= 0) { merged[dupIdx] = { ...merged[dupIdx], ...item }; skipped++; }
-            else { merged.push(item); added++; }
+            if (dupIdx >= 0) { merged[dupIdx] = { ...merged[dupIdx], ...item }; importedIdx.push(dupIdx); skipped++; }
+            else { merged.push(item); importedIdx.push(merged.length - 1); added++; }
         }
-        // 解密再加密：防止导入已加密数据（如从 export 导出的）造成双重加密
-        await Promise.all(merged.map(async (a: any) => { if (a.globalKey) a.globalKey = await decryptKey(env, a.globalKey); }));
+        // 仅解密来自 import 的条目（export 数据已加密），避免对已解密的存量条目重复解密
+        await Promise.all(importedIdx.map(async (i) => { if (merged[i].globalKey) merged[i].globalKey = await decryptKey(env, merged[i].globalKey); }));
         await writeAccounts(env, merged);
         return json({ success: true, added, skipped, total: merged.length });
     } catch (e: any) { return jsonError('导入失败: ' + e.message); }

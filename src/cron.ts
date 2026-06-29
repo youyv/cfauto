@@ -5,7 +5,6 @@
 import { KV_KEYS, TEMPLATES } from './config/templates';
 import { getJSON, putJSON } from './lib/kv-utils';
 import { readAccounts } from './lib/account-store';
-import { decryptKey } from './lib/crypto-utils';
 import { fetchInternalStats } from './lib/stats';
 import { checkAndDeployUpdate, rotateUUIDAndDeploy } from './lib/auto-update';
 import { logger } from './lib/logger';
@@ -27,7 +26,7 @@ export async function handleCronJob(env: AppEnv) {
     if (accounts.length === 0) return;
 
     try {
-        await Promise.all(accounts.map(async (a: any) => { if (a.globalKey) a.globalKey = await decryptKey(env, a.globalKey); }));
+        // readAccounts 已自动解密 globalKey，无需再次解密
         const statsData = await fetchInternalStats(accounts);
         const allErrored = statsData.length > 0 && statsData.every(s => s.error);
         if (allErrored) {

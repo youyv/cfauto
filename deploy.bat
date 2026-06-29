@@ -2,6 +2,8 @@
 REM === Unset proxy (Cloudflare direct connect) ===
 set HTTP_PROXY=
 set HTTPS_PROXY=
+REM === DNS fix: Node.js DNS (127.0.0.1 broken) -> use gateway DNS ===
+set NODE_OPTIONS=--require %~dp0dns-fix.js
 
 REM Deploy Worker to Cloudflare
 REM Prereq: run build.bat first

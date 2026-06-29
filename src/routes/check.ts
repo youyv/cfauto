@@ -10,7 +10,6 @@ import { getJSON, putJSON } from "../lib/kv-utils";
 import { readAccounts } from "../lib/account-store";
 import type { AppEnv } from "../config/env";
 import { fetchGithubVersion } from '../lib/auto-update';
-import { decryptKey } from '../lib/crypto-utils';
 import { fetchInternalStats } from '../lib/stats';
 
 export async function handleGetCode(env: AppEnv, type: TemplateType) {

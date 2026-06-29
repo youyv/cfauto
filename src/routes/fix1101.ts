@@ -9,7 +9,6 @@ import { fetchGithubCode, applyTemplateTransform } from '../lib/github';
 import { uploadWorker, parseApiError } from '../lib/deploy-utils';
 import { getJSON, putJSON } from "../lib/kv-utils";
 import { readAccounts } from "../lib/account-store";
-import { decryptKey } from "../lib/crypto-utils";
 import type { AppEnv } from "../config/env";
 
 export async function handleFix1101(env: AppEnv, type: TemplateType) {
