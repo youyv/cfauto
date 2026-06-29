@@ -1,4 +1,9 @@
 @echo off
+REM === Proxy (modify port if different) ===
+set HTTP_PROXY=http://127.0.0.1:7890
+set HTTPS_PROXY=http://127.0.0.1:7890
+set NO_PROXY=localhost,127.0.0.1
+
 REM Setup secrets (first time only)
 REM Sets ACCESS_CODE and GITHUB_TOKEN via wrangler secret
 cd /d %~dp0
