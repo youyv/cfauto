@@ -117,7 +117,13 @@ export async function coreDeployLogic(env: AppEnv, opts: DeployOptions) {
                 await putJSON(env.CONFIG_KV, KV_KEYS.DEPLOY_JOURNAL, existing.slice(0, 100));
             } catch (e) { logger.warn("deploy journal write failed", { error: (e as Error).message }); }
             const mode = isLatestMode ? 'latest' : 'fixed';
-            const dp: DeployConfig = { mode, currentSha: deployedSha || 'unknown', deployTime: new Date().toISOString() };
+            let commitDate: string | null = null;
+            try {
+                const { apiUrl, safePath } = getGithubUrls(type);
+                const ghRes = await fetchWithTimeout(apiUrl + '?sha=' + TEMPLATES[type].ghBranch + '&per_page=1&path=' + safePath, { headers: { 'User-Agent': 'CF-Worker' } });
+                if (ghRes.ok) { const data: any = await ghRes.json(); commitDate = data[0]?.commit?.committer?.date || null; }
+            } catch (_) { /* non-critical */ }
+            const dp: DeployConfig = { mode, currentSha: deployedSha || 'unknown', deployTime: new Date().toISOString(), commitDate: commitDate || undefined };
             await putJSON(env.CONFIG_KV, KV_KEYS.deployConfig(type), dp);
         }
         return logs;

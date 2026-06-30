@@ -67,26 +67,29 @@ export async function handleDiff(env: AppEnv, type: TemplateType) {
             });
         }
 
+        // 使用 Commits API + path 过滤 + since 日期，避免 Compare API 返回全仓库 commit
+        const deployConfig = await getJSON(env.CONFIG_KV, KV_KEYS.deployConfig(type), { mode: 'latest' });
+        const sinceDate = deployConfig.commitDate || deployConfig.deployTime || ver.localTime;
+        
         const headers: Record<string, string> = { 'User-Agent': 'Cloudflare-Worker-Manager' };
         if (env.GITHUB_TOKEN) headers['Authorization'] = 'token ' + env.GITHUB_TOKEN;
 
-        const { repoApiBase } = getGithubUrls(type);
-        const compareRes = await fetch(repoApiBase + '/compare/' + localSha + '...' + remoteSha, { headers });
+        const { apiUrl, branch, safePath } = getGithubUrls(type);
+        const sinceParam = sinceDate ? '&since=' + encodeURIComponent(sinceDate) : '';
+        const commitsRes = await fetch(apiUrl + '?sha=' + branch + '&per_page=30&path=' + safePath + sinceParam, { headers });
 
-        if (!compareRes.ok) {
-            if (compareRes.status === 404) {
-                return json({ status: 'no_compare', commits: [], localSha: localSha.substring(0, 7), remoteSha: remoteSha.substring(0, 7), message: '版本差异过大，请查看 GitHub' });
-            }
-            throw new Error('GitHub Compare API error: ' + compareRes.status);
-        }
+        if (!commitsRes.ok) throw new Error('GitHub API Error: ' + commitsRes.status);
 
-        const compareData = await compareRes.json();
+        const commitsData = await commitsRes.json();
+        const allCommits = Array.isArray(commitsData) ? commitsData : [];
+        const count = allCommits.length;
+
         return json({
-            status: compareData.status || 'diverged',
-            aheadBy: compareData.ahead_by || 0,
-            behindBy: compareData.behind_by || 0,
-            totalCommits: compareData.total_commits || 0,
-            commits: (compareData.commits || []).slice(0, 15).map((cm: any) => ({
+            status: count > 0 ? 'diverged' : 'up-to-date',
+            aheadBy: 0,
+            behindBy: count,
+            totalCommits: count,
+            commits: allCommits.slice(0, 15).map((cm: any) => ({
                 sha: cm.sha?.substring(0, 7),
                 message: cm.commit?.message?.split('\n')[0],
                 author: cm.commit?.author?.name,

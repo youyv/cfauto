@@ -23,6 +23,7 @@ export interface DeployConfig {
     mode: 'latest' | 'fixed';
     currentSha?: string | null;
     deployTime?: string | null;
+    commitDate?: string | null;
 }
 
 // ===== 自动更新全局配置 =====
