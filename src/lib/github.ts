@@ -14,7 +14,7 @@ export function getGithubUrls(type: TemplateType, sha: string | null = null) {
     const ref = sha || t.ghBranch;
     const scriptUrl = `https://raw.githubusercontent.com/${t.ghUser}/${t.ghRepo}/${ref}/${safePath}`;
     const repoApiBase = `https://api.github.com/repos/${t.ghUser}/${t.ghRepo}`;
-    return { apiUrl, scriptUrl, repoApiBase, branch: t.ghBranch };
+    return { apiUrl, scriptUrl, repoApiBase, branch: t.ghBranch, safePath };
 }
 
 /** 从 GitHub 拉取代码 + 解析最新 SHA */
@@ -31,7 +31,7 @@ export async function fetchGithubCode(type: TemplateType, targetSha: string | nu
         const headers: Record<string, string> = { "User-Agent": "CF-Worker" };
         if (env.GITHUB_TOKEN) headers["Authorization"] = `token ${env.GITHUB_TOKEN}`;
         try {
-            const apiRes = await fetchWithTimeout(apiUrl + `?sha=${TEMPLATES[type].ghBranch}&per_page=1`, { headers });
+            const apiRes = await fetchWithTimeout(apiUrl + `?sha=${TEMPLATES[type].ghBranch}&per_page=1&path=${safePath}`, { headers });
             if (apiRes.ok) sha = (await apiRes.json())[0].sha;
         } catch (e) { console.warn('[GitHub] SHA fetch failed:', (e as Error).message); }
     }

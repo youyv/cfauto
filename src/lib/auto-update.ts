@@ -136,10 +136,10 @@ export async function fetchGithubVersion(env: AppEnv, type: TemplateType): Promi
     const localSha = hasDeployed ? deployConfig.currentSha : null;
     const localTime = hasDeployed ? deployConfig.deployTime : null;
     
-    const { apiUrl, branch } = getGithubUrls(type);
+    const { apiUrl, branch, safePath } = getGithubUrls(type);
     const headers: Record<string, string> = { 'User-Agent': 'Cloudflare-Worker-Manager' };
     if (env.GITHUB_TOKEN) headers['Authorization'] = 'token ' + env.GITHUB_TOKEN;
-    const ghRes = await fetchWithTimeout(apiUrl + '?sha=' + branch + '&per_page=1&t=' + Date.now(), { headers });
+    const ghRes = await fetchWithTimeout(apiUrl + '?sha=' + branch + '&per_page=1&path=' + safePath + '&t=' + Date.now(), { headers });
     if (!ghRes.ok) throw new Error('GitHub API Error: ' + ghRes.status);
     const ghData: any = await ghRes.json();
     const latestCommit = Array.isArray(ghData) ? ghData[0] : ghData;

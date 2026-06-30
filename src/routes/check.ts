@@ -25,10 +25,10 @@ export async function handleGetCode(env: AppEnv, type: TemplateType) {
 export async function handleCheckUpdate(env: AppEnv, type: TemplateType, mode?: string, limit = 10) {
     try {
         if (mode === 'history') {
-            const { apiUrl, branch } = getGithubUrls(type);
+            const { apiUrl, branch, safePath } = getGithubUrls(type);
             const headers: Record<string, string> = { "User-Agent": "Cloudflare-Worker-Manager" };
             if (env.GITHUB_TOKEN) headers["Authorization"] = 'token ' + env.GITHUB_TOKEN;
-            const ghRes = await fetch(apiUrl + '?sha=' + branch + '&per_page=' + limit + '&t=' + Date.now(), { headers });
+            const ghRes = await fetch(apiUrl + '?sha=' + branch + '&per_page=' + limit + '&path=' + safePath + '&t=' + Date.now(), { headers });
             if (!ghRes.ok) throw new Error('GitHub API Error: ' + ghRes.status);
             return json({ success: true, history: await ghRes.json() });
         }
