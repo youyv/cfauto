@@ -20,7 +20,7 @@ export function getGithubUrls(type: TemplateType, sha: string | null = null) {
 /** 从 GitHub 拉取代码 + 解析最新 SHA */
 export async function fetchGithubCode(type: TemplateType, targetSha: string | null, env: AppEnv) {
     const isLatest = !targetSha || targetSha === 'latest';
-    const { scriptUrl, apiUrl } = getGithubUrls(type, isLatest ? null : targetSha);
+    const { scriptUrl, apiUrl, safePath } = getGithubUrls(type, isLatest ? null : targetSha);
     
     const codeRes = await fetchWithTimeout(scriptUrl + `?t=${Date.now()}`);
     if (!codeRes.ok) throw new Error(`代码下载失败: ${codeRes.status}`);
