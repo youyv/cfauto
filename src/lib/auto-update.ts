@@ -152,7 +152,7 @@ export async function fetchGithubVersion(env: AppEnv, type: TemplateType): Promi
     
     return {
         localSha, localTime,
-        commitDate: deployConfig.commitDate || null,
+        commitDate,
         remoteSha: latestCommit.sha,
         remoteDate: latestCommit.commit.committer.date,
         remoteMsg: latestCommit.commit.message,
