@@ -38,7 +38,7 @@ export async function handleCheckUpdate(env: AppEnv, type: TemplateType, mode?: 
         if (ver.localSha) {
             localCommitInfo = ver.localSha === ver.remoteSha
                 ? { sha: ver.localSha, date: ver.remoteDate }
-                : { sha: ver.localSha, date: ver.localTime };
+                : { sha: ver.localSha, date: ver.commitDate || ver.localTime };
         }
         return json({
             success: true,

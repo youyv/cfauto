@@ -130,7 +130,7 @@ export async function coreDeployLogic(env: AppEnv, opts: DeployOptions) {
     } catch (e: any) { return [{ name: "系统错误", success: false, msg: e.message }]; }
 }
 
-export async function fetchGithubVersion(env: AppEnv, type: TemplateType): Promise<{ localSha: string | null; localTime: string | null; remoteSha: string; remoteDate: string; remoteMsg: string; mode: string }> {
+export async function fetchGithubVersion(env: AppEnv, type: TemplateType): Promise<{ localSha: string | null; localTime: string | null; commitDate: string | null; remoteSha: string; remoteDate: string; remoteMsg: string; mode: string }> {
     const [deployConfig, accounts] = await Promise.all([
         getJSON(env.CONFIG_KV, KV_KEYS.deployConfig(type), { mode: 'latest' }),
         readAccounts(env),
@@ -152,6 +152,7 @@ export async function fetchGithubVersion(env: AppEnv, type: TemplateType): Promi
     
     return {
         localSha, localTime,
+        commitDate: deployConfig.commitDate || null,
         remoteSha: latestCommit.sha,
         remoteDate: latestCommit.commit.committer.date,
         remoteMsg: latestCommit.commit.message,
