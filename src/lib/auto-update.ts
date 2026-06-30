@@ -141,7 +141,25 @@ export async function fetchGithubVersion(env: AppEnv, type: TemplateType): Promi
     }
     const localSha = hasDeployed ? deployConfig.currentSha : null;
     const localTime = hasDeployed ? deployConfig.deployTime : null;
-    
+    let commitDate = deployConfig.commitDate || null;
+    // 无 commitDate 时通过 GitHub API 查询本地 SHA 的日期（自动回填 KV）
+    if (!commitDate && localSha) {
+        try {
+            const { repoApiBase } = getGithubUrls(type);
+            const h = { 'User-Agent': 'Cloudflare-Worker-Manager' };
+            if (env.GITHUB_TOKEN) h['Authorization'] = 'token ' + env.GITHUB_TOKEN;
+            const sr = await fetchWithTimeout(repoApiBase + '/commits/' + localSha, { headers: h });
+            if (sr.ok) {
+                const sd = await sr.json();
+                commitDate = sd.commit?.committer?.date || null;
+                if (commitDate) {
+                    deployConfig.commitDate = commitDate;
+                    await putJSON(env.CONFIG_KV, KV_KEYS.deployConfig(type), deployConfig);
+                }
+            }
+        } catch (_) {}
+    }
+
     const { apiUrl, branch, safePath } = getGithubUrls(type);
     const headers: Record<string, string> = { 'User-Agent': 'Cloudflare-Worker-Manager' };
     if (env.GITHUB_TOKEN) headers['Authorization'] = 'token ' + env.GITHUB_TOKEN;
