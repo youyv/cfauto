@@ -1,0 +1,64 @@
+# ============================================
+# Cloudflare Worker 部署配置文件
+# 修改下方配置后双击 deploy.bat 即可推送
+# ============================================
+
+# ---------- 项目名称 ----------
+# 必须与 Cloudflare 上已创建的 Worker 名称一致
+# 例如在 CF 创建了名为 "manager" 的 Worker，这里就填 "manager"
+name = "改成你的Worker名"
+# account_id = "改成你的Account ID"     # 要部署到哪个 CF 账号 (取消注释并填写)
+
+# ---------- 入口文件 ----------
+# 由 build.bat 生成，无需修改
+main = "dist/worker.js"
+
+# ---------- 兼容日期 ----------
+# 每次 build.bat 自动更新为当天日期，无需手动改
+compatibility_date = "2026-07-12"
+
+# workers_dev = false                                           # 禁用 *.workers.dev 默认域名
+# preview_urls = false                                       # 禁用预览 URL
+
+# ==========================================
+#              KV 命名空间绑定
+# ==========================================
+# KV 空间首次部署时取消注释，填入你的 KV ID (CF后台查看)
+# [[kv_namespaces]]
+# binding = "CONFIG_KV"
+# id = "改成你的KV ID"
+
+# ==========================================
+#              环境变量 (密钥)
+# ==========================================
+# 密钥在 CF 后台 Setting → Variables 手动设置一次即可
+# wrangler.toml 不写 [vars]，日常 deploy 不会覆盖后台已设的值
+# 密钥用 wrangler secret 管理，不写明文，日常 deploy 不会覆盖
+# 设置方法：npx wrangler secret put ACCESS_CODE / GITHUB_TOKEN
+
+# ==========================================
+#              路由 & 触发器
+# ==========================================
+# 自定义域名路由 (有自定义域名时取消注释)
+# [[routes]]
+# pattern = "改成你的域名"
+# zone_name = "改成你的zone名"
+# custom_domain = true
+
+# Cron 定时触发器 (自动更新 & 熔断, 需要时取消注释)
+# [triggers]
+# crons = ["*/5 * * * *"]
+
+# ==========================================
+#              构建命令
+# ==========================================
+# 本地上传时先执行 pnpm run build 打包，无需手动 build.bat
+# 如果只用 deploy.bat (不走 wrangler 构建)，删除此段即可
+[build]
+command = "pnpm run build"
+
+# ==========================================
+#              日志观测
+# ==========================================
+[observability]
+enabled = true                                            # 开启 Worker 日志 (可在 CF 后台查看)

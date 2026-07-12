@@ -1,0 +1,415 @@
+# 版本更新日志
+
+## V11.6.0 (2026-07-12)
+
+### 🔴 安全修复 (全面审计)
+- **github.ts**: PROXYIP 代码注入修复 — 补充单引号/反斜杠转义，与 TOKEN 处理一致
+- **XSS 修复**: yxip.js 外部数据源节点 code/cname 加入 safeHtml 转义
+- **XSS 修复**: accounts.js 凭据验证结果别名加入 safeHtml 转义
+- **XSS 修复**: yxip.js 账号邮箱文本内容加入 safeHtml 转义
+- **IP 伪造防护**: 登录限流移除 X-Forwarded-For 回退，仅信任 CF-Connecting-IP
+- **CSP 加固**: 主 HTML 页面添加 Content-Security-Policy 头
+
+### 🟡 安全改进
+- **yxip.ts**: 移除 YxipSaveRequest 中未使用的 email/globalKey 字段，消除凭据伪造攻击面
+- **前端 yxip.js**: 不再向 /api/save_yxip 发送 email/globalKey
+
+### 🟢 代码质量
+- **前端日志**: 6 处静默 catch 块添加 console.error (yxip.js ×2, accounts.js ×2, vars.js, history.js)
+- **日志统一**: zones.ts:113 console.warn → logger.warn
+- **类型安全**: getWorkerNames 提取到 account-store.ts，crud.ts/deploy.ts 共享复用
+- **类型安全**: 消除 account-store / yxip / deploy / crud / check 中的 any 标注
+- **DRY**: requireTemplateType 提取到 validate.ts，消除 8 处重复验证
+- **DeployBody** 等 5 个接口由 loader.ts 移至 types.ts
+- **dns-fix.js** 空 catch 块添加错误日志
+- **auth.ts & cloudflare-api.ts** catch 块添加原始错误日志
+
+## V11.5.0 (2026-06-29)
+
+### 🛡️ 安全加固 (审计驱动)
+- **XSS 防护**: 修复 5 处 innerHTML 未转义注入点 (GitHub commit msg, CF Worker名, 账号别名, API错误消息)
+- **信息泄露封堵**: 15 处 catch 块不再将内部错误消息返回客户端，改为通用消息 + console.error
+- **后端加固**: /api/diag 只显示键存在性不暴露KV内容; /api/restore 增加 KV 键白名单; CRUD 端点 type 参数校验
+- **认证修复**: 登录接口增加 ACCESS_CODE 缺失检查，防止空密钥时绕过认证
+- **加密层优化**: writeAccounts 不原地修改调用方数组; 移除 yxip.ts 死 import; 导入解密守卫改为版本通配 /^v\d+:/
+
+### 🐛 Bug 修复
+- **github.ts**: 修复 applyTemplateTransform 函数代码损坏 (字符串未闭合 + CF_FALLBACK_IPS 死代码)
+- **空 catch**: 3 处空 catch 块增加日志输出 (auto-update, zones, deploy)
+
+## V11.4.0 (2026-06-29)
+
+### DNS 自动修复
+- 新增 dns-fix.js: Node.js preload hook，自动检测 127.0.0.1:53 可用性
+- 智能 fallback: 当本地 DNS 代理未运行时，自动降级到系统真实 DNS
+- 无硬编码: 通过 PowerShell + ipconfig 自动发现网关 DNS，适配任意网络环境
+- deploy.bat 集成 NODE_OPTIONS=--require 加载 DNS 修复
+
+### 加解密层清理
+- 移除 deploy.ts 和 cron.ts 中 readAccounts 后的冗余 decryptKey 调用
+- 移除 check.ts 和 fix1101.ts 中未使用的 decryptKey import
+- crud.ts 导入端点仅对 import 条目解密，跳过已解密的存量条目
+
+### 其他改进
+- deploy.bat 优化: 集成 DNS 修复，移除冗余代理变量设置
+
+## V11.3.0 (2026-06-28)
+
+### 🔒 加密层进化
+- **密钥版本化**: v1: 版本前缀，支持多版本共存 + 兼容存量无前缀密文
+- **ENCRYPTION_SECRET**: 独立加密密钥，改 ACCESS_CODE 不影响已加密数据
+- **CryptoKey 缓存**: WeakMap 缓存，9 账号场景 9 次 SHA-256 → 1 次
+- **decryptKey 日志**: 解密失败时写 warn 日志，可观测密钥变更问题
+- **KV cacheTtl**: readAccounts 30s 缓存，减少重复 KV 读取
+
+### 🛡️ 安全修复
+- **yxip.ts 凭证伪造**: API 调用强制使用服务端存储的凭证，拒绝客户端传入
+- **登录限速改进**: CF-Connecting-IP 回退到 X-Forwarded-For
+- **diag 信息泄露**: 移除 __kv_keys 暴露
+
+### 🐛 Bug 修复
+- **import 双重加密**: 导入已加密数据→writeAccounts 再加密→数据损坏 → 添加 decrypt→encrypt 标准化
+- **重复 decryptKey**: deploy.ts/cron.ts/yxip.ts 移除 readAccounts 之后的冗余解密
+- **fix1101 N+1 KV**: kvVars 从内层循环移到外层，5账号×3Worker 场景 15x→1x
+- **fix1101 死代码**: 移除未使用的 ACCOUNTS_KEY
+- **settings 返回值**: null→[]，前端 JSON.parse 更安全
+
+### ⚡ 性能优化
+- **verify_credentials 并行化**: 串行 for→Promise.all，9 账号延迟降低 8x
+- **handleGetCode 加 Token**: 添加 GITHUB_TOKEN 认证头 + fetchWithTimeout
+- **前端 init_data**: 批量加载，10+ 请求合并为 1 个
+
+### 🧹 代码清理
+- safeJson 去重到 cloudflare-api.ts（原 3 处重复）
+- 4 处未使用 import 删除
+- index.ts 登录处理缩进修复
+
+
+---
+
+## V11.2.0 (2026-06-28)
+
+### 🔒 安全加固
+- **API Key AES-256-GCM 加密存储**: globalKey 密文存入 KV，仅 ACCESS_CODE 可解密
+- **统一数据访问层 account-store**: readAccounts/writeAccounts 自动加解密，杜绝遗漏
+- **XSS 防护**: safeHtml/safeJsStr 转义 Zone 名称和 onclick 属性
+- **JSON 异常处理**: 所有 POST 端点使用 safeJson()，畸形 JSON 返回 400
+
+### 🐛 修复 (本轮 20+ 项)
+- 9 处密钥解密遗漏 → 统一 readAccounts 自动解密
+- 12 处 request.json() 无异常处理 → safeJson()
+- fix1101 失败时 Worker 永久删除 → KV 恢复快照
+- 定时任务全部 stats 错误仍消耗 API → 提前退出
+- parseInt 无 radix → parseInt(x,10)
+- HTTP 调用无超时 → fetchWithTimeout()
+- 前端 JS 语法错误 → 修复换行符
+- 空列表工具栏隐藏 → 始终渲染
+
+### 🏗️ 架构
+- shared types.ts (8 interfaces)
+- migrate_encrypt_keys 端点 + UI 按钮
+- 导入导出加密一致性
+
+
+---
+
+## V11.1.0 (2026-06-27)
+
+### 🐛 关键修复
+
+- **P0 并发安全**: `customCodeHash` 修复为函数局部变量，消除多请求数据竞态
+- **异常透明**: `index.ts` 路由分发加 `await`，异常不再被 CF 运行时吞为 HTML 500
+- **缺失导入**: `deploy.ts` 补回 `json` 导入 (ReferenceError)
+- **前端防御**: `logs.forEach` 前加 `Array.isArray` 检查，避免错误消息被 `forEach is not a function` 掩盖
+- **变量名统一**: 批量部署 `admin` → `ADMIN` (大小写一致)，消除重复变量
+- **fix1101 Secret 保留**: 1101 修复后不再丢失 `secret_text` 类型
+
+### 🛠️ 代码质量
+
+- **部署去重**: 提取 `mergeVariableBindings` 共享函数，消除 60% 部署逻辑重复
+- **前端加固**: 拼接 JS 加 `"use strict"` + 73 个 `window.xxx` 显式导出声明
+- **日志统一**: 自动更新错误改用 `logger.error` 替代 `console.error`
+- **缩进修正**: `yxip.ts` 缩进对齐
+
+ (Changelog)
+
+> 倒序排列，最新版本在前。
+
+---
+
+## V10.16.0 (2026-06-26)
+- 🐛 CRITICAL: 修复 5 个文件 BINDING 导入缺失导致的运行时 ReferenceError (deploy/fix1101/zones/yxip/auto-update)
+- 🐛 修复 addVarRow 第4参数 secret 被静默丢弃，刷新后 Secret 标记丢失
+- 🐛 修复 build.bat 路径拼写错误 distworker.js → dist/worker.js
+- ⚡ mainHtml() 模块级缓存，页面请求零字符串构造开销
+- ⚡ fetchGithubVersion 两次 KV 读取改为 Promise.all 并行
+- ⚡ loginHtml() 缓存
+- 🔒 前端 XSS 加固: accounts.js/yxip.js 用户数据 innerHTML 转义
+- 🔒 CSRF 新增 Sec-Fetch-Site 检测 + 畸形 Origin 头异常保护
+- 🔧 build.js 启用 compatibility_date 自动同步 → wrangler.local.toml (不污染 Git)
+- 🧹 cloudflare-api.ts 移除重复 CfApiResult 接口定义
+
+## V10.15.0 (2026-06-26)
+- ✨ 部署前代码差异对比 (GitHub Compare API)
+- 📜 部署操作日志面板
+- 🚀 /api/init_data 合并端点，首屏减少 HTTP 往返
+- ⚡ DOM 缓存 $() + 表格头部缓存
+- 🔒 ADMIN→secret_text, Cookie→__Host-前缀
+- 🐛 修复 Joey 批量部署变量名 u vs uuid 错误
+- 🔧 错误处理统一: 6处空catch→console.error + jsonError 统一
+- 🧹 代码质量: 消除重复函数声明、补全边界检查
+
+## V10.14.1 (2026-06-26)
+- 🐛 修复 Joey 批量部署变量名错误：u 被误填为 uuid 导致 Worker 功能异常
+- 🔧 后端 uuidField 硬编码改为动态映射，消除模板特定分支
+
+## V10.14.0 (2026-06-24)
+
+### 🔒 安全加固
+
+- **Cookie 不再存储明文密码**: 登录成功后将 ACCESS_CODE 的 SHA-256 摘要写入 Cookie，原始密码不再出现在任何 Cookie/日志中
+
+### 🐛 修复
+
+- **子域名修改安全性**: `handleChangeSubdomain` 改为先 PUT 覆盖，仅在 CF 返回 "already has" 时才 DELETE+PUT，避免无故删除已有子域名
+- **正则替换静默失败检测**: ECH 模板的 `CF_FALLBACK_IPS` 和 `token` 正则替换增加失败检测，上游代码变更时输出警告日志
+- **错误响应格式统一**: 所有路由统一使用 `json()` / `jsonError()` 工具函数构建 JSON 响应，不再手写 `new Response(JSON.stringify(...))`
+
+### 🧹 代码质量
+
+- **模板类型约束**: 新增 `TemplateType = keyof typeof TEMPLATES` 类型，关键函数签名从 `type: string` 改为 `type: TemplateType`，编译期防止模板名拼写错误
+- **消除无意义动态导入**: `loader.ts` 14 个 `await import()` 全部改为顶层静态 import，esbuild 打包后已是单文件，动态导入无实际收益
+- **verify.js 修正**: 导出检查 MAP 中 MANIFEST 从 middleware/auth 移至 config/templates，消除假警告
+- **KV 命名空间清理加固**: 删除 Worker 时 KV 命名空间删除改为 5 次 × 2s 轮询（409 Conflict 重试），失败时返回 `kvWarnings` 字段告知用户而非静默忽略；全类型 Worker 删除后同步清理 `VARS_*` 和 `FAVORITES_*` 残留数据
+
+
+## V10.12.0 (2026-06-23)
+
+### 🏗️ 架构重构
+
+- **类型安全**: 全局  →  接口，编译期校验 KV/密钥访问
+- **模块解耦**: cron.ts 不再动态导入 routes，核心逻辑提取到 
+- **接口收敛**:  9参数 →  对象， 统一凭证传递
+- **模板驱动**: 6处硬编码  →  动态生成
+- **职责分离**:  → ， → 
+
+### ✨ 新增功能
+
+- **项目独立开关**: cmliu/joey/ech 各自控制自动更新与熔断轮换
+- **部署日志查看**: 新增  端点
+
+### 🛠️ 代码质量
+
+- **KV 工具**: / 消除 28 处样板代码
+- **部署去重**: // 提取到 
+- **认证合并**: / 合并为单一函数
+- **参数精简**: 消除 10 处透传的  冗余参数
+- **临时文件清理**: 删除编码损坏的 
+
+### 🐛 修复
+
+- **版本检查**: 删除 Worker 后自动重置过期 ，不再显示已删除项目的旧版本
+- **ECH Token**: 1101 修复流程保留 ECH token 变量，不再丢失
+- **主从联动**: 自动更新主开关关闭时子开关自动关闭
+
+## V10.11.1 (2026-06-20)
+
+### 🐛 修复
+
+- **安全加固**: Cookie 认证从子串匹配改为正则精确比对，消除密码前缀绕过风险
+- **UI 增强**: 批量操作工具栏补全选中计数和按钮禁用逻辑
+- **批量修复**: 批量部署重试时完整恢复所有表单配置（Worker名/KV/域名前缀等）
+- **Zone 分页**: 支持 >50 个 Zone 的账号完整加载
+- **1101 修复稳健性**: 删除 Worker 后加入 2 秒延迟再重建，防止 CF API 异步竞态
+
+## V10.11.0 (2026-06-18)
+
+### 修复
+- 修复 yxip.ts 缺失 KV_KEYS/json 导入导致运行时崩溃
+- 修复 5 处空 catch 静默吞错(fix1101/github/前端)
+- 修复 cron.ts lastCheck 异常时未更新导致定时任务阻断
+- 修复前端 JS 文件误用 TypeScript 类型注解
+- 修复搜索框被 doSearch 过滤掉自身的问题
+
+### 优化
+- 删除死代码 authenticate()
+- 路由表模块级缓存,不再每次请求重建
+- 构建启用 minify(164KB→152KB)
+- 搜索改为 Enter 触发,清除按钮始终可见,支持 Esc 清除
+
+### 新功能
+- 暗色模式自动跟随系统(prefers-color-scheme)
+- 账号搜索过滤 + YXIP 地区搜索过滤
+- 部署失败重试 + 部署操作日志(审计追踪)
+- 账号导入/导出(JSON) + 数据备份/恢复
+- 批量删除账号(复选框多选)
+- 部署预览(dry-run) + 凭据预检验证
+- Secret 环境变量支持
+- 熔断告警 Webhook(钉钉/飞书)
+
+## V10.10.0 (2026-02-24)
+
+### ⚡ 反代落地部署全面升级 (YXIP Improvements)
+
+* **Joey 部署架构多维兼容**：彻底重构 Joey 项目自动优选部署流。考虑到不同用户使用的底层架构，不仅提供了针对绑定高级 CFnew 框架大写 `C` 核心库直接注入 JSON 参数的强控直发特性（即原生有 KV 模式）；更是对极简版老字号架构提供了无缝的向下兼容：无需选取具体配置节点，在面板通过切换进入“**Joey 兼容（变量模式）**”通道后即可瞬间利用全局的系统级 `yx` 字段实现全版统一下放，一次设置所有新项目可通用！
+* 为配合上述兼容变量模式特性，交互面板进行优化：当锁定纯变量覆写策略时自动停用、隐藏下方的 CF 账号选取列表和全选组件，进一步避免用户误解目标受众与操作域。
+* 本次升级不仅完整统一了多种不同类型边缘业务的云端批量维护手感，还在代码层将所有的 YXIP 操作模板变量处理完全隔离原生化消除了一众运行隐患，使得稳定性大幅提高。
+
+---
+
+## V10.9.0 (2026-02-24)
+
+### ⚡ 新功能：全球反代落地节点系统 (YXIP) 集成
+
+* 中控台主面板全新加入 **“⚡ 反代落地部署”** 专属功能入口按钮。
+* 复刻独立版 `yxip.js` 功能逻辑：构建暗黑毛玻璃风格全屏交互模态框，直连上游实时获取全球区域 CF 节点池，支持按任意国家/地区分组、限额并摇号随机筛选。
+* **CMLiu 专属全自动直写适配**：自动检索选中 Cloudflare 账号下的全部 CMLiu 框架应用，通过底层 API 跨域提取各个应用绑定的专用 KV 空间 ID，并将摇号生成的优选节点库资源**一键批量写入为该节点的原始 `ADD.txt` 订阅池内**，无需外部链接即可无缝原生应用高性能节点！
+* **Joey 方案直插适配**：同时支持生成原生 Joey 适用的角标协议资源格式，并支持瞬间覆盖式注入其全局环境变量组的专属保留字(`yx` 变量)，便于后续重新批设下发。
+
+---
+
+## V10.8.0 (2026-02-20)
+
+### 🚫 新功能：ECH 禁用 workers.dev 域名开关
+
+* ECH 配置卡片新增「🚫 禁用默认 \*.workers.dev 域名」复选框（默认不勾选）。
+* 勾选后部署成功，自动调用 CF API 将该 Worker 的 workers.dev 子域名禁用。
+* 不勾选则保持启用（默认行为）。
+* 工作台日志显示 `🚫 默认域名已禁用` 或 `🌐 默认域名已启用` 的操作结果。
+
+---
+
+## V10.7.0 (2026-02-20)
+
+### 🔑 新功能：ECH Token 鉴权开关
+
+* ECH 配置卡片底部新增虚线框区域，包含 Toggle 开关和 Token 输入框。
+* **填写 Token + 开启开关** → 部署时将 Token 注入 `ech.js` 的 `const token = '...'`，启用 WebSocket 鉴权。
+* **不填 / 关闭开关** → `const token = ''`（无鉴权，默认行为），即使输入框有内容也不会注入。
+* Token 值同时保存到 `VARS_ech` 中，方便下次预填。
+
+---
+
+## V10.6.0 (2026-02-16)
+
+### 🚀 新功能
+
+* 工作台改为底部弹窗显示，主页添加「📋 工作台」按钮。
+* 批量部署新增「📦 采用已保存变量 (VARS)」复选框（默认开启）。
+* 修复 1101 实时步骤打印到工作台。
+* 一键修复 1101 新增自定义域名恢复流程：记录变量 → 删除 Worker → 随机改子域名 → 相同名称重建 → 恢复所有变量 + 域名绑定。
+
+### 🗑️ 移除
+
+* 删除所有混淆功能（serverSideObfuscate、JavaScriptObfuscator CDN、自动混淆开关、批量部署混淆）。
+
+### ✨ 改进
+
+* 所有操作日志统一输出到工作台弹窗。
+* `DEPLOY_CONFIG` 更新不再依赖 SHA，修复本地时间不更新。
+
+---
+
+## V10.3.3 (2026-02-16)
+
+### 🐛 修复
+
+* 重写 `serverSideObfuscate`：仅用头部随机注释+尾部 var 声明，修复 cmliu 1101。
+* 子域名修改改为 DELETE+PUT 两步操作，解决 "Account already has an associated subdomain" 错误。
+
+---
+
+## V10.3.2 (2026-02-16)
+
+### 🐛 修复
+
+* 手动部署改回服务端反指纹混淆，修复 `JavaScriptObfuscator` 对 edgetunnel 代码过于激进导致 Workers 1101 错误。
+* `JavaScriptObfuscator` 仅保留给批量部署使用。
+
+---
+
+## V10.3.1 (2026-02-16)
+
+### 🔐 反指纹混淆
+
+* 重写 `serverSideObfuscate`：注入大量随机死代码，每次部署指纹完全不同，防止 CF 特征码匹配。
+
+### 📋 文档重构
+
+* 新增 `CHANGELOG.md` 独立版本记录文件（倒序排列）。
+* `worker.js` 和 `README.md` 仅保留当前版本日志，历史版本移至本文件。
+
+---
+
+## V10.3.0 (2026-02-16)
+
+### 🚀 手动部署前端混淆
+
+* 点击「🚀 部署更新」时，若开启自动混淆，在浏览器端完整混淆后再部署。
+* `coreDeployLogic` 新增 `customCode` 参数，支持接收前端预混淆代码。
+
+---
+
+## V10.2.3 (2026-02-16)
+
+### 🐛 Bug 修复
+
+* 重写 `serverSideObfuscate`，移除危险的注释删除正则（误删模板字面量中 HTML/URL 内容导致 `SyntaxError`）。
+
+---
+
+## V10.2.2 (2026-02-16)
+
+### 🐛 Bug 修复
+
+* DEPLOY_CONFIG 仅在至少一个 Worker 成功部署后才更新 SHA。
+* 手动部署读取「自动混淆」开关。
+
+---
+
+## V10.2.1 (2026-02-16)
+
+### 🐛 关键 Bug 修复
+
+* 修复 `coreDeployLogic` 中 `targetSha='latest'` 被当作 git ref 导致自动更新失败。
+* 修复部署后 deploy config 被错误锁定为 `fixed` 模式。
+* 修复历史版本「Always Latest」部署触发 URL 构造错误。
+
+---
+
+## V10.2.0 (2026-02-14)
+
+### 🌌 暗黑星空主题
+
+* 新增暗黑星空模式 / 明亮模式主题切换。
+* Canvas 动态星空背景（闪烁星星 + 流星 + 星云光晕）。
+* 卡片毛玻璃半透明效果，全组件暗黑模式适配。
+* 主题选择通过 localStorage 持久化。
+
+---
+
+## V10.1.0 (2026-02-14)
+
+### 🌐 子域名管理
+
+* 查看/修改 workers.dev 子域名前缀。
+* 安全二次确认 + 格式校验。
+* 新增 `/api/get_subdomain`、`/api/change_subdomain` 接口。
+
+---
+
+## V10.0.0 (2026-02-14)
+
+### 🔐 安全加固
+
+* 登录改为 POST 提交，Cookie 增加 Secure 标志。
+* API 方法校验、CSRF 防护、统一错误响应。
+
+### 🐛 缺陷修复
+
+* 修复混淆正则误删 URL、checkUpdate 变量冲突、编辑账号 stats 重置。
+
+### ⚡ 改进
+
+* 熔断/自动更新动态化，compatibility_date 动态化。
+* 前后端数据消除重复，由后端动态注入。

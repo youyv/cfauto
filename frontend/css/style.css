@@ -1,0 +1,256 @@
+      /* ==========================================
+         精致毛玻璃主题 — Glass Premium Theme
+         ========================================== */
+
+      /* ── 浅色模式变量 ── */
+      :root {
+        --glass-1: rgba(255,255,255,0.92);
+        --glass-2: rgba(255,255,255,0.85);
+        --glass-3: rgba(248,250,252,0.75);
+        --glass-input: rgba(255,255,255,0.9);
+        --glass-modal: rgba(255,255,255,0.97);
+        --glass-blur-1: 20px; --glass-blur-2: 14px; --glass-blur-3: 8px;
+        --text-primary: #1e293b; --text-secondary: #475569; --text-muted: #94a3b8;
+        --border-color: #e2e8f0; --border-light: #f1f5f9;
+        --border-glow: rgba(148,163,184,0.15);
+        --shadow-sm: 0 1px 3px rgba(0,0,0,0.04);
+        --shadow-md: 0 4px 12px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04);
+        --shadow-lg: 0 8px 24px rgba(0,0,0,0.08), 0 2px 6px rgba(0,0,0,0.04);
+        --shadow-glow: 0 0 0 1px rgba(148,163,184,0.08);
+        --table-header-bg: #f8fafc; --table-row-hover: #f8fafc;
+        --accent-purple: #8b5cf6; --accent-blue: #3b82f6;
+        --input-ring: rgba(59,130,246,0.3);
+      }
+
+      /* ── 暗黑模式变量 — 三级玻璃 ── */
+      [data-theme="dark"] {
+        /* 玻璃层次：header(最强) > 卡片(中) > 嵌套(轻) */
+        --glass-1: rgba(15,23,42,0.85);
+        --glass-2: rgba(15,23,42,0.72);
+        --glass-3: rgba(30,41,59,0.55);
+        --glass-input: rgba(30,41,59,0.7);
+        --glass-modal: rgba(10,16,30,0.95);
+        --glass-blur-1: 24px; --glass-blur-2: 16px; --glass-blur-3: 10px;
+        --text-primary: #e2e8f0; --text-secondary: #cbd5e1; --text-muted: #94a3b8;
+        --border-color: rgba(71,85,105,0.45); --border-light: rgba(51,65,85,0.35);
+        --border-glow: rgba(139,92,246,0.12);
+        --shadow-sm: 0 1px 3px rgba(0,0,0,0.2);
+        --shadow-md: 0 4px 16px rgba(0,0,0,0.35), 0 1px 4px rgba(0,0,0,0.2);
+        --shadow-lg: 0 8px 32px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.25);
+        --shadow-glow: 0 0 0 1px rgba(139,92,246,0.12);
+        --table-header-bg: rgba(30,41,59,0.6); --table-row-hover: rgba(51,65,85,0.3);
+        --accent-purple: #a78bfa; --accent-blue: #60a5fa;
+        --input-ring: rgba(96,165,250,0.35);
+      }
+
+      /* ── 基础 ── */
+      body { background: linear-gradient(175deg, #e8edf5 0%, #f2efe8 35%, #efe5d8 70%, #e8dcc8 100%); color: var(--text-primary); }
+      [data-theme="dark"] body { background: transparent; }
+
+      /* ── 星空 Canvas — 只画星星不画背景，body 负责底色 ── */
+      #starfield { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; display: none; pointer-events: none; }
+      [data-theme="dark"] #starfield { display: block; }
+      /* 内容必须在星空 canvas 之上 */
+      body > .max-w-7xl { position: relative; z-index: 2; }
+
+      /* ── 一级玻璃：Header ── */
+      [data-theme="dark"] header {
+        background: var(--glass-1) !important;
+        backdrop-filter: blur(var(--glass-blur-1)); -webkit-backdrop-filter: blur(var(--glass-blur-1));
+        border: 1px solid var(--border-color) !important;
+        box-shadow: var(--shadow-lg), var(--shadow-glow);
+      }
+
+      /* ── 二级玻璃：卡片 (bg-white, project-card, bg-slate-100) ── */
+      [data-theme="dark"] .bg-white,
+      [data-theme="dark"] .project-card,
+      [data-theme="dark"] .bg-slate-100 {
+        background: var(--glass-2) !important;
+        backdrop-filter: blur(var(--glass-blur-2)); -webkit-backdrop-filter: blur(var(--glass-blur-2));
+        border: 1px solid var(--border-color) !important;
+        box-shadow: var(--shadow-md), var(--shadow-glow);
+        transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+      }
+      /* 卡片 hover — 极淡反馈 */
+      [data-theme="dark"] .bg-white:hover,
+      [data-theme="dark"] .project-card:hover {
+        border-color: rgba(139,92,246,0.08) !important;
+        box-shadow: var(--shadow-md) !important;
+      }
+
+      /* ── 三级玻璃：嵌套容器 ── */
+      [data-theme="dark"] .bg-slate-50,
+      [data-theme="dark"] .bg-gray-50,
+      [data-theme="dark"] .bg-gray-100,
+      [data-theme="dark"] .bg-gray-200,
+      [data-theme="dark"] .bg-gray-300,
+      [data-theme="dark"] .bg-slate-100.rounded.shadow {
+        background: var(--glass-3) !important;
+        backdrop-filter: blur(var(--glass-blur-3)); -webkit-backdrop-filter: blur(var(--glass-blur-3));
+      }
+      [data-theme="dark"] .text-gray-600 { color: var(--text-secondary) !important; }
+      [data-theme="dark"] .bg-purple-100 { background: rgba(88,28,135,0.2) !important; }
+      [data-theme="dark"] .text-purple-600 { color: #c4b5fd !important; }
+      [data-theme="dark"] .text-indigo-600 { color: #a5b4fc !important; }
+      [data-theme="dark"] .hover\\:bg-indigo-100:hover { background: rgba(49,46,129,0.2) !important; }
+
+      /* ── 文本颜色 ── */
+      [data-theme="dark"] .text-slate-800, [data-theme="dark"] .text-gray-700,
+      [data-theme="dark"] .text-slate-700, [data-theme="dark"] .text-gray-600 {
+        color: var(--text-primary) !important;
+      }
+      [data-theme="dark"] .text-gray-500, [data-theme="dark"] .text-gray-400,
+      [data-theme="dark"] .text-gray-300 {
+        color: var(--text-muted) !important;
+      }
+
+      /* ── 边框 ── */
+      [data-theme="dark"] .border-slate-200, [data-theme="dark"] .border-gray-100,
+      [data-theme="dark"] .border-gray-200 {
+        border-color: var(--border-color) !important;
+      }
+
+      /* ── 输入框 — 聚焦辉光 ── */
+      [data-theme="dark"] .input-field {
+        background: var(--glass-input) !important; color: var(--text-primary) !important;
+        border-color: var(--border-color) !important;
+        transition: border-color 0.25s, box-shadow 0.25s;
+      }
+      [data-theme="dark"] .input-field:focus {
+        border-color: var(--accent-blue) !important;
+        box-shadow: 0 0 0 3px var(--input-ring);
+      }
+      [data-theme="dark"] .input-field::placeholder { color: var(--text-muted) !important; }
+
+      /* ── 表格 ── */
+      [data-theme="dark"] .compact-table th {
+        background: var(--table-header-bg) !important; color: var(--text-muted) !important;
+        border-bottom: 1px solid var(--border-light) !important;
+      }
+      [data-theme="dark"] .compact-table td {
+        border-bottom-color: var(--border-light) !important; color: var(--text-secondary) !important;
+        transition: background 0.2s;
+      }
+      [data-theme="dark"] .compact-table tr:hover td,
+      [data-theme="dark"] .compact-table tr:hover {
+        background: rgba(255,255,255,0.03) !important;
+      }
+      .compact-table tr:hover td { background: rgba(0,0,0,0.02); transition: background 0.15s; }
+
+      /* ── 彩色背景 ── */
+      [data-theme="dark"] .bg-red-50    { background: rgba(127,29,29,0.25) !important; border-color: rgba(127,29,29,0.35) !important; }
+      [data-theme="dark"] .bg-blue-50   { background: rgba(30,58,138,0.25) !important; border-color: rgba(30,58,138,0.35) !important; }
+      [data-theme="dark"] .bg-green-50  { background: rgba(20,83,45,0.25) !important; border-color: rgba(20,83,45,0.35) !important; }
+      [data-theme="dark"] .bg-purple-50 { background: rgba(88,28,135,0.2) !important;  border-color: rgba(88,28,135,0.3) !important; }
+      [data-theme="dark"] .bg-orange-50 { background: rgba(124,45,18,0.25) !important; border-color: rgba(124,45,18,0.35) !important; }
+      [data-theme="dark"] .bg-indigo-50 { background: rgba(49,46,129,0.25) !important; border-color: rgba(49,46,129,0.35) !important; }
+      [data-theme="dark"] .bg-yellow-50 { background: rgba(113,63,18,0.25) !important; border-color: rgba(113,63,18,0.35) !important; }
+
+      [data-theme="dark"] .border-red-100   { border-color: rgba(127,29,29,0.35) !important; }
+      [data-theme="dark"] .border-blue-100  { border-color: rgba(30,58,138,0.35) !important; }
+      [data-theme="dark"] .border-green-100 { border-color: rgba(20,83,45,0.35) !important; }
+      [data-theme="dark"] .border-purple-100 { border-color: rgba(88,28,135,0.3) !important; }
+      [data-theme="dark"] .border-orange-100,.border-orange-200 { border-color: rgba(124,45,18,0.35) !important; }
+      [data-theme="dark"] .border-indigo-100 { border-color: rgba(49,46,129,0.35) !important; }
+
+      /* ── Select & Input 暗黑 ── */
+      [data-theme="dark"] select, [data-theme="dark"] input[type="number"],
+      [data-theme="dark"] input[type="text"], [data-theme="dark"] input[type="password"] {
+        background: var(--glass-input) !important; color: var(--text-primary) !important;
+        border-color: var(--border-color) !important;
+      }
+
+      /* ── 阴影 ── */
+      [data-theme="dark"] .shadow { box-shadow: var(--shadow-md) !important; }
+
+      /* ── 模态框 ── */
+      [data-theme="dark"] #batch_deploy_modal > div > div:first-child,
+      [data-theme="dark"] #account_manage_modal > div,
+      [data-theme="dark"] #history_modal > div > div,
+      [data-theme="dark"] #sync_select_modal > div {
+        background: var(--glass-modal) !important;
+        backdrop-filter: blur(28px); -webkit-backdrop-filter: blur(28px);
+        border: 1px solid var(--border-color) !important;
+        box-shadow: var(--shadow-lg), 0 0 0 1px rgba(139,92,246,0.1);
+      }
+      [data-theme="dark"] #batch_deploy_modal .p-4,
+      [data-theme="dark"] #account_manage_modal .p-4 {
+        color: var(--text-primary);
+      }
+      /* 模态背景蒙版 */
+      [data-theme="dark"] #batch_deploy_modal,
+      [data-theme="dark"] #account_manage_modal,
+      [data-theme="dark"] #history_modal,
+      [data-theme="dark"] #sync_select_modal,
+      [data-theme="dark"] #yxip_modal,
+      [data-theme="dark"] #workbench_modal {
+        background: rgba(0,0,0,0.7) !important;
+        backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+      }
+
+      /* ── 主题切换按钮 — 旋转过渡 ── */
+      .theme-toggle {
+        cursor: pointer; font-size: 18px; width: 38px; height: 38px; line-height: 38px;
+        border-radius: 50%; border: 2px solid #cbd5e1;
+        display: flex; align-items: center; justify-content: center;
+        transition: all 0.4s cubic-bezier(0.4,0,0.2,1);
+        background: #f1f5f9; color: #1e293b;
+        position: relative; overflow: hidden;
+      }
+      [data-theme="dark"] .theme-toggle {
+        background: rgba(255,255,255,0.15); color: #fbbf24;
+        border-color: rgba(255,255,255,0.25);
+      }
+      .theme-toggle:hover {
+        transform: scale(1.1) rotate(15deg);
+        box-shadow: 0 0 20px rgba(139,92,246,0.5),
+                    0 0 0 2px rgba(139,92,246,0.2);
+        border-color: rgba(139,92,246,0.5);
+      }
+      .theme-toggle:active { transform: scale(0.95) rotate(-8deg); }
+
+      /* ── 输入框基础 ── */
+      .input-field { border: 1px solid #cbd5e1; padding: 0.25rem 0.5rem; width:100%; border-radius: 6px; font-size: 0.8rem; transition: border-color 0.2s, box-shadow 0.2s; }
+      .input-field:focus { border-color:#3b82f6; outline:none; box-shadow: 0 0 0 3px rgba(59,130,246,0.15); }
+
+      /* ── 开关: checkbox隐藏, label伪元素画圆点 ── */
+      .tgl-input { position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none; }
+      .tgl-switch { display: inline-block; width: 32px; height: 18px; border-radius: 9px; background: #d1d5db; cursor: pointer; position: relative; transition: background 0.3s; vertical-align: middle; }
+      .tgl-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform 0.3s; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
+      .tgl-input:checked + .tgl-switch { background: #8b5cf6; }
+      .tgl-input:checked + .tgl-switch::after { transform: translateX(14px); }
+      /* 暗色 */
+      [data-theme="dark"] .tgl-switch { background: #374151; }
+      [data-theme="dark"] .tgl-switch::after { background: #e5e7eb; }
+      [data-theme="dark"] .tgl-input:checked + .tgl-switch { background: #a78bfa; }
+      [data-theme="dark"] .tgl-input:checked + .tgl-switch::after { background: #fff; }
+
+      /* ── 表格 ── */
+      .compact-table th, .compact-table td { padding: 8px; font-size: 13px; border-bottom: 1px solid #f1f5f9; white-space: nowrap; }
+      .compact-table th { background-color: #f8fafc; color: #64748b; font-weight: 600; text-align: left; }
+
+      /* ── 滚动条 — 暗黑适配 ── */
+      ::-webkit-scrollbar { width: 6px; height: 6px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+      [data-theme="dark"] ::-webkit-scrollbar-thumb { background: rgba(71,85,105,0.6); border-radius: 3px; }
+      [data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: rgba(71,85,105,0.85); }
+      /* Firefox */
+      * { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
+      [data-theme="dark"] * { scrollbar-color: rgba(71,85,105,0.6) transparent; }
+
+      /* ── 动画 ── */
+      .animate-fade-in { animation: fadeIn 0.35s ease-out; }
+      @keyframes fadeIn { from { opacity: 0; transform: translateY(-12px); } to { opacity: 1; transform: translateY(0); } }
+      @keyframes twinkle { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
+      @keyframes nebulaPulse { 0%, 100% { opacity: 0.6; } 50% { opacity: 1; } }
+
+      /* ── Swal2 暗黑适配 ── */
+      [data-theme="dark"] .swal2-popup {
+        background: var(--glass-modal) !important;
+        backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+        border: 1px solid var(--border-color) !important;
+        color: var(--text-primary) !important;
+      }
+      [data-theme="dark"] .swal2-title { color: var(--text-primary) !important; }
+      [data-theme="dark"] .swal2-html-container { color: var(--text-secondary) !important; }

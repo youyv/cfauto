@@ -1,0 +1,5 @@
+node_modules/
+dist/
+src/frontend-bundle.ts
+
+wrangler.local.toml

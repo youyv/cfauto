@@ -1,0 +1,21 @@
+{
+  "name": "worker-pro-refactor",
+  "version": "11.6.0",
+  "description": "Worker 智能中控 — V11.6.0 安全审计修复版 (XSS防护 · 代码注入修复 · 认证加固)",
+  "scripts": {
+    "build": "node build.js",
+    "build:cloudflare": "node build.js",
+    "dev": "wrangler dev --port 7890",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:verify": "node verify.js",
+    "typecheck": "npx tsc --noEmit 2>&1 || echo \"(type errors expected — gradual migration)\""
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.2",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9",
+    "wrangler": "^4.99.0"
+  }
+}
