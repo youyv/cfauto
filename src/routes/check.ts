@@ -6,7 +6,7 @@ import { KV_KEYS, TEMPLATES } from '../config/templates';
 import type { TemplateType } from '../config/templates';
 import { getGithubUrls, fetchGithubCommits } from '../lib/github';
 import { jsonError, json, fetchWithTimeout } from '../lib/cloudflare-api';
-import { getJSON, putJSON } from "../lib/kv-utils";
+import { getJSON } from "../lib/kv-utils";
 import { readAccounts } from "../lib/account-store";
 import { requireTemplateType } from '../lib/validate';
 import type { AppEnv } from "../config/env";

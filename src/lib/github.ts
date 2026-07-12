@@ -77,8 +77,8 @@ export function applyTemplateTransform(
         const proxyVar = variables ? variables.find(v => v.key === 'PROXYIP') : null;
         const targetIP = (proxyVar && proxyVar.value) ? proxyVar.value.trim() : 'ProxyIP.CMLiussss.net';
         const beforeCF = result;
-        // 使用回调函数避免 targetIP 中的 $ 被 String.replace 的替换语法解析
-        const escapedTargetIP = targetIP.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\$/g, '$$$$');
+        // 回调函数返回值不会被 String.replace 解析 $ 特殊符号，需转义的是单引号和反斜杠
+        const escapedTargetIP = targetIP.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
         result = result.replace(
             /const\s+CF_FALLBACK_IPS\s*=\s*\[.*?\];/s,
             () => `const CF_FALLBACK_IPS = ['${escapedTargetIP}'];`

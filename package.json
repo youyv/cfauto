@@ -1,6 +1,6 @@
 {
   "name": "worker-pro-refactor",
-  "version": "11.6.0",
+  "version": "11.6.1",
   "description": "Worker 智能中控 — V11.6.0 安全审计修复版 (XSS防护 · 代码注入修复 · 认证加固)",
   "scripts": {
     "build": "node build.js",

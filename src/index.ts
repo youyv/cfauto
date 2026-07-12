@@ -39,10 +39,9 @@ export default {
             // [公开] 登录接口 — 验证 ACCESS_CODE + 速率限制（5次/5分钟/IP）
             if (url.pathname === '/api/login' && request.method === 'POST') {
                 // 速率限制：基于 IP 最多 5 次/5分钟
+                const LOGIN_RATE_LIMIT = { MAX_ATTEMPTS: 5, WINDOW_SECONDS: 300 };
                 const clientIp = request.headers.get('CF-Connecting-IP') || 'unknown';
                 const rateKey = 'RATE_LIMIT_' + clientIp;
-                            // 登录速率限制配置
-            const LOGIN_RATE_LIMIT = { MAX_ATTEMPTS: 5, WINDOW_SECONDS: 300 };
 
             const attemptStr = await env.CONFIG_KV.get(rateKey);
                 const attempts = attemptStr ? parseInt(attemptStr, 10) : 0;

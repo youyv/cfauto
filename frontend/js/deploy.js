@@ -58,7 +58,7 @@ async function deploy(t, sha='') {
        logs.forEach(l => wbLog('[' + (l.success ? 'OK' : 'ERR') + '] ' + l.name + ': ' + l.msg, l.success ? '' : 'text-red-400'));
        deletedVars[t] = [];
        setTimeout(() => { checkUpdate(t); checkDeployConfig(t); }, 1000);
-   } catch(e) { wbLog('Error: ' + e.message, 'text-red-500'); }
+   } catch(e) { console.error('[deploy]', e); wbLog('Error: ' + e.message, 'text-red-500'); }
    btn.innerText = ot; btn.disabled = false;
 }
 
@@ -83,7 +83,7 @@ async function fix1101(t) {
             if (l.msg) l.msg.split(' | ').forEach(s => wbLog('   ' + s, 'text-slate-400'));
         });
         setTimeout(() => { checkUpdate(t); checkDeployConfig(t); }, 1000);
-    } catch(e) { wbLog('Error: ' + e.message, 'text-red-500'); }
+    } catch(e) { console.error('[fix1101]', e); wbLog('Error: ' + e.message, 'text-red-500'); }
     btn.innerText = ot; btn.disabled = false;
 }
 
@@ -135,7 +135,7 @@ async function doBatchDeploy() {
                         }
                     });
                 } else { savedVars = null; }
-            } catch(e) { savedVars = null; }
+            } catch(e) { console.error('[doBatchDeploy:savedVars]', e); savedVars = null; }
         }
 
         const res = await fetch('/api/batch_deploy', {
@@ -178,6 +178,7 @@ async function doBatchDeploy() {
          }
 
      } catch(e) {
+         console.error('[doBatchDeploy]', e);
          Swal.fire('错误', '部署失败: ' + e.message, 'error');
          wbLog(`❌ Error: ${e.message}`, 'text-red-500');
      }
@@ -208,7 +209,7 @@ async function showDeployJournal() {
                 'text-slate-400'
             );
         });
-    } catch(e) { wbLog('❌ 日志加载失败: ' + e.message, 'text-red-500'); }
+    } catch(e) { console.error('[showDeployJournal]', e); wbLog('❌ 日志加载失败: ' + e.message, 'text-red-500'); }
 }
 
 function openBatchDeployModal() {

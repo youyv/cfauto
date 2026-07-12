@@ -5,7 +5,7 @@
  * 不再接受请求体中的 email/globalKey，防止已登录用户操作未授权账号。
  */
 
-import { KV_KEYS, TEMPLATES, BINDING } from '../config/templates';
+import { KV_KEYS, TEMPLATES } from '../config/templates';
 import { readAccounts, writeAccounts, findAccount } from '../lib/account-store';
 import { cf, getAuthHeaders, jsonError, json } from '../lib/cloudflare-api';
 import { getJSON, putJSON } from "../lib/kv-utils";
@@ -74,9 +74,10 @@ export async function handleDeleteWorker(env: AppEnv, accountId: string, workerN
 
             for (const acc of accounts) {
                 if (acc.accountId === aid) {
-                    Object.keys(TEMPLATES).map(k => 'workers_' + k).forEach(type => {
-                        if (acc[type] && acc[type].includes(workerName)) {
-                            acc[type] = acc[type].filter((n: string) => n !== workerName);
+                    Object.keys(TEMPLATES).forEach(k => {
+                        const t = 'workers_' + k;
+                        if (acc[t] && acc[t].includes(workerName)) {
+                            acc[t] = acc[t].filter((n: string) => n !== workerName);
                             updated = true;
                         }
                     });
