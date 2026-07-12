@@ -170,7 +170,7 @@ async function checkUpdate(t){
         }
 
         if(d.remote && (!d.local || d.remote.sha !== d.local.sha)) {
-            statusHtml = `<div class="flex justify-between text-red-600 font-bold"><span>🚀 上游: ${remoteDate}</span><span class="animate-pulse">New!</span> <a href="#" onclick="previewDiff('${t}');return false" class="text-blue-500 underline font-normal">🔍差异</a></div>`;
+            statusHtml = `<div class="flex justify-between text-red-600 font-bold"><span>🚀 上游: ${remoteDate}</span><span class="animate-pulse">New!</span> <a href="#" onclick="previewDiff('${safeJsStr(t)}');return false" class="text-blue-500 underline font-normal">🔍差异</a></div>`;
         } else {
             statusHtml = `<div class="flex justify-between text-green-600"><span>✅ 上游: ${remoteDate}</span><span>Latest</span></div>`;
         }

@@ -9,7 +9,7 @@ import { decryptKey } from "../lib/crypto-utils";
 import { requireTemplateType } from '../lib/validate';
 import type { AppEnv } from "../config/env";
 import type { RouteHandler } from "./index";
-import type { FavoriteItem, AccountEntry } from '../lib/types';
+import type { FavoriteItem } from '../lib/types';
 
 export function registerCrudRoutes(ROUTES: Map<string, RouteHandler>) {
 // --- KV CRUD 路由（直接内联） ---

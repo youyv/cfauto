@@ -7,12 +7,11 @@ import type { TemplateType } from '../config/templates';
 import { cf, getAuthHeaders, json } from '../lib/cloudflare-api';
 import { fetchGithubCode, applyTemplateTransform } from '../lib/github';
 import { uploadWorker, parseApiError, mergeVariableBindings } from '../lib/deploy-utils';
-import { getJSON, putJSON } from "../lib/kv-utils";
 import { readAccounts, writeAccounts, getWorkerNames } from "../lib/account-store";
 import { logger } from '../lib/logger';
 import { validateRequired } from "../lib/validate";
 import type { AppEnv } from "../config/env";
-import { coreDeployLogic, DeployOptions } from '../lib/auto-update';
+import { coreDeployLogic, type DeployOptions } from '../lib/auto-update';
 import type { BatchDeployRequest, DeployLogEntry, AccountEntry, VariableBinding } from '../lib/types';
 
 /** 手动部署 — HTTP handler，调用核心部署逻辑 */

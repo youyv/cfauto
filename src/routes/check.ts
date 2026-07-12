@@ -2,7 +2,7 @@
  * 路由: 版本检查 + 代码获取
  */
 
-import { KV_KEYS, TEMPLATES } from '../config/templates';
+import { KV_KEYS } from '../config/templates';
 import type { TemplateType } from '../config/templates';
 import { getGithubUrls, fetchGithubCommits } from '../lib/github';
 import { jsonError, json, fetchWithTimeout } from '../lib/cloudflare-api';

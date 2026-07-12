@@ -2,7 +2,7 @@
  * 路由: 一键修复 1101
  */
 
-import { KV_KEYS, TEMPLATES } from '../config/templates';
+import { KV_KEYS } from '../config/templates';
 import type { TemplateType } from '../config/templates';
 import { cf, getAuthHeaders, json, fetchWithTimeout } from '../lib/cloudflare-api';
 import { fetchGithubCode, applyTemplateTransform } from '../lib/github';
