@@ -1,5 +1,6 @@
 import { loginHtml } from '../config/login-html';
 import { jsonError } from '../lib/cloudflare-api';
+import { logger } from '../lib/logger';
 import type { AppEnv } from "../config/env";
 /**
  * 认证中间件 — 登录页 + Cookie 认证 + CSRF
@@ -25,7 +26,7 @@ export async function generateAuthToken(accessCode: string): Promise<string> {
 /** 检查 Cookie 是否包含有效 auth token — 提取 auth 值，与 ACCESS_CODE 的 SHA-256 摘要精确比对，防止前缀绕过 */
 export async function requireCookie(request: Request, env: AppEnv): Promise<Response | null> {
     const cookieHeader = request.headers.get('Cookie') || '';
-    // 提取 auth= 的值进行精确比对，避免子串/前缀绕过
+    // 提取 __Host-auth= 的值进行精确比对，避免子串/前缀绕过
     const match = cookieHeader.match(/(?:^|;\s*)__Host-auth=([^;]*)/);
     const cookieValue = match ? match[1] : null;
     const expectedToken = await generateAuthToken(env.ACCESS_CODE!);
@@ -46,7 +47,7 @@ export function checkCsrf(request: Request, url: URL): Response | null {
         const origin = request.headers.get('Origin');
         try {
             if (origin && new URL(origin).host !== url.host) return jsonError('CSRF rejected (Origin)', 403);
-        } catch (e) { console.error('[checkCsrf] Invalid Origin header:', e); return jsonError('CSRF rejected (Invalid Origin)', 403); }
+        } catch (e) { logger.error('Invalid Origin header', e instanceof Error ? e : new Error(String(e)), { module: 'auth' }); return jsonError('CSRF rejected (Invalid Origin)', 403); }
     }
     return null;
 }

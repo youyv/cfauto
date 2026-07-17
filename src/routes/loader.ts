@@ -2,6 +2,7 @@
  * 路由注册 — 业务处理器（构建时已打包，统一静态导入）
  */
 import { safeJson } from '../lib/cloudflare-api';
+import { requireTemplateType } from '../lib/validate';
 import type { AppEnv } from "../config/env";
 import type { RouteHandler } from "./index";
 import type { DeployBody, ZoneBody, WorkerBody, SubdomainBody, Fix1101Body } from '../lib/types';
@@ -10,10 +11,13 @@ import { handleManualDeploy, handleBatchDeploy } from './deploy';
 import { handleGetZones, handleGetAllWorkers, handleDeleteWorker, handleFetchBindings, handleGetSubdomain, handleChangeSubdomain } from './zones';
 import { handleFix1101 } from './fix1101';
 import { handleGetRegionsData, handleSaveYxip } from './yxip';
+import { handleLogin } from './login';
 
 
 
 export function registerLazyRoutes(ROUTES: Map<string, RouteHandler>) {
+
+ROUTES.set('POST /api/login', (req, env) => handleLogin(req, env));
 
 ROUTES.set('GET /api/check_update', (req, env) => {
     const url = new URL(req.url);
@@ -25,9 +29,12 @@ ROUTES.set('GET /api/get_code', (req, env) =>
 
 ROUTES.set('POST /api/deploy', async (req, env) => {
     const url = new URL(req.url);
+    const type = url.searchParams.get('type') || '';
+    const templateErr = requireTemplateType(type);
+    if (templateErr) return templateErr;
     const body = await safeJson<DeployBody>(req);
     return handleManualDeploy(env, {
-        type: url.searchParams.get('type') || '',
+        type,
         variables: body.variables,
         deletedVariables: body.deletedVariables,
         targetSha: body.targetSha,

@@ -1,5 +1,32 @@
 # 版本更新日志
 
+## V11.7.1 (2026-07-16)
+
+### 🐛 Bug 修复
+- **构建修复**: `frontend-bundle.ts` 过期缺少 `FRONTEND_VERSION`/`FRONTEND_SWEETALERT2` 导出，导致 esbuild 构建失败
+- **Secret 复选框修复**: `vars.js` 中 `secChk.onchange` 使用 `nextElementSibling` 指向错误 DOM 元素，导致 secret 标记不生效，改为 `previousElementSibling`
+- **API 错误解析加固**: `zones.ts` `handleDeleteWorker` 中 `err.errors[0]` 改为 `err.errors?.[0]`，防止 Cloudflare API 返回异常 body 时 TypeError 崩溃
+- **build.js 双配置修复**: `compatibility_date` 自动更新优先检查 `wrangler.local.toml` 是否存在，存在则更新它而非 `wrangler.toml`，与 `deploy.bat` 行为一致
+
+## V11.7.0 (2026-07-16)
+
+### 🏗️ 架构优化
+- **模板驱动**: `getWorkerNames` 从硬编码 switch 改为动态属性访问，新增模板无需改此函数
+- **日志统一**: 21 处 `console.error/warn` 全面迁移到结构化 `logger.*`（cloudflare-api, github, kv-utils, auth, check, crud, zones, yxip, auto-update）
+- **路由提取**: 登录逻辑从 `index.ts` 提取到独立 `routes/login.ts`，保持公开路由预检流程正确
+- **部署统一**: `handleBatchDeploy` 复用 `prepareDeployCode`（统一代码获取+SHA追踪）+ 部署成功后写入 journal
+- **错误边界**: 新增 `withErrorBoundary` 高阶函数，提供路由级结构化错误日志
+
+### 🧪 测试增强
+- 新增 21 个单元测试：`getWorkerNames`(4) + `applyTemplateTransform`(5) + `withErrorBoundary`(3) + 现有测试扩展
+- `verify.js` 更新：新增 13 个源文件检查（login.ts, account-store.ts, auto-update.ts 等）
+
+### 🔒 安全加固
+- **handleBatchDeploy**: 添加 `requireTemplateType` 模板类型白名单校验（感谢安全审查）
+- **POST /api/deploy**: 手动部署路由添加模板类型校验，防止无效 type 触发 TypeError 崩溃
+- **finalizeDeploy**: putJSON 写入增加 try-catch 保护，防止 KV 写入失败穿透
+- **catch(_)**: 所有空 catch 块改为携带错误信息的结构化日志
+
 ## V11.6.2 (2026-07-12)
 
 ### 🔴 安全修复 (全面审计)

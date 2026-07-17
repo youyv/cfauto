@@ -10,6 +10,7 @@ import { requireTemplateType } from '../lib/validate';
 import type { AppEnv } from "../config/env";
 import type { RouteHandler } from "./index";
 import type { FavoriteItem } from '../lib/types';
+import { logger } from '../lib/logger';
 
 export function registerCrudRoutes(ROUTES: Map<string, RouteHandler>) {
 // --- KV CRUD 路由（直接内联） ---
@@ -130,7 +131,7 @@ ROUTES.set('POST /api/accounts/import', async (req, env) => {
         await Promise.all(importedIdx.map(async (i) => { if (merged[i].globalKey && merged[i].globalKey.match(/^v\d+:/)) merged[i].globalKey = await decryptKey(env, merged[i].globalKey); }));
         await writeAccounts(env, merged);
         return json({ success: true, added, skipped, total: merged.length });
-    } catch (e: any) { console.error('[accounts/import]', e); return jsonError('导入失败：数据格式异常'); }
+    } catch (e: any) { logger.error('accounts/import failed', e instanceof Error ? e : new Error(String(e)), { module: 'crud' }); return jsonError('导入失败：数据格式异常'); }
 });
 
 // --- 数据备份恢复 ---
@@ -172,7 +173,7 @@ ROUTES.set('POST /api/restore', async (req, env) => {
             restored++;
         }
         return json({ success: true, restored, rejected });
-    } catch (e: any) { console.error('[restore]', e); return jsonError('恢复失败：备份数据异常'); }
+    } catch (e: any) { logger.error('restore failed', e instanceof Error ? e : new Error(String(e)), { module: 'crud' }); return jsonError('恢复失败：备份数据异常'); }
 });
 
 // --- 初始化数据合并端点：单次请求替代多次 fetch ---
@@ -204,7 +205,7 @@ ROUTES.set('GET /api/init_data', async (req, env) => {
             vars,
             deployConfigs
         });
-    } catch (e: any) { console.error('[init_data]', e); return jsonError('数据加载失败'); }
+    } catch (e: any) { logger.error('init_data failed', e instanceof Error ? e : new Error(String(e)), { module: 'crud' }); return jsonError('数据加载失败'); }
 });
 
 }

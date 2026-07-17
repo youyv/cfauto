@@ -11,6 +11,7 @@ import { readAccounts } from "../lib/account-store";
 import { requireTemplateType } from '../lib/validate';
 import type { AppEnv } from "../config/env";
 import { fetchGithubVersion } from '../lib/auto-update';
+import { logger } from '../lib/logger';
 import { fetchInternalStats } from '../lib/stats';
 
 export async function handleGetCode(env: AppEnv, type: TemplateType) {
@@ -21,7 +22,7 @@ export async function handleGetCode(env: AppEnv, type: TemplateType) {
         if (!res.ok) throw new Error("Fetch failed: " + res.status);
         const code = await res.text();
         return json({ success: true, code });
-    } catch (e: any) { console.error('[handleGetCode]', e); return jsonError('Code fetch failed'); }
+    } catch (e: any) { logger.error('handleGetCode failed', e instanceof Error ? e : new Error(String(e)), { module: 'check' }); return jsonError('Code fetch failed'); }
 }
 
 export async function handleCheckUpdate(env: AppEnv, type: TemplateType, mode?: string, limit = 10) {
@@ -46,7 +47,7 @@ export async function handleCheckUpdate(env: AppEnv, type: TemplateType, mode?: 
             mode: ver.mode
         });
     } catch (e: any) {
-        console.error('[handleCheckUpdate]', e); return jsonError('Version check failed', 500);
+        logger.error('handleCheckUpdate failed', e instanceof Error ? e : new Error(String(e)), { module: 'check' }); return jsonError('Version check failed', 500);
     }
 }
 
@@ -88,7 +89,7 @@ export async function handleDiff(env: AppEnv, type: TemplateType) {
             localSha: localSha?.substring(0, 7),
             remoteSha: remoteSha?.substring(0, 7)
         });
-    } catch (e: any) { console.error('[handleDiff]', e); return jsonError('Diff failed'); }
+    } catch (e: any) { logger.error('handleDiff failed', e instanceof Error ? e : new Error(String(e)), { module: 'check' }); return jsonError('Diff failed'); }
 }
 
 export async function handleStats(env: AppEnv) {
@@ -96,5 +97,5 @@ export async function handleStats(env: AppEnv) {
         const accounts = await readAccounts(env);
         const results = await fetchInternalStats(accounts);
         return json(results);
-    } catch (e: any) { console.error('[handleStats]', e); return jsonError('Stats fetch failed'); }
+    } catch (e: any) { logger.error('handleStats failed', e instanceof Error ? e : new Error(String(e)), { module: 'check' }); return jsonError('Stats fetch failed'); }
 }

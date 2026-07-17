@@ -32,10 +32,10 @@ interface DeployCodeResult {
 }
 
 /** [提取] 准备部署代码 — GitHub 拉取或自定义代码 + SHA 审计 */
-async function prepareDeployCode(
+export async function prepareDeployCode(
     env: AppEnv, type: TemplateType,
     targetSha: string | null, customCode: string | null,
-    variables: Array<{ key: string; value: string }>, echTokenEnabled: boolean
+    variables: Array<{ key: string; value: string }> | null, echTokenEnabled: boolean
 ): Promise<DeployCodeResult | DeployLogEntry[]> {
     const isLatestMode = !targetSha || targetSha === 'latest';
     const shaForFetch = isLatestMode ? null : targetSha;
@@ -46,7 +46,7 @@ async function prepareDeployCode(
     if (customCode) {
         scriptContent = customCode;
         if (!deployedSha) {
-            try { const { sha } = await fetchGithubCode(type, 'latest', env); if (sha) deployedSha = sha; } catch (e) { console.warn('[coreDeployLogic] SHA fetch for customCode fallback failed:', (e as Error).message); }
+            try { const { sha } = await fetchGithubCode(type, 'latest', env); if (sha) deployedSha = sha; } catch (e) { logger.warn('SHA fetch for customCode fallback failed', { error: (e as Error).message, module: 'auto-update' }); }
         }
         customCodeHash = Array.from(new Uint8Array(
             await crypto.subtle.digest('SHA-256', new TextEncoder().encode(customCode))
@@ -102,7 +102,7 @@ async function deploySingleWorker(
 }
 
 /** [提取] 部署后写入日志和配置 */
-async function finalizeDeploy(
+export async function finalizeDeploy(
     env: AppEnv, type: TemplateType, isLatestMode: boolean,
     deployedSha: string | null, logs: DeployLogEntry[], customCodeHash: string
 ): Promise<void> {
@@ -123,9 +123,11 @@ async function finalizeDeploy(
     try {
         const commits = await fetchGithubCommits(type, env, { perPage: 1 });
         commitDate = commits[0]?.commit?.committer?.date || null;
-    } catch (_) { logger.warn('commitDate fetch after deploy failed', { module: 'auto-update' }); }
+    } catch (e) { logger.warn('commitDate fetch after deploy failed', { error: (e as Error).message, module: 'auto-update' }); }
     const dp: DeployConfig = { mode, currentSha: deployedSha || 'unknown', deployTime: new Date().toISOString(), commitDate: commitDate || undefined };
-    await putJSON(env.CONFIG_KV, KV_KEYS.deployConfig(type), dp);
+    try {
+        await putJSON(env.CONFIG_KV, KV_KEYS.deployConfig(type), dp);
+    } catch (e) { logger.warn('deployConfig write after deploy failed', { error: (e as Error).message, module: 'auto-update' }); }
 }
 
 /** 核心部署逻辑 — 编排器 */
@@ -187,7 +189,7 @@ export async function fetchGithubVersion(env: AppEnv, type: TemplateType): Promi
                     await putJSON(env.CONFIG_KV, KV_KEYS.deployConfig(type), deployConfig);
                 }
             }
-        } catch (_) { logger.warn('fetchGithubVersion commit date backfill failed', { module: 'auto-update' }); }
+        } catch (e) { logger.warn('fetchGithubVersion commit date backfill failed', { error: (e as Error).message, module: 'auto-update' }); }
     }
 
     const ghData = await fetchGithubCommits(type, env, { perPage: 1, cacheBust: true });

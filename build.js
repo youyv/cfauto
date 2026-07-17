@@ -76,14 +76,15 @@ esbuild.buildSync({
 });
 
 
-// 自动更新 wrangler.toml 的 compatibility_date 为今天
+// 自动更新 compatibility_date 为今天（优先 wrangler.local.toml）
 try {
-    const tomlPath = path.join(__dirname, 'wrangler.toml');
+    const localToml = path.join(__dirname, 'wrangler.local.toml');
+    const tomlPath = fs.existsSync(localToml) ? localToml : path.join(__dirname, 'wrangler.toml');
     const today = new Date().toISOString().split('T')[0];
     let toml = fs.readFileSync(tomlPath, 'utf-8');
     toml = toml.replace(/compatibility_date = "\d{4}-\d{2}-\d{2}"/, 'compatibility_date = "' + today + '"');
     fs.writeFileSync(tomlPath, toml, 'utf-8');
-    console.log('📅 compatibility_date → ' + today);
-} catch (e) { /* wrangler.toml 不存在则跳过 */ }
+    console.log('📅 compatibility_date → ' + today + ' (' + path.basename(tomlPath) + ')');
+} catch (e) { /* toml 不存在则跳过 */ }
 console.log('✅ Build complete → dist/worker.js');
 })();

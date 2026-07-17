@@ -58,14 +58,9 @@ export async function writeAccounts(env: AppEnv, accounts: AccountEntry[]): Prom
     await putJSON(env.CONFIG_KV, KV_KEYS.ACCOUNTS, cloned);
 }
 
-/** 类型安全地从 AccountEntry 获取对应模板的 Worker 列表 */
+/** 从 AccountEntry 动态获取对应模板的 Worker 列表 — 模板驱动，无需硬编码 switch */
 export function getWorkerNames(a: AccountEntry, type: string): string[] {
-    switch (type) {
-        case 'cmliu': return a.workers_cmliu || [];
-        case 'joey': return a.workers_joey || [];
-        case 'ech': return a.workers_ech || [];
-        default: return [];
-    }
+    return (a as unknown as Record<string, unknown>)['workers_' + type] as string[] || [];
 }
 
 /** 根据 accountId 查找单个账号（自动解密） */

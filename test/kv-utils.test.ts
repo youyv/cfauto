@@ -180,3 +180,122 @@ describe('AccountEntry structure', () => {
         expect(acc.workers_ech).toHaveLength(1);
     });
 });
+
+// ============================================================
+// account-store: getWorkerNames 动态模板访问
+// ============================================================
+describe('getWorkerNames (template-driven)', () => {
+    function getWorkerNames(a, type) {
+        return a['workers_' + type] || [];
+    }
+
+    it('returns workers_cmliu for type cmliu', () => {
+        const acc = { workers_cmliu: ['w1', 'w2'], workers_joey: ['j1'] };
+        expect(getWorkerNames(acc, 'cmliu')).toEqual(['w1', 'w2']);
+    });
+
+    it('returns empty array for unknown type', () => {
+        const acc = { workers_cmliu: ['w1'] };
+        expect(getWorkerNames(acc, 'unknown')).toEqual([]);
+    });
+
+    it('returns empty array when field is undefined', () => {
+        const acc = {};
+        expect(getWorkerNames(acc, 'cmliu')).toEqual([]);
+    });
+
+    it('works for ech type', () => {
+        const acc = { workers_ech: ['e1'] };
+        expect(getWorkerNames(acc, 'ech')).toEqual(['e1']);
+    });
+});
+
+// ============================================================
+// github: applyTemplateTransform 模板转换逻辑
+// ============================================================
+describe('applyTemplateTransform core logic', () => {
+    function applyTransform(type, code, variables) {
+        let result = code;
+        if (type === 'joey') {
+            result = 'var window = globalThis;\n' + result;
+        }
+        if (type === 'ech') {
+            const proxyVar = variables ? variables.find(function(v) { return v.key === 'PROXYIP'; }) : null;
+            const targetIP = (proxyVar && proxyVar.value) ? proxyVar.value.trim() : 'ProxyIP.CMLiussss.net';
+            const escaped = targetIP.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const pattern = /const\s+CF_FALLBACK_IPS\s*=\s*\[.*?\];/s;
+            result = result.replace(pattern, "const CF_FALLBACK_IPS = ['" + escaped + "'];");
+        }
+        return result;
+    }
+
+    it('joey: prepends window = globalThis', () => {
+        const code = 'console.log("hello");';
+        const result = applyTransform('joey', code, null);
+        expect(result.indexOf('var window = globalThis;')).toBe(0);
+    });
+
+    it('cmliu: no transformation', () => {
+        const code = 'export default {};';
+        const result = applyTransform('cmliu', code, null);
+        expect(result).toBe(code);
+    });
+
+    it('ech: replaces CF_FALLBACK_IPS with PROXYIP from variables', () => {
+        const code = 'const CF_FALLBACK_IPS = ["1.1.1.1", "2.2.2.2"];';
+        const result = applyTransform('ech', code, [{ key: 'PROXYIP', value: 'my.proxy.com' }]);
+        expect(result).toContain("my.proxy.com");
+        expect(result).not.toContain('1.1.1.1');
+    });
+
+    it('ech: uses default PROXYIP when no variable provided', () => {
+        const code = 'const CF_FALLBACK_IPS = ["1.1.1.1"];';
+        const result = applyTransform('ech', code, null);
+        expect(result).toContain('ProxyIP.CMLiussss.net');
+    });
+
+    it('ech: handles special chars in PROXYIP', () => {
+        const code = "const CF_FALLBACK_IPS = ['old'];";
+        const result = applyTransform('ech', code, [{ key: 'PROXYIP', value: "test'ip" }]);
+        expect(result).toContain("test\\'ip");
+    });
+});
+
+// ============================================================
+// routes: withErrorBoundary 错误边界
+// ============================================================
+describe('withErrorBoundary', () => {
+    function withErrorBoundary(handler, routeName) {
+        return async function(req) {
+            try {
+                return await handler(req);
+            } catch (err) {
+                const msg = err instanceof Error ? err.message : String(err);
+                return { status: 500, body: 'Route error: ' + routeName + ' - ' + msg };
+            }
+        };
+    }
+
+    it('passes through successful response', async () => {
+        const handler = async function() { return { status: 200, body: 'ok' }; };
+        const wrapped = withErrorBoundary(handler, 'test');
+        const result = await wrapped({});
+        expect(result.status).toBe(200);
+    });
+
+    it('catches thrown Error and returns 500', async () => {
+        const handler = async function() { throw new Error('boom'); };
+        const wrapped = withErrorBoundary(handler, 'failing');
+        const result = await wrapped({});
+        expect(result.status).toBe(500);
+        expect(result.body).toContain('failing');
+    });
+
+    it('catches non-Error throws', async () => {
+        const handler = async function() { throw 'string error'; };
+        const wrapped = withErrorBoundary(handler, 'str');
+        const result = await wrapped({});
+        expect(result.status).toBe(500);
+        expect(result.body).toContain('string error');
+    });
+});

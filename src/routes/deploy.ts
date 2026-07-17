@@ -5,13 +5,12 @@
 import { KV_KEYS, TEMPLATES } from '../config/templates';
 import type { TemplateType } from '../config/templates';
 import { cf, getAuthHeaders, json } from '../lib/cloudflare-api';
-import { fetchGithubCode, applyTemplateTransform } from '../lib/github';
 import { uploadWorker, parseApiError, mergeVariableBindings } from '../lib/deploy-utils';
 import { readAccounts, writeAccounts, getWorkerNames } from "../lib/account-store";
 import { logger } from '../lib/logger';
-import { validateRequired } from "../lib/validate";
+import { validateRequired, requireTemplateType } from "../lib/validate";
 import type { AppEnv } from "../config/env";
-import { coreDeployLogic, type DeployOptions } from '../lib/auto-update';
+import { coreDeployLogic, prepareDeployCode, finalizeDeploy, type DeployOptions } from '../lib/auto-update';
 import type { BatchDeployRequest, DeployLogEntry, AccountEntry, VariableBinding } from '../lib/types';
 
 /** 手动部署 — HTTP handler，调用核心部署逻辑 */
@@ -143,6 +142,8 @@ async function deployToSingleAccount(
 export async function handleBatchDeploy(env: AppEnv, reqData: BatchDeployRequest) {
     const validationError = validateRequired(reqData, ["template", "workerName", "targetAccounts"]);
     if (validationError) return validationError;
+    const templateErr = requireTemplateType(reqData.template as string);
+    if (templateErr) return templateErr;
 
     const { template, workerName, kvName = '', config, targetAccounts, disableWorkersDev, customDomainPrefix, enableKV, savedVars } = reqData;
     const allAccounts = await readAccounts(env);
@@ -150,13 +151,10 @@ export async function handleBatchDeploy(env: AppEnv, reqData: BatchDeployRequest
     const accountsToDeploy = allAccounts.filter((a) => targetAccounts.includes(a.alias));
     if (accountsToDeploy.length === 0) return json([{ name: "错误", success: false, msg: "未选择有效账号" }]);
 
-    let scriptContent = "";
-    try {
-        const { code } = await fetchGithubCode(template, 'latest', env);
-        scriptContent = applyTemplateTransform(template, code, null);
-    } catch (e: any) {
-        return json([{ name: "网络错误", success: false, msg: e.message }]);
-    }
+    // 复用 prepareDeployCode（统一代码获取 + SHA 追踪）
+    const codeResult = await prepareDeployCode(env, template, null, null, null, false);
+    if (Array.isArray(codeResult)) return json(codeResult);
+    const { scriptContent, deployedSha, isLatestMode } = codeResult;
 
     // 并行部署到所有账号
     const results = await Promise.allSettled(
@@ -177,6 +175,10 @@ export async function handleBatchDeploy(env: AppEnv, reqData: BatchDeployRequest
         } else {
             logs.push({ name: "并行部署异常", success: false, msg: r.reason?.message || String(r.reason) });
         }
+    }
+
+    if (logs.some(l => l.success)) {
+        await finalizeDeploy(env, template, isLatestMode, deployedSha, logs, '');
     }
 
     if (updatedAccounts) {

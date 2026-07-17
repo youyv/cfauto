@@ -34,7 +34,7 @@ export async function handleGetZones(env: AppEnv, accountId: string) {
             page++;
         }
         return json({ success: true, zones: allZones });
-    } catch (e: any) { console.error('[handleGetZones]', e); return jsonError('Zones fetch failed'); }
+    } catch (e: any) { logger.error('handleGetZones failed', e instanceof Error ? e : new Error(String(e)), { module: 'zones' }); return jsonError('Zones fetch failed'); }
 }
 
 export async function handleGetAllWorkers(env: AppEnv, accountId: string) {
@@ -48,7 +48,7 @@ export async function handleGetAllWorkers(env: AppEnv, accountId: string) {
             modified_on: w.modified_on
         }));
         return json({ success: true, workers });
-    } catch (e: any) { console.error('[zones]', e); return jsonError('Operation failed'); }
+    } catch (e: any) { logger.error('Operation failed', e instanceof Error ? e : new Error(String(e)), { module: 'zones' }); return jsonError('Operation failed'); }
 }
 
 export async function handleDeleteWorker(env: AppEnv, accountId: string, workerName: string, deleteKv: boolean) {
@@ -122,11 +122,11 @@ export async function handleDeleteWorker(env: AppEnv, accountId: string, workerN
             return json({ success: true });
         } else {
             const err = await delWorkerRes.json();
-            return json({ success: false, msg: err.errors[0]?.message || "删除失败" });
+            return json({ success: false, msg: err.errors?.[0]?.message || "删除失败" });
         }
     } catch (e: any) {
         if (e instanceof Response) return e;
-        console.error('[handleDeleteWorker]', e); return jsonError('Delete worker failed');
+        logger.error('handleDeleteWorker failed', e instanceof Error ? e : new Error(String(e)), { module: 'zones' }); return jsonError('Delete worker failed');
     }
 }
 
@@ -139,7 +139,7 @@ export async function handleFetchBindings(env: AppEnv, accountId: string, worker
             .filter((b: any) => b.type === "plain_text" || b.type === "secret_text")
             .map((b: any) => ({ key: b.name, value: b.type === "plain_text" ? b.text : "" }));
         return json({ success: true, data: bindings });
-    } catch (e: any) { console.error('[zones]', e); return jsonError('Operation failed'); }
+    } catch (e: any) { logger.error('Operation failed', e instanceof Error ? e : new Error(String(e)), { module: 'zones' }); return jsonError('Operation failed'); }
 }
 
 export async function handleGetSubdomain(env: AppEnv, accountId: string) {
@@ -152,7 +152,7 @@ export async function handleGetSubdomain(env: AppEnv, accountId: string) {
         } else {
             return json({ success: false, msg: data.errors?.[0]?.message || '查询失败' });
         }
-    } catch (e: any) { console.error('[zones]', e); return jsonError('Operation failed'); }
+    } catch (e: any) { logger.error('Operation failed', e instanceof Error ? e : new Error(String(e)), { module: 'zones' }); return jsonError('Operation failed'); }
 }
 
 export async function handleChangeSubdomain(env: AppEnv, accountId: string, newSubdomain: string) {
@@ -209,5 +209,5 @@ export async function handleChangeSubdomain(env: AppEnv, accountId: string, newS
             return json({ success: false, msg: '子域名修改失败，且无法自动恢复。请到 Dashboard → Workers & Pages → 设置中手动设置。' });
         }
         return json({ success: false, msg: errMsg });
-    } catch (e: any) { console.error('[zones]', e); return jsonError('Operation failed'); }
+    } catch (e: any) { logger.error('Operation failed', e instanceof Error ? e : new Error(String(e)), { module: 'zones' }); return jsonError('Operation failed'); }
 }

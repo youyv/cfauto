@@ -4,6 +4,7 @@
 
 import { TEMPLATES } from '../config/templates';
 import { fetchWithTimeout } from './cloudflare-api';
+import { logger } from './logger';
 import type { TemplateType } from '../config/templates';
 import type { GithubCommit } from './types';
 import type { AppEnv } from "../config/env";
@@ -33,7 +34,7 @@ export async function fetchGithubCode(type: TemplateType, targetSha: string | nu
         try {
             const commits = await fetchGithubCommits(type, env, { perPage: 1 });
             if (commits.length > 0) sha = commits[0].sha;
-        } catch (e) { console.warn('[GitHub] SHA fetch failed:', (e as Error).message); }
+        } catch (e) { logger.warn('SHA fetch failed', { error: (e as Error).message, module: 'github' }); }
     }
     
     return { code, sha };
@@ -84,7 +85,7 @@ export function applyTemplateTransform(
             () => `const CF_FALLBACK_IPS = ['${escapedTargetIP}'];`
         );
         if (result === beforeCF) {
-            console.warn('[TemplateTransform] ECH CF_FALLBACK_IPS pattern not matched — upstream code may have changed, deploy uses unmodified code');
+            logger.warn('ECH CF_FALLBACK_IPS pattern not matched — upstream code may have changed, deploy uses unmodified code', { module: 'github' });
         }
         
         const tokenVar = variables ? variables.find(v => v.key === 'TOKEN') : null;
@@ -97,7 +98,7 @@ export function applyTemplateTransform(
             () => `const token = '${escapedTokenVal}';`
         );
         if (result === beforeToken) {
-            console.warn('[TemplateTransform] ECH token pattern not matched — upstream code may have changed, token not injected');
+            logger.warn('ECH token pattern not matched — upstream code may have changed, token not injected', { module: 'github' });
         }
     }
     

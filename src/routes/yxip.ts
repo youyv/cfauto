@@ -44,7 +44,7 @@ export async function handleGetRegionsData() {
         }
         return json({ success: true, data: regionPools });
     } catch (e: any) {
-        console.error('[handleGetRegionsData]', e); return jsonError("Region data fetch failed", 500);
+        logger.error('handleGetRegionsData failed', e instanceof Error ? e : new Error(String(e)), { module: 'yxip' }); return jsonError("Region data fetch failed", 500);
     }
 }
 

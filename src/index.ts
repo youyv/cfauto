@@ -3,9 +3,9 @@
  * ${FRONTEND_VERSION}
  */
 
-import { requireAccessCode, requireCookie, checkCsrf, generateAuthToken } from './middleware/auth';
-import { jsonError, json, safeJson } from './lib/cloudflare-api';
-import { getRoute } from './routes/index';
+import { requireAccessCode, requireCookie, checkCsrf } from './middleware/auth';
+import { jsonError } from './lib/cloudflare-api';
+import { getRoute } from './routes/register';
 import { handleCronJob } from './cron';
 import { TEMPLATES, ECH_PROXIES, MANIFEST } from './config/templates';
 import { FRONTEND_HTML, FRONTEND_CSS, FRONTEND_JS, FRONTEND_VERSION, FRONTEND_SWEETALERT2 } from './frontend-bundle';
@@ -36,36 +36,12 @@ export default {
                 return new Response(JSON.stringify(MANIFEST), { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' } });
             }
 
-            // [公开] 登录接口 — 验证 ACCESS_CODE + 速率限制（5次/5分钟/IP）
+            // [公开] 登录接口 — 在认证中间件之前检查（路由已提取至 routes/login.ts）
             if (url.pathname === '/api/login' && request.method === 'POST') {
-                // 速率限制：基于 IP 最多 5 次/5分钟
-                const LOGIN_RATE_LIMIT = { MAX_ATTEMPTS: 5, WINDOW_SECONDS: 300 };
-                const clientIp = request.headers.get('CF-Connecting-IP') || 'unknown';
-                const rateKey = 'RATE_LIMIT_' + clientIp;
-
-            const attemptStr = await env.CONFIG_KV.get(rateKey);
-                const attempts = attemptStr ? parseInt(attemptStr, 10) : 0;
-                if (attempts >= LOGIN_RATE_LIMIT.MAX_ATTEMPTS) {
-                    return jsonError('登录尝试过于频繁，请 5 分钟后再试', 429);
-                }
-                await env.CONFIG_KV.put(rateKey, String(attempts + 1), { expirationTtl: LOGIN_RATE_LIMIT.WINDOW_SECONDS });
-
-                const body = await safeJson(request);
-                const correctCode = env.ACCESS_CODE;
-                if (!correctCode) {
-                    return jsonError('未配置 ACCESS_CODE，请在 Cloudflare Dashboard → Workers & Pages → 设置 → 变量 中设置 ACCESS_CODE 密钥', 500);
-                }
-                if (body.code === correctCode) {
-                    const token = await generateAuthToken(correctCode!);
-                    await env.CONFIG_KV.delete(rateKey);
-                    return json({ success: true }, {
-                        headers: {
-                        'Set-Cookie': `__Host-auth=${token}; Path=/; HttpOnly; Secure; Max-Age=86400; SameSite=Lax`
-                    }
-                    });
-                }
-                return jsonError('密码错误', 401);
+                const loginHandler = getRoute('POST', '/api/login');
+                if (loginHandler) return await loginHandler(request, env);
             }
+
             // [认证] 中间件链 — 任一检查不通过即返回对应错误
             const syncCheck = requireAccessCode(env) || checkCsrf(request, url);
             if (syncCheck) return syncCheck;

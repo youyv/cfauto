@@ -1,3 +1,4 @@
+import { logger } from './logger';
 /**
  * Cloudflare API 工具 — URL 构建器 + 认证头
  */
@@ -44,7 +45,7 @@ export type ErrorCode = 'AUTH_FAILED' | 'KV_NOT_BOUND' | 'GITHUB_API_ERROR' | 'C
 /** 安全解析 JSON，支持泛型类型推断 */
 export async function safeJson<T = any>(req: Request): Promise<T> {
     try { return await req.json() as T; }
-    catch (e) { console.error('[safeJson] JSON parse failed:', e); throw new Response(JSON.stringify({ success: false, msg: 'Invalid JSON' }), { status: 400, headers: { 'Content-Type': 'application/json' } }); }
+    catch (e) { logger.error('JSON parse failed', e instanceof Error ? e : new Error(String(e)), { module: 'cloudflare-api' }); throw new Response(JSON.stringify({ success: false, msg: 'Invalid JSON' }), { status: 400, headers: { 'Content-Type': 'application/json' } }); }
 }
 
 /** 统一 JSON 错误响应 */

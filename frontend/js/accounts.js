@@ -56,27 +56,100 @@ function renderTable() {
         return;
     }
     const sortedAccounts = [...accounts].sort((a, b) => b.stats.total - a.stats.total);
-    // 构建数据行（保留 innerHTML 因为模板复杂度高，但头部缓存避免重复解析）
-    tb.innerHTML = _getTableHeader() + sortedAccounts.map((a) => {
+    // 头部工具栏 + 搜索行保留 innerHTML（无动态变量）
+    const headerHTML = _getTableHeader();
+    // 数据行用 DOM API 构建，避免 innerHTML 中的 onclick 依赖全局作用域
+    const fragment = document.createDocumentFragment();
+    const headerRow = document.createElement('tbody');
+    headerRow.innerHTML = headerHTML;
+    while (headerRow.firstChild) fragment.appendChild(headerRow.firstChild);
+    sortedAccounts.forEach((a) => {
         const originalIndex = accounts.findIndex(acc => acc.alias === a.alias);
         const count = Object.keys(TEMPLATES).reduce((s,t) => s + (a['workers_'+t]||[]).length, 0);
         const percent = ((a.stats.total / a.stats.max) * 100).toFixed(1);
         let barColor = 'bg-green-500'; if (percent > 80) barColor = 'bg-orange-500'; if (percent >= 100) barColor = 'bg-red-600';
-        const zoneBadge = a.defaultZoneName ? `<span class="bg-purple-100 text-purple-600 text-[10px] px-1 rounded">${safeHtml(a.defaultZoneName)}</span>` : '<span class="text-gray-300">-</span>';
-        return `<tr class="hover:bg-gray-50 border-b">
-            <td class="w-6"><input type="checkbox" class="acct-chk" value="${originalIndex}" onchange="updateBatchToolbar()"></td>
-            <td class="font-medium">${safeHtml(a.alias)}</td>
-            <td>${zoneBadge}</td>
-            <td><span class="text-xs bg-gray-100 text-gray-600 rounded px-1.5 py-0.5">${count} 个</span></td>
-            <td>${a.stats.error?`<span class="text-red-500 cursor-help" title="${safeHtml(a.stats.error||"")}">⚠️ 0</span>`:a.stats.total}</td>
-            <td><div class="flex items-center gap-2"><div class="w-12 bg-gray-200 rounded-full h-1.5 overflow-hidden"><div class="${barColor} h-1.5" style="width: ${Math.min(percent, 100)}%"></div></div><span class="text-[10px]">${percent}%</span></div></td>
-            <td class="text-right">
-                <button onclick="openAccountManage(${originalIndex})" class="text-purple-600 mr-2 text-xs font-bold hover:bg-purple-50 px-1 rounded">📂 管理</button>
-                <button onclick="editAccount(${originalIndex})" class="text-blue-500 mr-2 text-xs">✎</button>
-                <button onclick="delAccount(${originalIndex})" class="text-red-500 text-xs">×</button>
-            </td>
-        </tr>`;
-    }).join('');
+
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-gray-50 border-b';
+
+        // 复选框
+        const tdChk = document.createElement('td'); tdChk.className = 'w-6';
+        const chk = document.createElement('input');
+        chk.type = 'checkbox'; chk.className = 'acct-chk'; chk.value = originalIndex;
+        chk.addEventListener('change', updateBatchToolbar);
+        tdChk.appendChild(chk); tr.appendChild(tdChk);
+
+        // 别名
+        const tdAlias = document.createElement('td'); tdAlias.className = 'font-medium';
+        tdAlias.textContent = a.alias; tr.appendChild(tdAlias);
+
+        // 域名
+        const tdZone = document.createElement('td');
+        if (a.defaultZoneName) {
+            const z = document.createElement('span');
+            z.className = 'bg-purple-100 text-purple-600 text-[10px] px-1 rounded';
+            z.textContent = a.defaultZoneName;
+            tdZone.appendChild(z);
+        } else {
+            const z = document.createElement('span');
+            z.className = 'text-gray-300'; z.textContent = '-';
+            tdZone.appendChild(z);
+        }
+        tr.appendChild(tdZone);
+
+        // Worker 数量
+        const tdCount = document.createElement('td');
+        const cnt = document.createElement('span');
+        cnt.className = 'text-xs bg-gray-100 text-gray-600 rounded px-1.5 py-0.5';
+        cnt.textContent = count + ' 个';
+        tdCount.appendChild(cnt); tr.appendChild(tdCount);
+
+        // 流量
+        const tdStats = document.createElement('td');
+        if (a.stats.error) {
+            const s = document.createElement('span');
+            s.className = 'text-red-500 cursor-help'; s.title = a.stats.error || '';
+            s.textContent = '⚠️ 0'; tdStats.appendChild(s);
+        } else {
+            tdStats.textContent = a.stats.total;
+        }
+        tr.appendChild(tdStats);
+
+        // 占比条
+        const tdBar = document.createElement('td');
+        const barWrap = document.createElement('div'); barWrap.className = 'flex items-center gap-2';
+        const barBg = document.createElement('div'); barBg.className = 'w-12 bg-gray-200 rounded-full h-1.5 overflow-hidden';
+        const barFill = document.createElement('div');
+        barFill.className = barColor + ' h-1.5';
+        barFill.style.width = Math.min(percent, 100) + '%';
+        barBg.appendChild(barFill); barWrap.appendChild(barBg);
+        const barLabel = document.createElement('span'); barLabel.className = 'text-[10px]';
+        barLabel.textContent = percent + '%'; barWrap.appendChild(barLabel);
+        tdBar.appendChild(barWrap); tr.appendChild(tdBar);
+
+        // 操作按钮
+        const tdBtn = document.createElement('td'); tdBtn.className = 'text-right';
+        const btnMgr = document.createElement('button');
+        btnMgr.className = 'text-purple-600 mr-2 text-xs font-bold hover:bg-purple-50 px-1 rounded';
+        btnMgr.textContent = '📂 管理';
+        btnMgr.addEventListener('click', () => openAccountManage(originalIndex));
+        tdBtn.appendChild(btnMgr);
+
+        const btnEdit = document.createElement('button');
+        btnEdit.className = 'text-blue-500 mr-2 text-xs'; btnEdit.textContent = '✎';
+        btnEdit.addEventListener('click', () => editAccount(originalIndex));
+        tdBtn.appendChild(btnEdit);
+
+        const btnDel = document.createElement('button');
+        btnDel.className = 'text-red-500 text-xs'; btnDel.textContent = '×';
+        btnDel.addEventListener('click', () => delAccount(originalIndex));
+        tdBtn.appendChild(btnDel);
+
+        tr.appendChild(tdBtn);
+        fragment.appendChild(tr);
+    });
+    tb.innerHTML = '';
+    tb.appendChild(fragment);
     // 清除动态元素缓存（innerHTML 重建后旧 DOM 引用失效）
     $clear('account_search');
     $clear('search_clear');

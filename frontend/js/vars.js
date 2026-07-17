@@ -52,7 +52,7 @@ function addVarRow(t,k,v,s){
   secChk.type='checkbox';
   secChk.className='secret-chk';
   secChk.title='标记为Secret变量';
-  secChk.onchange=function(){ this.parentElement.nextElementSibling.value=this.checked?'1':''; };
+  secChk.onchange=function(){ this.parentElement.previousElementSibling.value=this.checked?'1':''; };
   const secHidden=document.createElement('input');
   secHidden.type='hidden';
   secHidden.className='is-secret';
