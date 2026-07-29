@@ -1,358 +1,291 @@
-# 🚀 Cloudflare Worker 智能部署中控 (V11.7.1)
+# 🚀 CF Auto — Cloudflare Worker 智能部署中控 (V11.7.2)
 
-> 全部代码为 Claude Code 完成
-> 自行修改延伸功能
+> 全部代码由 Claude Code 完成，自行修改延伸功能。
 
-> **版本状态**: V11.7.1 Stable — Bug修复 (Secret复选框 + 构建文件同步)
-> **本次更新**: 修复 3 项 bug（Secret复选框不生效 · 构建文件过期 · API错误解析加固）+ 验证脚本更新
-
-本项目是一个基于 Cloudflare Worker 构建的深度集成化部署管理平台。它不仅能管理多个 Cloudflare 账号，还支持一键批量部署、版本回滚、自动化流量熔断以及代码级的混淆加固，是管理大规模 Worker 节点的终极工具。
+> **版本状态**: V11.7.2 Stable — cmliu 模板新增 TCP_CONCURRENT_DIAL / PROXY_CONCURRENT_DIAL 环境变量
+> **详细变更**: 见 [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
-## 🆕 V10.12.0 更新日志
+## 📖 项目简介
 
-### ⚡ 反代落地部署再升级 (YXIP Improvements)
+**CF Auto** 是一个基于 Cloudflare Worker 构建的**多账号 Worker 部署管理平台**。它可以管理多个 Cloudflare 账号，支持**一键批量部署**、**版本回滚**、**自动化流量熔断**、**全球节点优选**以及**代码混淆加固**。
 
-* 中控台全新加入 **“⚡ 反代落地部署”** 功能按钮。
-* 复刻原 `yxip.js` 功能逻辑：全屏模态框操作，直连上游获取全球国家/地区 CF 节点池，支持按地区分组摇号随机筛选。
-* **CMLiu 专有强力直写**：选中账号后系统自动提取对应绑定关系并跨域操作目标原数据流空间 KV，将最新优质节点数据直接一键 PUT 写入为目标自带的 `ADD.txt`，自动接管应用内部解析。
-* **Joey 双轨下发并存**：采用全新的兼容逻辑以充分满足不同版本组件架构的使用：
-  1. **KV 模式 (默认推荐)**：精准识别目标大写 `C` 数据库命名，采用特定最新字段序列强效 JSON 下发。
-  2. **兼容变量模式**：无缝向下面向未绑定任何独立数据库版本的项目，退避使用传统的全局核心词 `yx` 变量统一覆盖所有中控保留项！
+### 能做什么？
 
-### 📋 完整历史版本
-
-> 见 [CHANGELOG.md](CHANGELOG.md)。
-
----
-
-## ✨ 核心特性
-
-### 🔧 一键修复 1101
-
-* **全自动修复流程**：记录变量绑定 + 自定义域名 → 删除 Worker → 随机改子域名 → 用相同名称重建 → 恢复所有变量值 + 域名。
-* **变量完整保留**：plain_text 变量值、KV 绑定引用全部恢复，Worker 名称不变。
-
-### 🛡️ 流量熔断与自动轮换 (Auto Fuse)
-
-* **实时监控**：自动统计各账号当日总用量。
-* **阈值熔断**：可设置用量百分比（如 90%）。一旦触发，系统自动执行 **UUID 随机轮换** 并 **强制混淆部署**，快速切换节点状态以应对封锁或超额。
-
-### 📜 收藏夹管理 (Favorites System)
-
-* **版本锚定**：支持从 GitHub 历史中挑选稳定版本并加入"收藏"。
-* **一键回滚**：即使上游代码库更新失败或被删，你依然可以从收藏夹中一键恢复到曾经锁定的稳定状态。
-
-### 🌐 子域名管理 (Subdomain Management)
-
-* **实时查看**：在账号管理弹窗中直接展示当前 `xxx.workers.dev` 子域名。
-* **在线修改**：一键修改子域名前缀，无需进入 Cloudflare 后台。
-* **安全防护**：格式校验 + 二次确认，防止误操作。
-
-### ⚡ 全球节点优选部署 (YXIP)
-
-* **内建节点池**：在中控台无缝拉取、筛选、限制输出全球各大区域高速 Cloudflare 节点。
-* **极速下发**：无需繁琐的配置订阅服务，可一键批量将节点池**强力覆写到绑定的 KV 空间 (`ADD.txt`) 或全局环境变量中**，与 `cmliu` 及 `joey` 分支项目深度耦合。
-
-### 🌌 暗黑星空主题 (Starfield Theme)
-
-* **动态星空**：Canvas 绘制闪烁星星 + 流星 + 星云光晕。
-* **毛玻璃效果**：卡片半透明，透出星空背景。
-* **一键切换**：🌙/☀️ 按钮切换，localStorage 持久化。
-
-### 🔧 自动化运维
-
-* **Zone 智能识别**：一键拉取账号下所有域名，支持自动化绑定自定义二级域名。
-* **级联资源清理**：删除 Worker 时可选择同步清理关联的 KV 命名空间，拒绝资源浪费。
+| 功能 | 说明 |
+|------|------|
+| 🔄 **多账号管理** | 添加多个 Cloudflare 账号，统一管理所有 Worker |
+| 🚀 **批量部署** | 一键从 GitHub 拉取代理模板代码，批量部署到多个账号 |
+| 🤖 **自动更新** | Cron 定时检查上游仓库更新，自动拉取最新代码部署 |
+| 🛡️ **流量熔断** | 监控账号用量，超阈值自动轮换 UUID 重新部署 |
+| ⚡ **节点优选** | 全球优选 IP 节点一键写入 KV，支持 CMLiu / Joey |
+| 🔧 **一键修复 1101** | 自动修复 Worker 1101 错误，保留变量和域名 |
+| 📜 **版本收藏** | 收藏稳定版本，支持一键回滚 |
+| 🌐 **子域名管理** | 在线修改 `*.workers.dev` 子域名 |
+| 🌌 **星空主题** | 暗黑星空 + 明亮模式，一键切换 |
+| 🔐 **数据加密** | 所有 API Key 经 AES-256-GCM 加密存储 |
 
 ---
 
-## 📖 核心操作说明
+## 🗂️ 项目架构
 
-### 🛰️ 账号管理
+```
+cfauto/
+├── src/                        # 服务端 (TypeScript → esbuild 打包)
+│   ├── index.ts                #   入口: fetch handler + cron scheduled handler
+│   ├── cron.ts                 #   定时任务: 自动更新 & 熔断轮换
+│   ├── frontend-bundle.ts      #   构建时生成: 内联前端 HTML/CSS/JS
+│   ├── config/
+│   │   ├── env.ts              #   环境变量类型 (AppEnv)
+│   │   ├── templates.ts        #   模板配置 (cmliu/joey/ech GitHub 源、变量结构)
+│   │   └── login-html.ts       #   登录页 HTML 模板
+│   ├── lib/
+│   │   ├── account-store.ts    #   账号存储 (透明加解密)
+│   │   ├── auto-update.ts      #   自动更新核心 (拉代码→部署→记录)
+│   │   ├── cloudflare-api.ts   #   CF API 封装
+│   │   ├── crypto-utils.ts     #   AES-256-GCM 加密工具
+│   │   ├── deploy-utils.ts     #   部署工具 (上传/绑定变量)
+│   │   ├── github.ts           #   GitHub API (拉代码/commits)
+│   │   ├── kv-utils.ts         #   KV 读写封装
+│   │   ├── logger.ts           #   结构化 JSON 日志
+│   │   ├── stats.ts            #   GraphQL 用量统计
+│   │   ├── types.ts            #   共享类型定义
+│   │   └── validate.ts         #   输入校验
+│   ├── middleware/
+│   │   └── auth.ts             #   认证: ACCESS_CODE + Cookie (SHA-256) + CSRF
+│   └── routes/
+│       ├── index.ts            #   路由注册中心 (ROUTES Map)
+│       ├── crud.ts             #   账号/配置/变量 CRUD
+│       ├── deploy.ts           #   部署 (单Worker/批量)
+│       ├── check.ts            #   版本检查/用量查询
+│       ├── zones.ts            #   域名/子域名管理
+│       ├── yxip.ts             #   优选 IP / 反代落地
+│       ├── fix1101.ts          #   一键修复 1101
+│       ├── login.ts            #   登录接口
+│       └── loader.ts           #   懒加载路由
+├── frontend/                   # 前端 (Vanilla JS + Tailwind CSS)
+│   ├── index.html              #   HTML 骨架
+│   ├── css/style.css           #   星空 / 毛玻璃 / 响应式样式
+│   └── js/
+│       ├── state.js            #   全局状态 & 初始化
+│       ├── accounts.js         #   账号管理 UI
+│       ├── deploy.js           #   批量部署 UI
+│       ├── vars.js             #   变量管理 UI
+│       ├── history.js          #   部署历史 UI
+│       ├── yxip.js             #   优选 IP UI
+│       ├── workbench.js        #   工作台 / 日志
+│       ├── dom.js              #   DOM 工具 & 缓存
+│       └── starfield.js        #   星空 Canvas 动画
+├── build.js                    # 构建脚本 (拼接前端 + esbuild 打包)
+├── build.bat                   # Windows 构建批处理
+├── deploy.bat                  # 部署批处理 (调用 wrangler deploy)
+├── install.bat                 # 依赖安装
+├── setup-secrets.bat           # 密钥配置
+├── wrangler.toml               # 部署配置模板
+├── wrangler.local.toml         # 本地部署配置 (不入 git)
+├── verify.js                   # 构建产物验证
+└── test/                       # Vitest 测试
+```
 
-* **添加账号**：需提供 `Account ID`、`Email` 和 `Global API Key`。
-* **读取域名**：点击"读取"会自动填充该账号下的 Zone，用于后续的批量域名绑定。
+**技术栈**: Cloudflare Workers · TypeScript · esbuild · KV Storage · Vanilla JS · Tailwind CSS · SweetAlert2 · Canvas API
 
-### ✨ 批量部署 (Batch Deploy)
-
-1. 点击顶部"批量部署"。
-2. **选择模板**：支持 `CMliu` (EdgeTunnel)、`Joey` (相信光) 等主流模板。
-3. **开启混淆**：勾选"启用代码混淆"，系统将通过前端加密后再上传。
-4. **域名绑定**：输入前缀，系统会自动在所选账号的预设域名下生成子域名。
-
-### 🌐 修改子域名
-
-1. 点击账号右侧的「**📂 管理**」。
-2. 弹窗顶部显示当前子域名（如 `myprefix.workers.dev`）。
-3. 点击「**✏️ 修改**」，输入新的子域名前缀。
-4. 经过二次确认后，系统调用 Cloudflare API 完成修改。
-
-> ⚠️ 修改子域名可能需要数分钟生效，且会影响所有使用 `*.workers.dev` 域名的 Worker。
-
-### 🌌 切换主题
-
-1. Header 工具栏点击 **🌙** 按钮切换到暗黑星空模式。
-2. 再次点击 **☀️** 按钮切换回明亮模式。
-3. 选择自动保存，下次打开自动恢复。
+**请求处理流程**:
+```
+Request → KV 检查 → 公开路由 (/manifest.json, /api/login)
+       → 认证中间件 (ACCESS_CODE → CSRF → Cookie)
+       → 路由分发 (ROUTES Map)
+       → 回退 → 管理面板 SPA HTML
+```
 
 ---
 
-## 💻 本地构建与使用
+## 📦 支持的代理模板
 
-### 📥 下载后第一次使用
+| 模板 | GitHub 源 | 类型 | 默认变量 | KV 绑定 | 优选IP |
+|------|----------|------|---------|---------|--------|
+| **cmliu** | `cmliu/edgetunnel` (`_worker.js`) | EdgeTunnel 代理 | UUID, PROXYIP, DOH, PATH, URL, KEY, ADMIN, TCP_CONCURRENT_DIAL, PROXY_CONCURRENT_DIAL | `KV` → `ADD.txt` | ✅ |
+| **joey** | `byJoey/cfnew` | 自动修复代理 | u | `C` → `c` (JSON) | ✅ |
+| **ech** | `hc990275/ech-wk` | WebSocket 代理 | PROXYIP | 无 | ❌ |
+
+### 🆕 cmliu 新增变量 (V11.7.2)
+
+| 变量名 | 说明 |
+|--------|------|
+| `TCP_CONCURRENT_DIAL` | 自定义 TCP 并发拨号数；设置后不再根据中国移动网络自动降为单路 |
+| `PROXY_CONCURRENT_DIAL` | 自定义反代并发拨号数 |
+
+> 这两个变量为**可选项**，留空则使用默认行为。在 CMliu 配置面板中会自动显示，填入数值后部署即可生效。
+
+---
+
+## 💻 快速开始
+
+### 📥 第一次使用
 
 | 步骤 | 操作 | 说明 |
 |------|------|------|
-| **1** | 双击 `install.bat` | 安装 Node.js 依赖（仅一次） |
-| **2** | 双击 `build.bat` | 拼接前端 + esbuild 打包 → `dist/worker.js` |
-| **3** | 双击 `setup-secrets.bat` | 设置面板密码和 GitHub Token（仅一次，加密存 CF） |
-| **4** | 修改 `wrangler.toml` | ① 把 `name` 改成你的 Worker 名 ② 首次部署需取消 `[[kv_namespaces]]` 注释并填入 KV ID ③ 如需自定义域名/定时任务也一并取消注释 |
+| **1** | 双击 `install.bat` | 安装 Node.js 依赖 |
+| **2** | 修改 `wrangler.toml` | ① `name` 改成 Worker 名 ② 首次部署取消 `[[kv_namespaces]]` 注释，填入 KV ID ③ 需要时取消 `routes` / `triggers` 注释 |
+| **3** | 双击 `build.bat` | 拼接前端 + esbuild 打包 → `dist/worker.js` |
+| **4** | 双击 `setup-secrets.bat` | 设置面板密码和 GitHub Token (加密存储到 CF) |
 | **5** | 双击 `deploy.bat` | 推送到 Cloudflare |
 
-### 🔄 日常更新代码
+### 🔄 日常更新
 
-`build.bat` → `deploy.bat`（两步搞定，`wrangler.toml` 中已配置的 KV/路由/触发器不受影响；密钥通过 `wrangler secret` 管理，永不覆盖）
-
-### 📁 文件夹可随意移动
-
-所有 `.bat` 使用 `%~dp0` 自定位，不依赖任何固定路径。
-
----
-
-## 🛠️ 部署教程 (保姆级)
-
-只需简单 5 步，即可拥有自己的 Worker 中控台。
-
-### 1️⃣ 第一步：创建主控 Worker
-
-1. 登录 [Cloudflare Dashboard](https://dash.cloudflare.com/)。
-2. 进入 **Workers & Pages** -> **Overview** -> **Create Application** -> **Create Worker**。
-3. 命名为 `manager` (建议)，点击 **Deploy**。
-4. 点击 **Edit code**，将本项目提供的 `dist/worker.js` (V10.12.0) **完整代码** 粘贴覆盖。
-5. 点击 **Save and deploy**。
-
-### 2️⃣ 第二步：绑定 KV 存储 (⚠️ 核心)
-
-**中控本身需要一个 KV 来存储账号数据，不绑定无法启动！**
-
-1. 在 Worker 编辑页面的 **Settings** (设置) -> **Variables** (变量)。
-2. 找到 **KV Namespace Bindings**，点击 **Add binding**。
-3. **Variable name**: 填写 `CONFIG_KV` (**必须大写，完全一致**)
-4. **KV Namespace**: 点击 "Create new KV namespace"，命名为 `manager_data`，点击 **Add**。
-5. 点击 **Save and deploy**。
-
-### 3️⃣ 第三步：设置安全密码
-
-1. 同样在 **Settings** -> **Variables** -> **Environment Variables**。
-2. 点击 **Add variable**：
-   * **Variable name**: `ACCESS_CODE`
-   * **Value**: 设置你的登录密码（如 `admin888`）。
-
-3. *(可选但推荐)* 防止 GitHub API 限流：
-   * **Variable name**: `GITHUB_TOKEN`
-   * **Value**: 你的 GitHub PAT (获取方式见下方 [GitHub Token 获取教程](#-github-token-获取教程图文))。
-
-4. 点击 **Save and deploy**。
-
-### 4️⃣ 第四步：配置 Cron 定时触发器（自动更新必需）
-
-如果需要**自动检测更新**和**流量熔断**功能，必须配置 Cron Trigger：
-
-1. 进入 Worker 的 **Settings** → **Triggers** → **Cron Triggers**。
-2. 点击 **Add Cron Trigger**，输入 Cron 表达式，推荐 `*/5 * * * *`（每 5 分钟）。
-3. 点击 **Save**。
-
-#### ⏱️ 两层时间控制机制
-
-系统有**两层**间隔控制，需要配合使用：
-
-| 层级 | 配置位置 | 作用 |
-|---|---|---|
-| **Cron Trigger**（外层） | Cloudflare Dashboard → Triggers | 决定多久调用一次 `scheduled()` 函数 |
-| **网站间隔**（内层） | 中控页面 Header 的 "XX 分" 输入框 | 在 Cron 触发后，距上次检查超过此间隔才真正执行 |
-
-**流程**：`Cron 触发 → handleCronJob() → 检查网站间隔 → 超过则执行更新/跳过`
-
-#### 推荐配置
-
-| 场景 | Cron 表达式 | 网站间隔 | 说明 |
-|---|---|---|---|
-| 日常使用 | `*/5 * * * *` | 30 分 | 每 5 分钟触发，实际每 30 分钟检查一次 |
-| 省资源 | `*/30 * * * *` | 30 分 | 触发和间隔一致，最省请求量 |
-| 高频监控 | `*/1 * * * *` | 5 分 | 约 5 分钟检查一次，响应最快 |
-
-> ⚠️ **注意**：Cron 间隔必须 ≤ 网站间隔才有意义。例如 Cron 设为每小时触发，网站设 5 分钟间隔是无效的——因为 `scheduled()` 本身一小时才被调用一次。
-
-### 5️⃣ 第五步：开始使用
-
-访问你的 Worker 域名（如 `https://manager.你的前缀.workers.dev`），输入密码即可进入控制台。
+```
+build.bat → deploy.bat
+```
+两步完成，KV/路由/触发器不受影响；密钥永不覆盖。
 
 ---
 
-## 🔑 Cloudflare 账号信息获取教程（图文）
+## 🛠️ 部署教程（保姆级）
 
-在添加账号时需要填写以下三项信息，全部在 Cloudflare Dashboard 中获取：
+### 1️⃣ 创建主控 Worker
 
-### 📧 Email (登录邮箱)
+1. 登录 [Cloudflare Dashboard](https://dash.cloudflare.com/)
+2. **Workers & Pages** → **Create** → **Create Worker**
+3. 命名为 `manager`，点击 **Deploy**
+4. 点击 **Edit code**，将 `dist/worker.js` 的完整代码粘贴覆盖
+5. 点击 **Save and deploy**
 
-直接使用你注册 Cloudflare 时的邮箱地址。
+### 2️⃣ 绑定 KV 存储 (核心，不绑定无法启动!)
 
-### 🆔 Account ID (账号 ID)
+1. Worker 编辑页 → **Settings** → **Variables**
+2. **KV Namespace Bindings** → **Add binding**
+3. **Variable name**: `CONFIG_KV` (必须大写)
+4. **KV Namespace**: 创建新命名空间 (如 `manager_data`)
+5. **Save and deploy**
 
-1. 登录 [Cloudflare Dashboard](https://dash.cloudflare.com/)。
-2. 登录成功后，看浏览器**地址栏** URL：
-   ```
-   https://dash.cloudflare.com/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-   ```
-3. `dash.cloudflare.com/` 后面的那串 **32 位字符** 就是你的 `Account ID`。
-4. **另一种方式**：点击左侧边栏任意一个域名 -> 右侧往下滚动 -> 找到 **API** 区域 -> 可以看到 `Account ID`，点击旁边的 **复制** 按钮即可。
+### 3️⃣ 设置环境变量
 
-> 💡 **提示**：每个 Cloudflare 账号有一个唯一的 Account ID，如果你有多个账号，需要分别获取。
+| 变量名 | 必须 | 说明 |
+|--------|------|------|
+| `ACCESS_CODE` | ✅ 必须 | 登录密码 |
+| `GITHUB_TOKEN` | 推荐 | GitHub PAT，提升 API 限额 (60→5000/小时) |
+| `ENCRYPTION_SECRET` | 可选 | 独立加密密钥，更换 ACCESS_CODE 不影响已加密数据 |
 
-### 🔐 Global API Key (全局 API 密钥)
+### 4️⃣ 配置 Cron 触发器 (自动更新必需)
 
-> ⚠️ **重要**：必须使用 **Global API Key**，不能使用普通的 API Token！普通 Token 权限不足以创建 KV、绑定域名等操作。
+1. **Settings** → **Triggers** → **Cron Triggers** → **Add Cron Trigger**
+2. 推荐 Cron 表达式: `*/5 * * * *` (每 5 分钟)
+3. 在中控页面 Header 设置检查间隔 (如 30 分钟)
 
-1. 登录 [Cloudflare Dashboard](https://dash.cloudflare.com/)。
-2. 点击页面**右上角头像** -> 选择 **My Profile** (我的个人资料)。
-3. 在左侧菜单中选择 **API Tokens** (API 令牌)。
-4. 页面下方找到 **API Keys** 区域（注意不是上方的 API Tokens）。
-5. 找到 **Global API Key** 那一行，点击右侧的 **View** (查看) 按钮。
-6. 系统会要求你输入 **Cloudflare 登录密码** + **hCaptcha 验证**。
-7. 验证通过后会显示你的 Global API Key，**复制保存**。
+> **两层控制**: Cron 是外层触发频率，中控页面的间隔是内层实际执行间隔。Cron 间隔必须 ≤ 网站间隔才有意义。
 
-> ⚠️ **安全提醒**：Global API Key 拥有你账号的最高权限，请妥善保管，切勿泄露。本中控将其加密存储在你自己的 KV 命名空间中。
+### 5️⃣ 自定义域名 (可选)
 
----
-
-## 🔑 GitHub Token 获取教程（图文）
-
-### 为什么需要 GitHub Token？
-
-中控会调用 GitHub API 来检查模板更新、拉取历史版本。**未配置 Token 时**，GitHub 对匿名请求限制为 **每小时 60 次**，在频繁检查更新或版本回滚时容易触发限流，导致功能异常。**配置 Token 后**，限额提升至 **每小时 5000 次**。
-
-### 获取步骤
-
-1. 登录 [GitHub](https://github.com/) 你的账号。
-
-2. 点击页面**右上角头像** -> 选择 **Settings** (设置)。
-
-3. 在左侧菜单中，滚动到最下方，找到 **Developer settings** (开发者设置) 并点击进入。
-
-4. 在左侧菜单选择 **Personal access tokens** -> **Tokens (classic)**。
-
-5. 点击右上角 **Generate new token** -> 选择 **Generate new token (classic)**。
-
-6. 填写 Token 信息：
-   * **Note** (备注)：随便写，如 `worker-manager`
-   * **Expiration** (有效期)：建议选择 **No expiration** (永不过期)，或者根据需要选择
-   * **Select scopes** (权限范围)：
-     * 如果你只用**公共仓库**的模板（如 `cmliu/edgetunnel`），**不需要勾选任何权限**，全部留空即可！
-     * 如果你需要访问**私有仓库**，则勾选 `repo` 权限
-
-7. 滚动到页面底部，点击 **Generate token** (生成令牌)。
-
-8. ⚠️ **重要**：生成后会显示一个以 `ghp_` 开头的字符串，**立即复制保存**！页面关闭后无法再次查看！
-
-   ```
-   ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-   ```
-
-9. 将复制的 Token 填入 Worker 的环境变量 `GITHUB_TOKEN` 中（参见上方 [第三步：设置安全密码](#3️⃣-第三步设置安全密码)）。
-
-> 💡 **提示**：如果 Token 过期或泄露，可以随时在 GitHub Settings -> Developer settings -> Personal access tokens 中删除旧的并重新生成。
+在 `wrangler.toml` 中取消注释 `[[routes]]` 配置:
+```toml
+[[routes]]
+pattern = "你的域名"
+zone_name = "你的 zone 名"
+custom_domain = true
+```
 
 ---
 
-## 📖 常用操作指南
+## 🔑 账号凭证获取
 
-### ✨ 批量部署新项目
+### Account ID
 
-1. 点击顶部「**✨ 批量部署**」。
-2. **模板选择**：
-   * `CMliu`: 经典 EdgeTunnel，建议开启 KV。
-   * `Joey`: 推荐关闭 KV (取消勾选 "绑定 KV 存储")，使用纯变量模式。
-3. **KV 设置**：如果开启 KV，请填写 KV 名称（中控会自动创建）。
-4. **域名设置**：
-   * 勾选 `禁用默认域名` 可提高隐蔽性。
-   * 填写 `自定义域名` 前缀（前提：账号已读取到预设域名）。
-5. 勾选目标账号 -> **🚀 开始部署**。
+登录 Cloudflare Dashboard 后，浏览器地址栏中 `dash.cloudflare.com/` 后面的 32 位字符即是。
 
-### 🔄 变量同步 (反向更新)
+### Global API Key (必须，不可用 API Token 替代)
 
-如果你在 Cloudflare 后台手动修改了某个 Worker 的变量：
+1. 右上角头像 → **My Profile**
+2. 左侧 **API Tokens**
+3. 页面下方 **API Keys** → **Global API Key** → **View**
+4. 输入密码 + hCaptcha 验证后复制
 
-1. 在中控面板找到该项目。
-2. 点击「**🔄 同步**」。
-3. 中控会将云端的最新配置拉取回本地数据库，确保数据一致。
+> ⚠️ Global API Key 拥有最高权限，本中控将其 AES-256-GCM 加密后存储在 KV 中。
 
-### 🗑️ 安全删除
+### GitHub Token (推荐)
 
-1. 点击账号右侧的「**📂 管理**」。
-2. 点击「**🗑️ 删除**」。
-3. **勾选 "同时删除绑定的 KV"** (推荐)，系统将自动清理残留资源。
+1. GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic)
+2. Generate new token (classic)，公共仓库无需勾选任何权限
+3. 复制 `ghp_` 开头的 token，填入 `GITHUB_TOKEN` 环境变量
 
 ---
 
-## 📝 内置模板说明
+## 📖 操作指南
 
-| 模板代码 | 项目名称 | 特性说明 | 建议配置 |
-| --- | --- | --- | --- |
-| **cmliu** | EdgeTunnel (Beta 2.0) | 功能最全，支持订阅 | 开启 KV |
-| **joey** | 少年你相信光吗 | 自动修复，极简 | **关闭 KV** (变量模式) |
-| **ech** | ECH Proxy | 无需维护，WebSocket，支持 Token 鉴权 | 关闭 KV |
+### ✨ 批量部署
+
+1. 点击顶部「**✨ 批量部署**」
+2. 选择模板: CMliu (EdgeTunnel) / Joey (相信光) / ECH (WebSocket)
+3. 设置变量值 (每个模板有不同的默认变量，面板自动展开)
+4. 勾选目标账号 → 点击「🚀 开始部署」
+
+### 🔄 变量同步
+
+在 Cloudflare 后台手动修改了 Worker 变量后，中控面板点「🔄 同步」可从云端拉取最新配置。
+
+### 🛡️ 流量熔断
+
+1. Header 设置熔断阈值百分比 (如 90%)
+2. 当某账号用量达到阈值时自动轮换 UUID 并重新部署
+3. 可选配置 Webhook 接收熔断告警
+
+### 🎲 刷 UUID
+
+在变量面板点「🎲 刷 UUID」可生成新的随机 UUID，下次部署时生效。
+
+### 🔧 一键修复 1101
+
+遇到 Worker 1101 错误时，点击「🔧 一键修复 1101」:
+1. 记录当前变量绑定和域名
+2. 删除 Worker
+3. 随机修改子域名
+4. 用相同名称重建
+5. 恢复所有变量 + 域名
 
 ---
 
 ## ❓ 常见问题
 
-### Q: 打开中控页面显示 "KV 未绑定" 怎么办？
-
-A: 请确认已完成 [第二步：绑定 KV 存储](#2️⃣-第二步绑定-kv-存储-️-核心)，变量名必须是 `CONFIG_KV`（大写）。
-
-### Q: 点击 "检查更新" 报错或没反应？
-
-A: 大概率是 GitHub API 限流了。请配置 `GITHUB_TOKEN` 环境变量，参见 [GitHub Token 获取教程](#-github-token-获取教程图文)。
-
-### Q: 为什么不能用 API Token 代替 Global API Key？
-
-A: 因为中控需要执行创建 KV、绑定域名、管理 Worker 脚本等多种操作，普通 API Token 的精细权限无法覆盖所有场景。Global API Key 是唯一能确保所有功能正常运行的凭证。
-
-### Q: 修改子域名后 Worker 访问不了？
-
-A: 子域名修改后需要 **数分钟** 到 **数小时** 才能生效（DNS 传播延迟）。修改期间旧域名和新域名都可能不可用，请耐心等待。
+| 问题 | 原因 | 解决 |
+|------|------|------|
+| 页面显示 "KV Not Bound" | KV 未绑定 | Settings → 添加 `CONFIG_KV` KV 绑定 |
+| 检查更新报错 | GitHub API 限流 | 配置 `GITHUB_TOKEN` 环境变量 |
+| 修改子域名后不可用 | DNS 传播延迟 | 等待数分钟至数小时 |
+| 不能用 API Token | 权限不足 | 必须使用 Global API Key |
+| 部署后变量没有出现 | KV 缓存旧数据 | 刷新面板或手动点「+ 变量」添加 |
 
 ---
 
-## 🏗️ V11.0.0 架构升级
+## 🏗️ 从零开发的完整技能清单
 
-### 新增模块
-| 模块 | 用途 |
-|------|------|
-|  | 结构化 JSON 日志 (info/warn/error/audit) |
-|  | 请求体校验 (validateRequired/validateNonEmpty) |
-|  | Vitest 单元测试 (npm test) |
-|  | TypeScript strict 类型检查 |
+### 🔧 后端核心技术
+- **Cloudflare Workers** — V8 隔离环境，Service Worker 格式，fetch/scheduled handler
+- **Wrangler CLI** — 部署、KV 管理、密钥管理 (secret)、Cron 触发器配置
+- **Cloudflare API v4** — Worker 脚本上传/删除、绑定管理 (plain_text / secret_text / kv_namespace)、域名绑定、子域名管理、KV 命名空间 CRUD
+- **Cloudflare GraphQL API** — 账号用量统计查询
+- **GitHub REST API** — 文件内容获取、Commit 历史、版本对比 (diff)
 
-### 新增命令
+### 🔐 安全
+- **Web Crypto API** — SHA-256 密码哈希、AES-256-GCM 加解密
+- **Cookie 安全** — `__Host-` 前缀、SameSite、HttpOnly
+- **CSRF 防护** — Sec-Fetch-Site / Origin 头校验
+- **CSP 策略** — Content-Security-Policy 头限制脚本和样式来源
+- **透明加密** — 账号密钥在写入 KV 前自动加密，读取时自动解密
 
+### 🎨 前端
+- **Vanilla JavaScript** — 零框架，纯 DOM API 操作
+- **Tailwind CSS** — CDN 引入，响应式布局
+- **SweetAlert2** — 弹窗确认、错误提示
+- **Canvas API** — 星空主题动态背景 (星星、流星、星云光晕)
+- **SPA 架构** — 单页应用，模态框切换视图，localStorage 主题持久化
 
-### 改进清单
-- ✅ ErrorCode 错误分类枚举 (AUTH_FAILED/KV_NOT_BOUND/GITHUB_API_ERROR 等)
-- ✅ 速率限制可配置化 (LOGIN_RATE_LIMIT 常量)
-- ✅ 自定义代码 SHA-256 审计日志
-- ✅ 构建前自动验证 (verify.js 集成)
-- ✅ 请求体校验层 (validateRequired)
-- ✅ TypeScript 类型安全提升 (消除 any)
-- ✅ KV 缓存策略统一 (cacheTtl: 60)
-- ✅ 前端 innerHTML 安全修补
-- ✅ 开发端口固定 7890
-
+### 🛠️ 构建与工具
+- **esbuild** — TypeScript/JS 打包为单文件 ESM 输出
+- **Node.js** — 构建脚本、内联前端资源、SweetAlert2 下载
+- **Vitest** — 单元测试
+- **TypeScript** — 类型安全、接口定义
 
 ---
 
 ## ⚠️ 免责声明
 
-本项目仅供技术研究和学习使用，请勿用于任何非法用途。开发者不对使用本工具产生的任何后果负责。您的 API Key 仅保存在您自己的 Cloudflare KV 中，请妥善保管。
+本项目仅供技术研究和学习使用。开发者不对使用本工具产生的任何后果负责。所有 API Key 仅保存在用户自己的 Cloudflare KV 中，请妥善保管。
