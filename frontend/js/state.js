@@ -31,16 +31,19 @@ async function init() {
         $('auto_joey_toggle').checked = ac.enabled && ac.autoJoey !== false;
         $('auto_ech_toggle').checked = ac.enabled && ac.autoEch !== false;
 
-        // 恢复 vars + 重置已删除追踪
+        // 恢复 vars + defaultVars 补充缺失变量 + 重置已删除追踪
         Object.keys(TEMPLATES).forEach(t => {
             deletedVars[t] = [];
-            if (d.vars && d.vars[t]) {
-                const container = document.getElementById('vars_' + t);
-                if (container) {
-                    container.innerHTML = '';
-                    d.vars[t].forEach(v => addVarRow(t, v.key, v.value, v.secret));
-                }
-            }
+            const container = document.getElementById('vars_' + t);
+            if (!container) return;
+            const savedVars = (d.vars && d.vars[t]) ? d.vars[t] : [];
+            const map = new Map();
+            savedVars.forEach(v => map.set(v.key, v));
+            TEMPLATES[t].defaultVars.forEach(k => {
+                if (!map.has(k)) map.set(k, { key: k, value: k === TEMPLATES[t].uuidField ? crypto.randomUUID() : '' });
+            });
+            container.innerHTML = '';
+            map.forEach(v => addVarRow(t, v.key, v.value, v.secret));
         });
 
         renderTable();

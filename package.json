@@ -1,6 +1,6 @@
 {
   "name": "worker-pro-refactor",
-  "version": "11.7.1",
+  "version": "11.7.2",
   "description": "Worker 智能中控 — V11.7.1 (Secret复选框修复 · 构建文件同步)",
   "scripts": {
     "build": "node build.js",

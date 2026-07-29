@@ -24,7 +24,7 @@ export const TEMPLATES: Record<string, {
         ghRepo: "edgetunnel",
         ghBranch: "main",
         ghPath: "_worker.js",
-        defaultVars: ["UUID", "PROXYIP", "DOH", "PATH", "URL", "KEY", "ADMIN"],
+        defaultVars: ["UUID", "PROXYIP", "DOH", "PATH", "URL", "KEY", "ADMIN", "TCP_CONCURRENT_DIAL", "PROXY_CONCURRENT_DIAL"],
         uuidField: "UUID",
         description: "CMliu (beta2.1) - 建议开启 KV",
         kvBindingName: 'KV',                          // Worker 绑定名称
