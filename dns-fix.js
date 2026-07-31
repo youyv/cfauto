@@ -4,51 +4,136 @@
 // proxy), but nothing serves DNS on port 53 at that address currently.
 // This causes ECONNREFUSED for all hostname resolution.
 //
-// Solution: Auto-detect the real system DNS server and fall back to it
-// when 127.0.0.1:53 is unreachable. No hardcoded gateway addresses.
+// Solution: Synchronously detect whether the configured DNS actually works;
+// if not, auto-discover the real system DNS servers (filtering loopback/APIPA
+// and prioritizing physical adapters), then set the first candidate that
+// verifies with a real lookup. No hardcoded addresses — works on any machine
+// with zero configuration.
+//
+// Note: Node 24 removed all dns.*Sync methods, so synchronous probing is done
+// via `nslookup` output inspection (Windows nslookup exit code is always 0,
+// so we check for the Addresses: result line instead).
 const dns = require('dns');
 const cp = require('child_process');
 
-/** Detect the system's real upstream DNS server (not 127.0.0.1 proxy). */
-function getSystemDns() {
-    try {
-        // Method 1: PowerShell — read DNS from active network adapter
-        const cmd = [
-            'powershell -Command "',
-            '(Get-DnsClientServerAddress -AddressFamily IPv4',
-            '| Where-Object { $_.ServerAddresses }',
-            '| Select-Object -First 1).ServerAddresses[0]"'
-        ].join(' ');
-        const out = cp.execSync(cmd, { timeout: 3000, encoding: 'utf8', windowsHide: true });
-        const ip = out.trim();
-        if (ip && ip !== '127.0.0.1' && ip !== '0.0.0.0' && /^\d+\.\d+\.\d+\.\d+$/.test(ip)) {
-            return ip;
-        }
-    } catch (_) { console.error('[dns-fix] Failed to detect system DNS via PowerShell:', _?.message || _); }
+const PROBE_HOST = 'api.cloudflare.com';
 
-    try {
-        // Method 2: ipconfig fallback
-        const out = cp.execSync('ipconfig /all', { timeout: 3000, encoding: 'utf8', windowsHide: true });
-        const m = out.match(/DNS\s*Servers?[\s.:]+(\d+\.\d+\.\d+\.\d+)/i);
-        if (m && m[1] !== '127.0.0.1' && m[1] !== '0.0.0.0') return m[1];
-    } catch (_) { console.error('[dns-fix] Failed to detect system DNS via ipconfig:', _?.message || _); }
-
-    return null;
+/** 判定一个地址是否"绝对无效"：回环 / 0.0.0.0 / 广播。其余（192.168.x、10.x 等内网段）都可能是真实 DNS，一律保留 */
+function isUnusableIp(ip) {
+    if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(ip)) return true;
+    const p = ip.split('.').map(Number);
+    if (p.some((n) => n > 255)) return true;
+    if (p[0] === 127) return true;                       // 回环（Clash/代理残留）
+    if (p[0] === 0) return true;                         // 0.0.0.0 / 保留
+    if (p[0] === 169 && p[1] === 254) return true;       // APIPA 链路本地
+    return p.every((n) => n === 255);                    // 广播
 }
 
-const servers = dns.getServers();
-if (servers.length === 1 && servers[0] === '127.0.0.1') {
-    dns.resolve('api.cloudflare.com', 'A', (err) => {
-        if (err && (err.code === 'ECONNREFUSED' || err.code === 'ENOTFOUND')) {
-            const fallback = getSystemDns();
-            if (fallback) {
-                dns.setServers([fallback]);
-                console.log('[dns-fix] 127.0.0.1:53 unreachable, fell back to ' + fallback);
+/** 当前配置是否"全无效"（全是回环/0.0.0.0），只有此时才需要干预，避免误改用户正常配置 */
+function allUnusable(servers) {
+    return servers.length > 0 && servers.every((s) => isUnusableIp(s));
+}
+
+/** 虚拟网卡别名特征（仅用于排序优先级，不丢弃） */
+function isVirtualAdapter(alias) {
+    return /virtual|vpn|tap|tun|vmware|virtualbox|hyper-v|hyperv|docker|wsl|loopback|bluetooth|ndis/i.test(alias || '');
+}
+
+/**
+ * 同步探测：nslookup 指定服务器查询。
+ * Windows nslookup 退出码恒为 0（失败也返回 0），所以用输出里是否出现
+ * "Addresses:" 结果行判断（成功必有解析结果行，失败只有服务器信息行）。
+ * 注意：不要加 -retry 参数（Windows 版本会误解析导致全部失败）。
+ */
+function probeServer(server) {
+    try {
+        const out = cp.execSync('nslookup -timeout=2 ' + PROBE_HOST + ' ' + server, {
+            timeout: 8000, encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe']
+        });
+        return /Addresses?:/.test(out);
+    } catch (_) {
+        return false;
+    }
+}
+
+/** Method 1: PowerShell — 收集全部 IPv4 DNS，物理网卡优先（虚拟网卡垫底），去重 */
+function getSystemDnsViaPowershell() {
+    try {
+        const ps = [
+            '$addrs = Get-DnsClientServerAddress -AddressFamily IPv4',
+            '  | Where-Object { $_.ServerAddresses }',
+            '  | Sort-Object @{Expression={ if ($_.InterfaceAlias -match \'virtual|vpn|tap|tun|vmware|virtualbox|hyper-v|hyperv|docker|wsl|loopback|bluetooth|ndis\') {1} else {0} }}, InterfaceAlias;',
+            '$seen = @{}; $out = @();',
+            'foreach ($a in $addrs) {',
+            '  foreach ($ip in $a.ServerAddresses) {',
+            '    if (-not $seen.ContainsKey([string]$ip)) { $seen[[string]$ip] = $true; $out += [string]$ip }',
+            '  }',
+            '}',
+            '$out -join [char]10'
+        ].join(' ');
+        const cmd = 'powershell -NoProfile -Command "' + ps + '"';
+        const out = cp.execSync(cmd, { timeout: 5000, encoding: 'utf8', windowsHide: true });
+        const ips = out.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+        return ips.filter((ip) => !isUnusableIp(ip));
+    } catch (e) {
+        console.error('[dns-fix] PowerShell DNS detection failed:', (e && e.message) || e);
+        return [];
+    }
+}
+
+/** Method 2: ipconfig 兜底 — 解析 DNS Servers 段落里的全部地址（含续行） */
+function getSystemDnsViaIpconfig() {
+    try {
+        const out = cp.execSync('ipconfig /all', { timeout: 5000, encoding: 'utf8', windowsHide: true });
+        const ips = [];
+        let inDnsSection = false;
+        for (const line of out.split(/\r?\n/)) {
+            if (/DNS\s*Servers/i.test(line)) { inDnsSection = true; continue; }
+            if (!inDnsSection) continue;
+            // 续行：纯 IP 列表（可能有多个空格分隔）
+            const m = line.match(/^\s*(\d{1,3}(?:\.\d{1,3}){3}(?:\s+\d{1,3}(?:\.\d{1,3}){3})*)\s*$/);
+            if (m) {
+                for (const ip of m[1].split(/\s+/)) if (!isUnusableIp(ip)) ips.push(ip);
             } else {
-                console.log('[dns-fix] 127.0.0.1:53 unreachable, no fallback DNS found');
+                inDnsSection = false; // 遇到非 IP 行，段落结束
             }
-        } else if (!err) {
-            console.log('[dns-fix] 127.0.0.1:53 OK, keeping local DNS');
         }
-    });
+        return ips;
+    } catch (e) {
+        console.error('[dns-fix] ipconfig DNS detection failed:', (e && e.message) || e);
+        return [];
+    }
+}
+
+// ==================== 主流程（模块加载时同步执行，消除竞态） ====================
+const originalServers = dns.getServers();
+if (allUnusable(originalServers)) {
+    // 1) 同步探测当前配置：能用就保持（如本地确实跑了 DNS 服务）
+    if (probeServer(originalServers[0])) {
+        console.log('[dns-fix] ' + originalServers.join(', ') + ' OK, keeping current DNS');
+    } else {
+        // 2) 收集系统 DNS 候选：PowerShell 优先，ipconfig 兜底
+        let candidates = getSystemDnsViaPowershell();
+        if (candidates.length === 0) candidates = getSystemDnsViaIpconfig();
+        if (candidates.length === 0) {
+            console.log('[dns-fix] ' + originalServers.join(', ') + ' unreachable, but no system DNS found; keeping current config');
+        } else {
+            // 3) 逐个验证，取第一个可用的；全部失败则保持原配置
+            let applied = null;
+            for (const cand of candidates) {
+                if (probeServer(cand)) { applied = cand; break; }
+            }
+            if (applied) {
+                try {
+                    dns.setServers([applied]);
+                    console.log('[dns-fix] ' + originalServers.join(', ') + ' unreachable, fell back to verified DNS ' + applied);
+                } catch (e) { console.error('[dns-fix] setServers failed:', (e && e.message) || e); }
+            } else {
+                console.log('[dns-fix] all candidates failed (' + candidates.join(', ') + '); keeping original config');
+            }
+        }
+    }
+} else {
+    // 配置里有真实 DNS（可能混合了 127.0.0.1 主备），Node 自带故障转移，不干预
+    console.log('[dns-fix] configured DNS ' + originalServers.join(', ') + ' looks valid, no change');
 }
