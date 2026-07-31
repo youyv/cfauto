@@ -49,7 +49,14 @@ async function deploy(t, sha='') {
        echDisableWorkersDev = document.getElementById('ech_disable_workers_dev').checked;
    }
 
-   await fetch('/api/settings?type=' + t, {method: 'POST', body: JSON.stringify(vars)});
+   try {
+       const sr = await fetch('/api/settings?type=' + t, {method: 'POST', body: JSON.stringify(vars)});
+       if (!sr.ok) throw new Error('HTTP ' + sr.status);
+   } catch(e) {
+       // 设置保存失败不阻断部署，但必须告知用户
+       openWorkbench();
+       wbLog('⚠️ 设置保存失败: ' + e.message + '（变量仍随本次部署生效）', 'text-orange-400');
+   }
    openWorkbench();
    wbLog('⚡ Deploying ' + t + '...', 'text-yellow-400');
    try {
@@ -65,7 +72,7 @@ async function deploy(t, sha='') {
 async function fix1101(t) {
     const confirm = await Swal.fire({
         title: '🔧 一键修复 1101',
-        html: '<div class="text-left text-sm"><p class="mb-2">将对所有账号执行：</p><ol class="list-decimal pl-5 space-y-1"><li>📋 记录变量绑定 + 自定义域名</li><li>🗑️ 删除 Worker</li><li>🌐 随机修改子域名</li><li>🚀 用相同名称重建</li><li>♻️ 恢复所有变量值 + 自定义域名</li></ol><p class="mt-3 text-orange-600 font-bold">⚠️ 子域名变更影响该账号下所有 Worker！</p></div>',
+        html: '<div class="text-left text-sm"><p class="mb-2">将对所有账号执行：</p><ol class="list-decimal pl-5 space-y-1"><li>📋 记录变量绑定 + 自定义域名</li><li>🗑️ 删除 Worker</li><li>🚀 用相同名称重建</li><li>♻️ 恢复所有变量值 + 自定义域名</li><li>🌐 重建成功后轮换子域名（每账号一次）</li></ol><p class="mt-3 text-orange-600 font-bold">⚠️ 子域名变更影响该账号下所有 Worker！</p></div>',
         icon: 'warning', showCancelButton: true,
         confirmButtonText: '执行修复', cancelButtonText: '取消',
         confirmButtonColor: '#f97316'
@@ -251,7 +258,7 @@ function retryFailedBatch() {
     $('bd_use_saved_vars').checked = !!useSavedVars;
     $('bd_domain_prefix').value = customDomainPrefix || '';
     $('bd_disable_workers_dev').checked = !!disableWorkersDev;
-    if (template === 'cmliu' && config && config.admin) $('bd_admin_pass').value = config.admin;
+    if (template === 'cmliu' && config && config.ADMIN) $('bd_admin_pass').value = config.ADMIN;
     if (config) { const uuidVal = config.UUID || config.u; if (uuidVal) $('bd_uuid').value = uuidVal; }
     toggleBatchInputs();
     document.getElementById('batch_deploy_modal').classList.remove('hidden');

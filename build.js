@@ -12,8 +12,8 @@ let htmlContent = fs.readFileSync(path.join(__dirname, 'frontend/index.html'), '
 htmlContent = htmlContent.replace(/\{\{VERSION\}\}/g, pkg.version);
 const cssContent = fs.readFileSync(path.join(__dirname, 'frontend/css/style.css'), 'utf-8');
 const jsFiles = [
-    'dom.js', 'state.js', 'accounts.js', 'deploy.js', 'vars.js',
-    'history.js', 'yxip.js', 'workbench.js', 'starfield.js'
+    'dom.js', 'state.js', 'accounts.js', 'accounts-io.js', 'accounts-worker.js',
+    'deploy.js', 'vars.js', 'history.js', 'yxip.js', 'workbench.js', 'starfield.js'
 ];
 const jsContent = jsFiles
     .map(f => fs.readFileSync(path.join(__dirname, 'frontend/js', f), 'utf-8'))

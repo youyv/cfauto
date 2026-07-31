@@ -9,6 +9,7 @@ import { jsonError, json, fetchWithTimeout } from '../lib/cloudflare-api';
 import { getJSON } from "../lib/kv-utils";
 import { readAccounts } from "../lib/account-store";
 import { requireTemplateType } from '../lib/validate';
+import type { DeployConfig } from '../lib/types';
 import type { AppEnv } from "../config/env";
 import { fetchGithubVersion } from '../lib/auto-update';
 import { logger } from '../lib/logger';
@@ -69,8 +70,8 @@ export async function handleDiff(env: AppEnv, type: TemplateType) {
         }
 
         // 使用 Commits API + path 过滤 + since 日期，避免 Compare API 返回全仓库 commit
-        const deployConfig = await getJSON(env.CONFIG_KV, KV_KEYS.deployConfig(type), { mode: 'latest' });
-        const sinceDate = deployConfig.commitDate || deployConfig.deployTime || ver.localTime;
+        const deployConfig = await getJSON<DeployConfig>(env.CONFIG_KV, KV_KEYS.deployConfig(type), { mode: 'latest' });
+        const sinceDate = deployConfig.commitDate || deployConfig.deployTime || ver.localTime || undefined;
         const commitsData = await fetchGithubCommits(type, env, { perPage: 30, since: sinceDate });
         const allCommits = Array.isArray(commitsData) ? commitsData : [];
         const count = allCommits.length;

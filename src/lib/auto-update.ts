@@ -8,7 +8,7 @@ import { cf, getAuthHeaders, fetchWithTimeout } from './cloudflare-api';
 import { fetchGithubCode, applyTemplateTransform, getGithubUrls, fetchGithubCommits } from './github';
 import { uploadWorker, parseApiError, mergeVariableBindings } from './deploy-utils';
 import { getJSON, putJSON } from './kv-utils';
-import { readAccounts } from './account-store';
+import { readAccounts, getWorkerNames } from './account-store';
 import { logger } from './logger';
 import type { DeployLogEntry, JournalEntry, DeployConfig, AccountEntry, GithubVersionInfo } from './types';
 import type { AppEnv } from '../config/env';
@@ -76,7 +76,11 @@ async function deploySingleWorker(
         const baseUrl = cf.workerScript(acc.accountId, wName);
         const jsonHeaders = getAuthHeaders(acc.email, acc.globalKey);
         const bindingsRes = await fetch(baseUrl + '/bindings', { headers: jsonHeaders });
-        const rawBindings = bindingsRes.ok ? (await bindingsRes.json()).result : [];
+        // 安全: bindings 读取失败必须中止，否则空数组会覆盖该 Worker 全部既有绑定（KV/secret 丢失）
+        if (!bindingsRes.ok) {
+            throw new Error('获取 bindings 失败 (HTTP ' + bindingsRes.status + ')，已中止部署以保护既有绑定');
+        }
+        const rawBindings = (await bindingsRes.json() as any).result;
         const currentBindings = variables
             ? mergeVariableBindings(rawBindings, variables, deletedVariables)
             : rawBindings;
@@ -107,7 +111,7 @@ export async function finalizeDeploy(
     deployedSha: string | null, logs: DeployLogEntry[], customCodeHash: string
 ): Promise<void> {
     try {
-        const existing = await getJSON(env.CONFIG_KV, KV_KEYS.DEPLOY_JOURNAL, []);
+        const existing = await getJSON<JournalEntry[]>(env.CONFIG_KV, KV_KEYS.DEPLOY_JOURNAL, []);
         const journalEntry: JournalEntry & Record<string, unknown> = {
             time: new Date().toISOString(), type, sha: deployedSha,
             accounts: logs.filter(l => l.success).length, total: logs.length,
@@ -149,7 +153,7 @@ export async function coreDeployLogic(env: AppEnv, opts: DeployOptions) {
 
         const logs: DeployLogEntry[] = [];
         for (const acc of accounts) {
-            const targetWorkers = acc['workers_' + type] || [];
+            const targetWorkers = getWorkerNames(acc, type);
             for (const wName of targetWorkers) {
                 logs.push(await deploySingleWorker(acc, wName as string, type, scriptContent, deployedSha, variables, deletedVariables, echDisableWorkersDev));
             }
@@ -164,25 +168,25 @@ export async function coreDeployLogic(env: AppEnv, opts: DeployOptions) {
 
 export async function fetchGithubVersion(env: AppEnv, type: TemplateType): Promise<GithubVersionInfo> {
     const [deployConfig, accounts] = await Promise.all([
-        getJSON(env.CONFIG_KV, KV_KEYS.deployConfig(type), { mode: 'latest' }),
+        getJSON<DeployConfig>(env.CONFIG_KV, KV_KEYS.deployConfig(type), { mode: 'latest' }),
         readAccounts(env),
     ]);
     const hasDeployed = accounts.some((a: any) => a['workers_' + type] && a['workers_' + type].length > 0);
     if (!hasDeployed && deployConfig.currentSha) {
         await putJSON(env.CONFIG_KV, KV_KEYS.deployConfig(type), { mode: 'latest' });
     }
-    const localSha = hasDeployed ? deployConfig.currentSha : null;
-    const localTime = hasDeployed ? deployConfig.deployTime : null;
+    const localSha = hasDeployed ? (deployConfig.currentSha || null) : null;
+    const localTime = hasDeployed ? (deployConfig.deployTime || null) : null;
     let commitDate = deployConfig.commitDate || null;
     // 无 commitDate 时通过 GitHub API 查询本地 SHA 的日期（自动回填 KV）
     if (!commitDate && localSha) {
         try {
             const { repoApiBase } = getGithubUrls(type);
-            const h = { 'User-Agent': 'Cloudflare-Worker-Manager' };
+            const h: Record<string, string> = { 'User-Agent': 'Cloudflare-Worker-Manager' };
             if (env.GITHUB_TOKEN) h['Authorization'] = 'token ' + env.GITHUB_TOKEN;
             const sr = await fetchWithTimeout(repoApiBase + '/commits/' + localSha, { headers: h });
             if (sr.ok) {
-                const sd = await sr.json();
+                const sd: any = await sr.json();
                 commitDate = sd.commit?.committer?.date || null;
                 if (commitDate) {
                     deployConfig.commitDate = commitDate;
@@ -207,12 +211,12 @@ export async function fetchGithubVersion(env: AppEnv, type: TemplateType): Promi
 
 export async function checkAndDeployUpdate(env: AppEnv, type: TemplateType) {
     try {
-        const deployConfig = await getJSON(env.CONFIG_KV, KV_KEYS.deployConfig(type), { mode: 'latest' });
+        const deployConfig = await getJSON<DeployConfig>(env.CONFIG_KV, KV_KEYS.deployConfig(type), { mode: 'latest' });
         if (deployConfig.mode === 'fixed') return;
 
         const version = await fetchGithubVersion(env, type);
         if (version.remoteSha && (!version.localSha || version.remoteSha !== version.localSha)) {
-            const variables = await getJSON(env.CONFIG_KV, KV_KEYS.vars(type), []);
+            const variables = await getJSON<Array<{ key: string; value: string }>>(env.CONFIG_KV, KV_KEYS.vars(type), []);
             await coreDeployLogic(env, { type, variables, deletedVariables: [] });
         }
     } catch (e) { logger.error('update check failed for ' + type, e as Error, { module: 'auto-update' }); }
@@ -222,7 +226,7 @@ export async function rotateUUIDAndDeploy(env: AppEnv, type: TemplateType) {
     const uuidField = TEMPLATES[type].uuidField;
     if (!uuidField) return;
 
-    let variables: Array<{ key: string; value: string }> = await getJSON(env.CONFIG_KV, KV_KEYS.vars(type), []);
+    let variables: Array<{ key: string; value: string }> = await getJSON<Array<{ key: string; value: string }>>(env.CONFIG_KV, KV_KEYS.vars(type), []);
     let uuidUpdated = false;
     variables = variables.map(v => {
         if (v.key === uuidField) { v.value = crypto.randomUUID(); uuidUpdated = true; }
@@ -231,7 +235,7 @@ export async function rotateUUIDAndDeploy(env: AppEnv, type: TemplateType) {
     if (!uuidUpdated) variables.push({ key: uuidField, value: crypto.randomUUID() });
     await putJSON(env.CONFIG_KV, KV_KEYS.vars(type), variables);
 
-    const deployConfig = await getJSON(env.CONFIG_KV, KV_KEYS.deployConfig(type), { mode: 'latest' });
+    const deployConfig = await getJSON<DeployConfig>(env.CONFIG_KV, KV_KEYS.deployConfig(type), { mode: 'latest' });
     const targetSha = deployConfig.mode === 'fixed' ? deployConfig.currentSha : 'latest';
     await coreDeployLogic(env, { type, variables, deletedVariables: [], targetSha });
 }

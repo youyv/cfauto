@@ -43,6 +43,8 @@ const expectedFiles = [
     'frontend/js/dom.js',
     'frontend/js/state.js',
     'frontend/js/accounts.js',
+    'frontend/js/accounts-io.js',
+    'frontend/js/accounts-worker.js',
     'frontend/js/deploy.js',
     'frontend/js/vars.js',
     'frontend/js/history.js',

@@ -5,8 +5,6 @@ function safeHtml(s) { if(!s && s!==0) return ""; const d=document.createElement
 function safeJsStr(s) { return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"'); }
 
 
-
-
 function doSearch() {
     const input = document.getElementById('account_search');
     const q = (input||{}).value||'';
@@ -163,14 +161,14 @@ async function saveAccount() {
         alias:$('in_alias').value,
         accountId:$('in_id').value,
         email:$('in_email').value,
-        globalKey:$('in_gkey').value,
+        globalKey:($('in_gkey').value||'').trim(),
         defaultZoneName:$('in_zone_name').value,
         defaultZoneId:$('in_zone_id').value,
         dailyLimit:parseInt($('in_daily_limit').value, 10) || 0,
         stats:(editingIndex>=0 && accounts[editingIndex]) ? (accounts[editingIndex].stats || {total:0,max:parseInt($('in_daily_limit').value, 10)||100000}) : {total:0,max:parseInt($('in_daily_limit').value)||100000}
     };
     Object.keys(TEMPLATES).forEach(t=>o['workers_'+t]=$('in_workers_'+t).value.split(/,|，/).map(s=>s.trim()).filter(s=>s));
-    if(editingIndex>=0)accounts[editingIndex]=o; else accounts.push(o);
+    if(editingIndex>=0){ if(!o.globalKey) delete o.globalKey; accounts[editingIndex]=o; } else accounts.push(o);
     await fetch('/api/accounts',{method:'POST',body:JSON.stringify(accounts)});
     renderTable();
     $('account_form').classList.add('hidden');
@@ -181,7 +179,9 @@ function editAccount(i){
     $('in_alias').value=a.alias;
     $('in_id').value=a.accountId;
     $('in_email').value=a.email||"";
-    $('in_gkey').value=a.globalKey||"";
+    // 安全: 不回填脱敏 key，留空表示不修改（后端保留旧密文）
+    $('in_gkey').value="";
+    $('in_gkey').placeholder="留空=不修改";
     $('in_daily_limit').value=a.dailyLimit||"";
     $('in_zone_name').value=a.defaultZoneName||"";
     $('in_zone_id').value=a.defaultZoneId||"";
@@ -234,7 +234,6 @@ function updateZoneInfo() {
 }
 
 
-
 async function verifyAllCredentials() {
     Swal.fire({ title: '验证中...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
     try {
@@ -249,70 +248,6 @@ async function verifyAllCredentials() {
     } catch(e) { Swal.fire('验证失败', e.message, 'error'); }
 }
 
-async function exportAccounts() {
-    try {
-        const r = await fetch('/api/accounts/export');
-        const blob = await r.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = 'accounts-' + new Date().toISOString().slice(0,10) + '.json';
-        a.click(); URL.revokeObjectURL(url);
-    } catch(e) { Swal.fire('导出失败', e.message, 'error'); }
-}
-async function importAccounts() {
-    const input = document.createElement('input');
-    input.type = 'file'; input.accept = '.json';
-    input.onchange = async () => {
-        try {
-            const file = input.files[0];
-            if (!file) return;
-            const text = await file.text();
-            const data = JSON.parse(text);
-            const res = await fetch('/api/accounts/import', { method: 'POST', body: JSON.stringify(data) });
-            const result = await res.json();
-            if (result.success) {
-                Swal.fire('导入完成', '新增 ' + result.added + ' 个, 跳过 ' + result.skipped + ' 个, 共 ' + result.total + ' 个账号', 'success');
-                await loadAccounts();
-            } else { Swal.fire('导入失败', result.msg, 'error'); }
-        } catch(e) { Swal.fire('导入失败', e.message, 'error'); }
-    };
-    input.click();
-}
-async function backupAll() {
-    try {
-        const r = await fetch('/api/backup');
-        const blob = await r.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = 'worker-backup-' + new Date().toISOString().slice(0,10) + '.json';
-        a.click(); URL.revokeObjectURL(url);
-        Swal.fire('备份完成', '数据已下载', 'success');
-    } catch(e) { Swal.fire('备份失败', e.message, 'error'); }
-}
-async function restoreBackup() {
-    const input = document.createElement('input');
-    input.type = 'file'; input.accept = '.json';
-    input.onchange = async () => {
-        const result = await Swal.fire({
-            title: '⚠️ 恢复数据', text: '此操作会覆盖现有配置，确定继续？', icon: 'warning',
-            showCancelButton: true, confirmButtonText: '确认恢复', confirmButtonColor: '#d33'
-        });
-        if (!result.isConfirmed) return;
-        try {
-            const file = input.files[0];
-            if (!file) return;
-            const text = await file.text();
-            const data = JSON.parse(text);
-            const res = await fetch('/api/restore', { method: 'POST', body: JSON.stringify(data) });
-            const r = await res.json();
-            if (r.success) {
-                Swal.fire('恢复完成', '已恢复 ' + r.restored + ' 项配置', 'success');
-                location.reload();
-            } else { Swal.fire('恢复失败', r.msg, 'error'); }
-        } catch(e) { Swal.fire('恢复失败', e.message, 'error'); }
-    };
-    input.click();
-}
 
 // ===== 账号管理弹窗 =====
 
@@ -341,173 +276,6 @@ async function batchDeleteAccounts() {
     Swal.fire('已删除', selected.length + ' 个账号已删除', 'success');
 }
 
-let currentManageAccIndex = -1;
-
-async function openAccountManage(i) {
-    currentManageAccIndex = i;
-    const acc = accounts[i];
-    if (!acc.globalKey) return Swal.fire('无法管理', '请先配置 Global API Key', 'error');
-
-    const modal = document.getElementById('account_manage_modal');
-    const table = document.getElementById('manage_table');
-    const tbody = document.getElementById('manage_list_body');
-    const loading = document.getElementById('manage_loading');
-    const subDisplay = document.getElementById('manage_subdomain_display');
-
-    document.getElementById('manage_modal_title').innerText = `📂 管理账号: ${acc.alias}`;
-    subDisplay.innerText = '加载中...';
-    modal.classList.remove('hidden');
-    table.classList.add('hidden');
-    loading.classList.remove('hidden');
-    tbody.innerHTML = '';
-
-    try {
-        const [workersRes, subRes] = await Promise.all([
-            fetch('/api/all_workers', {
-                method: 'POST',
-                body: JSON.stringify({ accountId: acc.accountId })
-            }),
-            fetch('/api/get_subdomain', {
-                method: 'POST',
-                body: JSON.stringify({ accountId: acc.accountId })
-            })
-        ]);
-
-        const subData = await subRes.json();
-        if (subData.success && subData.subdomain) {
-            subDisplay.innerText = subData.subdomain;
-        } else {
-            subDisplay.innerText = subData.msg || '未设置';
-        }
-
-        const d = await workersRes.json();
-        loading.classList.add('hidden');
-
-        if (d.success) {
-            table.classList.remove('hidden');
-            if (d.workers.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="4" class="text-center py-4">无 Worker</td></tr>';
-            } else {
-                tbody.innerHTML = d.workers.map(w => `
-                    <tr class="hover:bg-gray-50 border-b">
-                        <td class="font-bold text-indigo-600">${safeHtml(w.id)}</td>
-                        <td>${safeHtml(new Date(w.created_on).toLocaleDateString())}</td>
-                        <td>${safeHtml(new Date(w.modified_on).toLocaleDateString())}</td>
-                        <td class="text-right">
-                            <button onclick="confirmDeleteWorker('${safeJsStr(acc.alias)}', '${safeJsStr(w.id)}', ${i})" class="text-xs bg-red-100 text-red-600 px-2 py-1 rounded hover:bg-red-200">🗑️ 删除</button>
-                        </td>
-                    </tr>
-                `).join('');
-            }
-        } else {
-            tbody.innerHTML = `<tr><td colspan="4" class="text-center text-red-500 py-4">${safeHtml(d.msg)}</td></tr>`;
-            table.classList.remove('hidden');
-        }
-    } catch(e) { console.error('[openAccountManage]', e); loading.innerText = "网络错误"; }
-}
-
-async function promptChangeSubdomain() {
-    if (currentManageAccIndex < 0) return;
-    const acc = accounts[currentManageAccIndex];
-    const currentSub = document.getElementById('manage_subdomain_display').innerText;
-
-    const { value: newSub } = await Swal.fire({
-        title: '修改 Workers.dev 子域名',
-        html: `
-            <div class="text-left text-sm space-y-2">
-                <div class="bg-gray-50 p-2 rounded">当前: <b>${currentSub}</b>.workers.dev</div>
-                <input id="swal_new_subdomain" class="swal2-input" placeholder="输入新子域名前缀" style="margin:0;width:100%">
-                <div class="text-xs text-gray-400">⚠️ 修改子域名可能需要数分钟生效，且可能影响现有 Worker 的访问地址。</div>
-            </div>
-        `,
-        focusConfirm: false,
-        showCancelButton: true,
-        confirmButtonText: '确认修改',
-        cancelButtonText: '取消',
-        confirmButtonColor: '#4f46e5',
-        preConfirm: () => {
-            const val = document.getElementById('swal_new_subdomain').value.trim();
-            if (!val) { Swal.showValidationMessage('请输入新子域名'); return false; }
-            if (val.length < 1 || !/^[a-z0-9][a-z0-9-]*[a-z0-9]$/i.test(val)) {
-                Swal.showValidationMessage('子域名只能包含字母、数字和连字符'); return false;
-            }
-            return val;
-        }
-    });
-
-    if (!newSub) return;
-
-    const confirm2 = await Swal.fire({
-        title: '二次确认',
-        html: `确定将子域名从 <b>${currentSub}</b> 改为 <b>${newSub}</b> 吗？<br><span class="text-xs text-red-500">此操作会影响所有使用 workers.dev 域名的 Worker！</span>`,
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonText: '确认修改',
-        cancelButtonText: '取消',
-        confirmButtonColor: '#d33'
-    });
-
-    if (!confirm2.isConfirmed) return;
-
-    try {
-        Swal.fire({ title: '修改中...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
-        const res = await fetch('/api/change_subdomain', {
-            method: 'POST',
-            body: JSON.stringify({ accountId: acc.accountId, newSubdomain: newSub })
-        });
-        const data = await res.json();
-        if (data.success) {
-            document.getElementById('manage_subdomain_display').innerText = data.subdomain || newSub;
-            Swal.fire('修改成功', `子域名已更新为: ${data.subdomain || newSub}.workers.dev`, 'success');
-        } else {
-            Swal.fire('修改失败', data.msg || '未知错误', 'error');
-        }
-    } catch(e) {
-        Swal.fire('错误', '网络错误: ' + e.message, 'error');
-    }
-}
-
-async function confirmDeleteWorker(alias, workerId, accIndex) {
-    const result = await Swal.fire({
-        title: '危险操作',
-        html: `
-          <p>确认要删除 <b>${safeHtml(workerId)}</b> 吗？</p>
-          <div class="mt-4 text-left bg-gray-50 p-2 rounded text-xs">
-              <label class="flex items-center space-x-2">
-                  <input type="checkbox" id="del_kv_chk" checked class="form-checkbox text-red-600">
-                  <span class="text-gray-700 font-bold">同时删除绑定的 KV (推荐)</span>
-              </label>
-              <p class="text-gray-400 mt-1 pl-5">执行顺序: 1.读取绑定 -> 2.删除Worker(自动解绑) -> 3.删除KV空间</p>
-          </div>
-        `,
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonText: '确认删除',
-        confirmButtonColor: '#d33',
-        showLoaderOnConfirm: true,
-        preConfirm: () => {
-            const deleteKv = document.getElementById('del_kv_chk').checked;
-            const acc = accounts[accIndex];
-            return fetch('/api/delete_worker', {
-                method: 'POST',
-                body: JSON.stringify({
-                    accountId: acc.accountId,
-                    workerName: workerId,
-                    deleteKv: deleteKv
-                })
-            }).then(response => response.json()).then(data => {
-                if (!data.success) throw new Error(data.msg);
-                return data;
-            }).catch(error => Swal.showValidationMessage(`删除失败: ${error}`));
-        }
-    });
-
-    if (result.isConfirmed) {
-        Swal.fire('已删除', 'Worker 及相关资源已清理', 'success');
-        await loadAccounts();
-        openAccountManage(accIndex);
-    }
-}
 
 // Auto Config
 function updateAutoToggleLabel(){ const el=document.getElementById("auto_toggle_label"); const master=document.getElementById("auto_update_toggle"); if(el&&master){ const on=master.checked; el.textContent=on?"开":"关"; el.className=on?"text-[10px] font-bold text-green-600":"text-[10px] font-bold text-gray-400"; document.getElementById("auto_cmliu_toggle").checked=on; document.getElementById("auto_joey_toggle").checked=on; document.getElementById("auto_ech_toggle").checked=on; } }
@@ -554,10 +322,4 @@ window.cancelEdit = cancelEdit;
 window.selectAllAccounts = selectAllAccounts;
 window.deselectAllAccounts = deselectAllAccounts;
 window.batchDeleteAccounts = batchDeleteAccounts;
-window.exportAccounts = exportAccounts;
-window.importAccounts = importAccounts;
-window.backupAll = backupAll;
-window.restoreBackup = restoreBackup;
-window.openAccountManage = openAccountManage;
-window.confirmDeleteWorker = confirmDeleteWorker;
 window.verifyAllCredentials = verifyAllCredentials;

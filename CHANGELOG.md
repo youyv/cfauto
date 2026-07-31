@@ -1,5 +1,39 @@
 # 版本更新日志
 
+## V11.8.0 (2026-07-31)
+
+### 🔒 安全架构升级（评审驱动）
+- **会话 token 化**: 登录改为生成 32B 加密安全随机会话 token 存入 KV（TTL 7 天），requireCookie 改查 KV 校验；新增 POST /api/logout 登出端点 + 前端 🚪 登出按钮；ACCESS_CODE 不再直接派生 token，登出/过期可撤销
+- **CSRF token 机制**: 登录发放双 cookie（__Host-auth HttpOnly + __Host-csrf 供 JS 读取），写请求必须携带 X-CSRF-Token 且与会话绑定值恒定时间比对（无头/错 token/已登出均 403）；前端 fetch 全局拦截自动附头；Sec-Fetch-Site/Origin 降级为纵深防御
+- **恒定时间比较**: 登录密码与 cookie 会话校验改为 SHA-256 摘要后逐字节异或比较，消除时序侧信道
+- **登录限流加固**: 速率限制计数移到密码校验之后——非法 JSON/垃圾请求不再消耗配额，防跨站表单耗尽受害者限流
+- **CSP 收紧**: 面板 CSP 增加 frame-ancestors 'none'、base-uri 'none'、form-action 'self'；登录页补充完整 CSP
+- **响应头补齐**: 全局移除多余 CORS Access-Control-Allow-Origin: *；所有 JSON 响应统一 X-Content-Type-Options: nosniff + X-Frame-Options: DENY + Referrer-Policy: no-referrer
+- **加密安全随机数**: fix1101 子域名轮换由 Math.random() 改为 crypto.getRandomValues
+
+### 🐛 数据安全修复
+- **脱敏 key 回写丢失凭证（高危）**: 前端编辑账号不再回填脱敏 key（留空=不修改）；后端 writeAccounts 对空值/掩码值保留 KV 旧密文，杜绝掩码值加密入库覆盖真实 API Key
+- **密钥变更后空值覆盖**: readAccounts 解密失败标记改精确 v1: 前缀；writeAccounts 空 key 保留旧密文，防止密钥变更后凭证永久丢失
+- **import 双重加密**: 导入解密失败（密钥不匹配）时置空并返回 warning 提示，不再二次加密损坏数据
+- **bindings 覆盖丢失（高危）**: 部署前 GET /bindings 失败改为中止该 Worker 部署，不再静默降级为空数组覆盖既有 KV/secret 绑定
+- **fix1101 secret 丢失**: secret_text 绑定无法从 CF API 恢复时跳过并警告需手动重配，不再写入空值覆盖
+- **fix1101 子域名不可回滚**: 子域名轮换移至重建成功之后且每账号只执行一次，失败不再造成 Worker 已删+子域名已改的不可恢复状态
+- **changeSubdomain 回滚保护**: DELETE 旧子域名前必须先确认拿到旧域名，防止删除后无法自动恢复
+
+### 🏗️ 可靠性修复
+- **cron lastCheck 全路径兜底**: KV 读失败、账号为空、熔断单账号异常均保证更新 lastCheck；waitUntil 加 catch 防 unhandled rejection；fuseWebhook URL 掩码后入日志
+- **deploy.js 按钮卡死**: settings 保存失败不再导致部署按钮永久禁用（try/catch + 警告提示）
+- **批量部署密码回填**: config.admin → config.ADMIN 大小写修复，重试失败批次密码可恢复
+- **变量同步 secret 保留**: fetch_bindings 返回 secret 标志，doSync 同步后 secret 标记不丢失
+- **账号接口校验**: POST /api/accounts 增加数组/必填字段/500 上限校验，防止坏数据入库
+- **yxip XSS 修复**: accountId 拼入 innerHTML 前 safeHtml 转义
+
+### 🧪 工程化
+- **TypeScript 全量清零**: 安装 @cloudflare/workers-types、getJSON 12 处显式泛型、res.json() 类型断言等，tsc --noEmit 从 150 个错误降到 0
+- **新增 21 个安全单元测试**: test/auth-security.test.ts 覆盖会话发放/TTL/恒定时间/限流/CSRF 全链路（测试总数 50，全部通过）
+- **verify.js 清单同步**: 补上 accounts-io.js / accounts-worker.js 拆分文件
+
+
 ## V11.7.1 (2026-07-16)
 
 ### 🐛 Bug 修复

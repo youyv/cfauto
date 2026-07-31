@@ -9,7 +9,7 @@
  *    暂不引入乐观锁（需额外 KV 键存储版本号）。多用户场景需升级方案。
  */
 import { KV_KEYS } from '../config/templates';
-import { decryptKey, encryptKey } from './crypto-utils';
+import { decryptKey, encryptKey, VERSION_PREFIX } from './crypto-utils';
 import { getJSON, putJSON } from './kv-utils';
 import { logger } from './logger';
 import type { AccountEntry } from './types';
@@ -17,12 +17,12 @@ import type { AppEnv } from '../config/env';
 
 /** 读取账号列表（自动解密 globalKey） */
 export async function readAccounts(env: AppEnv): Promise<AccountEntry[]> {
-    const accounts = await getJSON(env.CONFIG_KV, KV_KEYS.ACCOUNTS, []);
+    const accounts = await getJSON<AccountEntry[]>(env.CONFIG_KV, KV_KEYS.ACCOUNTS, []);
     await Promise.all(accounts.map(async (a) => {
         if (a.globalKey) {
             const decrypted = await decryptKey(env, a.globalKey);
             // 解密失败（密钥变更）时返回空字符串，避免密文被当作 API Key 使用
-            if (decrypted === a.globalKey && a.globalKey.startsWith('v')) {
+            if (decrypted === a.globalKey && a.globalKey.startsWith(VERSION_PREFIX)) {
                 logger.warn('readAccounts: decryptKey returned raw ciphertext, clearing', { alias: a.alias });
                 a.globalKey = '';
             } else {
@@ -48,14 +48,27 @@ function maskKey(key: string): string {
     return key.substring(0, 6) + '...' + key.substring(key.length - 4);
 }
 
-/** 写入账号列表（自动加密 globalKey） */
+/** 写入账号列表（自动加密 globalKey；空值/掩码值保留旧密文，防止覆盖真实凭证） */
 export async function writeAccounts(env: AppEnv, accounts: AccountEntry[]): Promise<void> {
+    // 读取现有密文列表，用于保留未修改（空/掩码）的 key
+    const existing = await getJSON<AccountEntry[]>(env.CONFIG_KV, KV_KEYS.ACCOUNTS, []);
     // 克隆数组避免原地修改调用者持有的引用
     const cloned = accounts.map(a => ({ ...a }));
     await Promise.all(cloned.map(async (a) => {
-        if (a.globalKey) a.globalKey = await encryptKey(env, a.globalKey);
+        // 空 key 或掩码值（前端未修改 key）→ 保留 KV 中该账号的旧密文，绝不覆盖真实凭证
+        if (a.globalKey && !isMaskedKey(a.globalKey)) {
+            a.globalKey = await encryptKey(env, a.globalKey);
+        } else {
+            const old = existing.find(e => e.accountId === a.accountId);
+            a.globalKey = (old && old.globalKey) || '';
+        }
     }));
     await putJSON(env.CONFIG_KV, KV_KEYS.ACCOUNTS, cloned);
+}
+
+/** 判断是否为前端脱敏格式（前6...后4 或 ***），此类值不得作为新 key 加密入库 */
+function isMaskedKey(key: string): boolean {
+    return key.includes('...') || key === '***';
 }
 
 /** 从 AccountEntry 动态获取对应模板的 Worker 列表 — 模板驱动，无需硬编码 switch */

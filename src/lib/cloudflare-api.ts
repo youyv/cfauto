@@ -53,7 +53,7 @@ export function jsonError(msg: string, status = 500, code?: ErrorCode) {
     const body = { success: false, msg, ...(code ? { code } : {}) };
     return new Response(JSON.stringify(body), {
         status,
-        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+        headers: { 'Content-Type': 'application/json', 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY' }
     });
 }
 /** 统一 JSON 成功响应 */
@@ -61,14 +61,13 @@ export function json(data: unknown, statusOrInit?: number | ResponseInit): Respo
     if (typeof statusOrInit === 'number') {
         return new Response(JSON.stringify(data), {
             status: statusOrInit,
-            headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+            headers: { 'Content-Type': 'application/json', 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY' }
         });
     }
     const init = statusOrInit || {} as ResponseInit;
     const headers = new Headers(init.headers);
     headers.set('Content-Type', 'application/json');
-    if (!headers.has('Access-Control-Allow-Origin')) {
-        headers.set('Access-Control-Allow-Origin', '*');
-    }
+    if (!headers.has('X-Content-Type-Options')) headers.set('X-Content-Type-Options', 'nosniff');
+    if (!headers.has('X-Frame-Options')) headers.set('X-Frame-Options', 'DENY');
     return new Response(JSON.stringify(data), { ...init, headers });
 }

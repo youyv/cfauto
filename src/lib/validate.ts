@@ -6,7 +6,7 @@ import { jsonError } from './cloudflare-api';
 import { TEMPLATES } from '../config/templates';
 
 /** 校验请求体必填字段，失败返回 400 错误响应 */
-export function validateRequired(body: Record<string, unknown>, fields: string[]): Response | null {
+export function validateRequired<T extends Record<string, unknown>>(body: T, fields: string[]): Response | null {
     const missing = fields.filter(f => !(f in body) || body[f] === undefined || body[f] === null);
     if (missing.length > 0) {
         return jsonError("Missing required fields: " + missing.join(", "), 400, 'VALIDATION_ERROR');

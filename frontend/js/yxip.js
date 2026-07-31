@@ -37,7 +37,7 @@ function toggleYxipAccountSelect() {
         const opacityClass = noWorker ? 'opacity-50 grayscale' : '';
         const disabledAttr = noWorker ? 'disabled' : '';
         return '<label class="flex items-center gap-2 p-2 border rounded cursor-pointer transition-colors ' + bgHoverCls + ' ' + opacityClass + '">' +
-            '<input type="checkbox" name="yxip_account" value="' + a.accountId + '" class="' + txtCls + '" ' + disabledAttr + '>' +
+            '<input type="checkbox" name="yxip_account" value="' + safeHtml(a.accountId) + '" class="' + txtCls + '" ' + disabledAttr + '>' +
             '<span class="text-xs font-bold text-gray-700 truncate" title="' + safeHtml(a.email) + '">' + safeHtml(a.email) + '</span>' +
             badge +
         '</label>';

@@ -10,7 +10,8 @@ export interface AppEnv {
 /** Cloudflare KV Namespace 最小接口 */
 export interface KVNamespace {
     get(key: string, options?: any): Promise<string | null>;
-    put(key: string, value: string): Promise<void>;
+    put(key: string, value: string, options?: any): Promise<void>;
+    delete(key: string): Promise<void>;
     list(options?: any): Promise<{ keys: Array<{ name: string }> }>;
 }
 /** 账号凭证 */

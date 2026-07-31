@@ -117,17 +117,19 @@ function selectSyncAccount(t) {
 async function doSync(a, t, n) {
     document.getElementById('sync_select_modal').classList.add('hidden');
     if (!confirm('确认覆盖当前变量配置?')) return;
-    const r = await fetch('/api/fetch_bindings', {
-        method: 'POST',
-        body: JSON.stringify({ accountId: a.accountId, workerName: n })
-    });
-    const d = await r.json();
-    if (d.success) {
-        const c = document.getElementById(`vars_${t}`);
-        c.innerHTML = ''; deletedVars[t] = [];
-        d.data.forEach(v => addVarRow(t, v.key, v.value));
-        Swal.fire('同步成功', '变量已更新', 'success');
-    } else { Swal.fire('同步失败', d.msg, 'error'); }
+    try {
+        const r = await fetch('/api/fetch_bindings', {
+            method: 'POST',
+            body: JSON.stringify({ accountId: a.accountId, workerName: n })
+        });
+        const d = await r.json();
+        if (d.success) {
+            const c = document.getElementById(`vars_${t}`);
+            c.innerHTML = ''; deletedVars[t] = [];
+            d.data.forEach(v => addVarRow(t, v.key, v.value, v.secret));
+            Swal.fire('同步成功', '变量已更新', 'success');
+        } else { Swal.fire('同步失败', d.msg, 'error'); }
+    } catch(e) { Swal.fire('同步失败', e.message, 'error'); }
 }
 
 // ===== 版本检查 =====

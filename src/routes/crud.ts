@@ -20,40 +20,48 @@ ROUTES.set('GET /api/accounts', async (_req, env) => {
 });
 ROUTES.set('POST /api/accounts', async (req, env) => {
     const accounts = await safeJson(req);
+    // 结构校验：必须是数组、条目必填 alias/accountId、限制数量防止撑爆 KV
+    if (!Array.isArray(accounts)) return jsonError('格式错误：需要 JSON 数组');
+    if (accounts.length > 500) return jsonError('账号数量超限（最多 500 个）');
+    for (const a of accounts) {
+        if (!a || typeof a.alias !== 'string' || !a.alias.trim() || typeof a.accountId !== 'string' || !a.accountId.trim()) {
+            return jsonError('格式错误：每条账号必须包含非空 alias 和 accountId');
+        }
+    }
     await writeAccounts(env, accounts);
     return json({ success: true });
 });
 ROUTES.set('GET /api/settings', async (req, env) => {
-    const type = new URL(req.url).searchParams.get('type');
+    const type = new URL(req.url).searchParams.get('type') || '';
     const templateErr = requireTemplateType(type, false); if (templateErr) return templateErr;
     return new Response(await env.CONFIG_KV.get(KV_KEYS.vars(type || ''), {cacheTtl: 60}) || '[]', { headers: { 'Content-Type': 'application/json' } });
 });
 ROUTES.set('POST /api/settings', async (req, env) => {
-    const type = new URL(req.url).searchParams.get('type');
+    const type = new URL(req.url).searchParams.get('type') || '';
     const templateErr = requireTemplateType(type, false); if (templateErr) return templateErr;
     await putJSON(env.CONFIG_KV, KV_KEYS.vars(type || ''), await safeJson(req));
     return json({ success: true });
 });
 ROUTES.set('GET /api/deploy_config', async (req, env) => {
-    const type = new URL(req.url).searchParams.get('type');
+    const type = new URL(req.url).searchParams.get('type') || '';
     const templateErr = requireTemplateType(type, false); if (templateErr) return templateErr;
     const key = KV_KEYS.deployConfig(type || '');
     const defaultCfg = { mode: 'latest', currentSha: null, deployTime: null };
     return new Response(await env.CONFIG_KV.get(key, {cacheTtl: 60}) || JSON.stringify(defaultCfg), { headers: { 'Content-Type': 'application/json' } });
 });
 ROUTES.set('GET /api/favorites', async (req, env) => {
-    const type = new URL(req.url).searchParams.get('type');
+    const type = new URL(req.url).searchParams.get('type') || '';
     const templateErr = requireTemplateType(type, false); if (templateErr) return templateErr;
     return new Response(await env.CONFIG_KV.get(KV_KEYS.favorites(type || ''), {cacheTtl: 60}) || '[]', { headers: { 'Content-Type': 'application/json' } });
 });
 interface FavoriteAction { action: 'add' | 'remove'; item: FavoriteItem; }
 
 ROUTES.set('POST /api/favorites', async (req, env) => {
-    const type = new URL(req.url).searchParams.get('type');
+    const type = new URL(req.url).searchParams.get('type') || '';
     const templateErr = requireTemplateType(type, false); if (templateErr) return templateErr;
     const key = KV_KEYS.favorites(type || '');
     const { action, item } = await safeJson<FavoriteAction>(req);
-    let favs = await getJSON(env.CONFIG_KV, key, []);
+    let favs = await getJSON<FavoriteItem[]>(env.CONFIG_KV, key, []);
     if (action === 'add') { if (!favs.find((f: FavoriteItem) => f.sha === item.sha)) favs.unshift(item); }
     else if (action === 'remove') { favs = favs.filter((f: FavoriteItem) => f.sha !== item.sha); }
     await putJSON(env.CONFIG_KV, key, favs);
@@ -128,8 +136,24 @@ ROUTES.set('POST /api/accounts/import', async (req, env) => {
         }
         // 仅解密来自 import 的条目（export 数据已加密），避免对已解密的存量条目重复解密
         // 仅解密带 v1: 前缀的已加密值，跳过已解密的存量明文（避免无效 atob + warn）
-        await Promise.all(importedIdx.map(async (i) => { if (merged[i].globalKey && merged[i].globalKey.match(/^v\d+:/)) merged[i].globalKey = await decryptKey(env, merged[i].globalKey); }));
+        const decryptFailed: string[] = [];
+        await Promise.all(importedIdx.map(async (i) => {
+            const raw = merged[i].globalKey;
+            if (raw && raw.match(/^v\d+:/)) {
+                const dec = await decryptKey(env, raw);
+                if (dec === raw) {
+                    // 解密失败（密钥不匹配/数据损坏）→ 置空并提示，防止 writeAccounts 再次加密导致双重加密
+                    merged[i].globalKey = '';
+                    decryptFailed.push(merged[i].alias || merged[i].accountId);
+                } else {
+                    merged[i].globalKey = dec;
+                }
+            }
+        }));
         await writeAccounts(env, merged);
+        if (decryptFailed.length > 0) {
+            return json({ success: true, added, skipped: skipped + decryptFailed.length, total: merged.length, warning: '以下账号密钥解密失败（可能密钥已变更），已清空需重新输入: ' + decryptFailed.join(', ') });
+        }
         return json({ success: true, added, skipped, total: merged.length });
     } catch (e: any) { logger.error('accounts/import failed', e instanceof Error ? e : new Error(String(e)), { module: 'crud' }); return jsonError('导入失败：数据格式异常'); }
 });
@@ -181,14 +205,14 @@ ROUTES.set('GET /api/init_data', async (req, env) => {
     try {
         const requestedTypes = new URL(req.url).searchParams.get('types');
         const templateTypes = requestedTypes
-            ? requestedTypes.split(',').filter(t => TEMPLATES[t]).map(t => t.trim())
+            ? requestedTypes.split(',').filter((t: string) => TEMPLATES[t]).map((t: string) => t.trim())
             : Object.keys(TEMPLATES);
         const [globalCfgRaw] = await Promise.all([
             env.CONFIG_KV.get(KV_KEYS.GLOBAL_CONFIG, {cacheTtl: 60})
         ]);
         const accounts = await readAccounts(env);
-        const varsPromises = templateTypes.map(t => env.CONFIG_KV.get(KV_KEYS.vars(t)));
-        const deployCfgPromises = templateTypes.map(t => env.CONFIG_KV.get(KV_KEYS.deployConfig(t)));
+        const varsPromises = templateTypes.map((t: string) => env.CONFIG_KV.get(KV_KEYS.vars(t)));
+        const deployCfgPromises = templateTypes.map((t: string) => env.CONFIG_KV.get(KV_KEYS.deployConfig(t)));
         const [varsResults, deployCfgResults] = await Promise.all([
             Promise.all(varsPromises),
             Promise.all(deployCfgPromises)

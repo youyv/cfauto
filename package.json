@@ -1,6 +1,6 @@
 {
   "name": "worker-pro-refactor",
-  "version": "11.7.2",
+  "version": "11.8.0",
   "description": "Worker 智能中控 — V11.7.1 (Secret复选框修复 · 构建文件同步)",
   "scripts": {
     "build": "node build.js",
@@ -16,6 +16,7 @@
     "esbuild": "^0.24.2",
     "typescript": "^6.0.3",
     "vitest": "^4.1.9",
-    "wrangler": "^4.99.0"
+    "wrangler": "^4.99.0",
+    "@cloudflare/workers-types": "^5.20260731.1"
   }
 }

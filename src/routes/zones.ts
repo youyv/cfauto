@@ -48,7 +48,7 @@ export async function handleGetAllWorkers(env: AppEnv, accountId: string) {
             modified_on: w.modified_on
         }));
         return json({ success: true, workers });
-    } catch (e: any) { logger.error('Operation failed', e instanceof Error ? e : new Error(String(e)), { module: 'zones' }); return jsonError('Operation failed'); }
+    } catch (e: any) { logger.error('handleGetAllWorkers failed', e instanceof Error ? e : new Error(String(e)), { module: 'zones' }); return jsonError('handleGetAllWorkers failed'); }
 }
 
 export async function handleDeleteWorker(env: AppEnv, accountId: string, workerName: string, deleteKv: boolean) {
@@ -59,7 +59,7 @@ export async function handleDeleteWorker(env: AppEnv, accountId: string, workerN
         if (deleteKv) {
             const bindRes = await fetch(cf.workerBindings(aid, workerName), { headers });
             if (bindRes.ok) {
-                const binds = (await bindRes.json()).result;
+                const binds = (await bindRes.json() as any).result;
                 kvNamespaceIds = binds.filter((b: any) => b.type === 'kv_namespace').map((b: any) => b.namespace_id);
             }
         }
@@ -76,8 +76,9 @@ export async function handleDeleteWorker(env: AppEnv, accountId: string, workerN
                 if (acc.accountId === aid) {
                     Object.keys(TEMPLATES).forEach(k => {
                         const t = 'workers_' + k;
-                        if (acc[t] && acc[t].includes(workerName)) {
-                            acc[t] = acc[t].filter((n: string) => n !== workerName);
+                        const wl = (acc as unknown as Record<string, string[]>)[t];
+                        if (wl && wl.includes(workerName)) {
+                            (acc as unknown as Record<string, string[]>)[t] = wl.filter((n: string) => n !== workerName);
                             updated = true;
                         }
                     });
@@ -121,7 +122,7 @@ export async function handleDeleteWorker(env: AppEnv, accountId: string, workerN
             }
             return json({ success: true });
         } else {
-            const err = await delWorkerRes.json();
+            const err: any = await delWorkerRes.json();
             return json({ success: false, msg: err.errors?.[0]?.message || "删除失败" });
         }
     } catch (e: any) {
@@ -137,9 +138,9 @@ export async function handleFetchBindings(env: AppEnv, accountId: string, worker
         const data: any = await res.json();
         const bindings = data.result
             .filter((b: any) => b.type === "plain_text" || b.type === "secret_text")
-            .map((b: any) => ({ key: b.name, value: b.type === "plain_text" ? b.text : "" }));
+            .map((b: any) => ({ key: b.name, value: b.type === "plain_text" ? b.text : "", secret: b.type === "secret_text" }));
         return json({ success: true, data: bindings });
-    } catch (e: any) { logger.error('Operation failed', e instanceof Error ? e : new Error(String(e)), { module: 'zones' }); return jsonError('Operation failed'); }
+    } catch (e: any) { logger.error('handleFetchBindings failed', e instanceof Error ? e : new Error(String(e)), { module: 'zones' }); return jsonError('handleFetchBindings failed'); }
 }
 
 export async function handleGetSubdomain(env: AppEnv, accountId: string) {
@@ -152,7 +153,7 @@ export async function handleGetSubdomain(env: AppEnv, accountId: string) {
         } else {
             return json({ success: false, msg: data.errors?.[0]?.message || '查询失败' });
         }
-    } catch (e: any) { logger.error('Operation failed', e instanceof Error ? e : new Error(String(e)), { module: 'zones' }); return jsonError('Operation failed'); }
+    } catch (e: any) { logger.error('handleGetSubdomain failed', e instanceof Error ? e : new Error(String(e)), { module: 'zones' }); return jsonError('handleGetSubdomain failed'); }
 }
 
 export async function handleChangeSubdomain(env: AppEnv, accountId: string, newSubdomain: string) {
@@ -172,10 +173,14 @@ export async function handleChangeSubdomain(env: AppEnv, accountId: string, newS
             let oldSubdomain = '';
             try {
                 const getRes = await fetch(cf.acctSubdomain(aid), { headers });
-                const getData = await getRes.json();
+                const getData: any = await getRes.json();
                 oldSubdomain = getData.result?.subdomain || '';
             } catch (_) { logger.warn('changeSubdomain get old subdomain failed', { module: 'zones' }); }
 
+            // 安全: 拿不到旧域名就不执行 DELETE，防止删除后无法恢复
+            if (!oldSubdomain) {
+                return json({ success: false, msg: '无法获取当前子域名，已中止修改（防止删除后无法自动恢复）。请到 Dashboard → Workers & Pages → 设置中手动修改。' });
+            }
             const delRes = await fetch(cf.acctSubdomain(aid), { method: 'DELETE', headers });
             if (!delRes.ok) {
                 return json({ success: false, msg: 'Cloudflare 不支持通过 API 修改已有子域名，请到 Dashboard → Workers & Pages → 设置中手动修改。' });
@@ -209,5 +214,5 @@ export async function handleChangeSubdomain(env: AppEnv, accountId: string, newS
             return json({ success: false, msg: '子域名修改失败，且无法自动恢复。请到 Dashboard → Workers & Pages → 设置中手动设置。' });
         }
         return json({ success: false, msg: errMsg });
-    } catch (e: any) { logger.error('Operation failed', e instanceof Error ? e : new Error(String(e)), { module: 'zones' }); return jsonError('Operation failed'); }
+    } catch (e: any) { logger.error('handleChangeSubdomain failed', e instanceof Error ? e : new Error(String(e)), { module: 'zones' }); return jsonError('handleChangeSubdomain failed'); }
 }

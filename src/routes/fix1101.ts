@@ -27,9 +27,10 @@ export async function handleFix1101(env: AppEnv, type: TemplateType) {
         return json([{ name: "系统", success: false, msg: `代码下载失败: ${e.message}` }]);
     }
 
-    const kvVars = await getJSON(env.CONFIG_KV, KV_KEYS.vars(type), []);
+    const kvVars = await getJSON<Array<{ key: string; value: string }>>(env.CONFIG_KV, KV_KEYS.vars(type), []);
     for (const acc of accounts) {
-        const targetWorkers = acc[`workers_${type}`] || [];
+        let accAnySuccess = false;
+        const targetWorkers = (acc as unknown as Record<string, string[]>)[`workers_${type}`] || [];
         if (targetWorkers.length === 0) {
             logs.push({ name: acc.alias, success: false, msg: "⏭️ 无此类 Worker，跳过" });
             continue;
@@ -48,7 +49,7 @@ export async function handleFix1101(env: AppEnv, type: TemplateType) {
                 try {
                     const bindRes = await fetchWithTimeout(`${baseUrl}/bindings`, { headers });
                     if (bindRes.ok) {
-                        savedBindings = (await bindRes.json()).result || [];
+                        savedBindings = (await bindRes.json() as any).result || [];
                     }
                 } catch (e) { steps.push('\u26a0\ufe0f \u8bb0\u5f55\u7ed1\u5b9a\u5931\u8d25: ' + (e as Error).message); }
                 const varCount = savedBindings.filter((b: any) => b.type === 'plain_text').length;
@@ -59,7 +60,7 @@ export async function handleFix1101(env: AppEnv, type: TemplateType) {
                 try {
                     const domainsRes = await fetchWithTimeout(cf.workerDomains(acc.accountId), { headers });
                     if (domainsRes.ok) {
-                        const allDomains = (await domainsRes.json()).result || [];
+                        const allDomains = (await domainsRes.json() as any).result || [];
                         savedDomains = allDomains.filter((d: any) => d.service === wName);
                     }
                 } catch (e) { steps.push('\u26a0\ufe0f \u8bb0\u5f55\u57df\u540d\u5931\u8d25: ' + (e as Error).message); }
@@ -68,22 +69,12 @@ export async function handleFix1101(env: AppEnv, type: TemplateType) {
                 // Step 2: 删除 Worker（不删 KV）
                 const delRes = await fetchWithTimeout(baseUrl, { method: "DELETE", headers });
                 if (!delRes.ok) {
-                    const err = await delRes.json();
+                    const err: any = await delRes.json();
                     throw new Error(`删除失败: ${err.errors?.[0]?.message || delRes.status}`);
                 }
                 steps.push("🗑️ 已删除");
 
-                // Step 3: 随机修改子域名
-                try {
-                    await fetchWithTimeout(cf.acctSubdomain(acc.accountId), { method: 'DELETE', headers });
-                    const randomSub = 'w' + Math.random().toString(36).substring(2, 8) + Math.floor(Math.random() * 99);
-                    const subRes = await fetchWithTimeout(cf.acctSubdomain(acc.accountId), {
-                        method: 'PUT', headers,
-                        body: JSON.stringify({ subdomain: randomSub })
-                    });
-                    if (subRes.ok) steps.push(`🌐 子域名 → ${randomSub}`);
-                    else steps.push("🌐 子域名: 跳过(API限制)");
-                } catch (e) { steps.push("🌐 子域名: 跳过"); }
+                // Step 3 已移至账号级（重建成功后每账号只执行一次，见下方）
 
                 // Cloudflare API 删除是异步的 — 等待后重建
 
@@ -91,15 +82,21 @@ export async function handleFix1101(env: AppEnv, type: TemplateType) {
                 let deployCode = applyTemplateTransform(type, freshCode, kvVars, { echTokenEnabled: true });
                 const kvVarMap = new Map(kvVars.map((v: any) => [v.key, v.value]));
 
+                const secretSkipped: string[] = [];
                 const restoredBindings = savedBindings.map((b: any) => {
                     if (b.type === 'plain_text' || b.type === 'secret_text') {
                         const kvVal = kvVarMap.get(b.name);
+                        if (b.type === 'secret_text' && (kvVal === undefined || kvVal === '') && !b.text) {
+                            // CF API 不返回 secret 值且模板无默认值 → 跳过，避免写入空值覆盖
+                            secretSkipped.push(b.name);
+                            return null;
+                        }
                         const val = (kvVal !== undefined && kvVal !== '') ? kvVal : (b.text || '');
                         return { name: b.name, type: b.type, text: val };
                     }
                     if (b.type === 'kv_namespace') return { name: b.name, type: 'kv_namespace', namespace_id: b.namespace_id };
                     return b;
-                });
+                }).filter(Boolean);
                 for (const [key, value] of kvVarMap) {
                     if (!restoredBindings.find((b: any) => b.name === key)) {
                         restoredBindings.push({ name: key, type: 'plain_text', text: value || '' });
@@ -118,7 +115,9 @@ export async function handleFix1101(env: AppEnv, type: TemplateType) {
 
                 if (ok) {
                     logItem.success = true;
+                    accAnySuccess = true;
                     steps.push(`✅ 重建成功 (${restoredVarCount} 变量已恢复)`);
+                    if (secretSkipped.length > 0) steps.push(`⚠️ secret 绑定无法从 API 恢复，需手动重配: ${secretSkipped.join(', ')}`);
 
                     if (savedDomains.length > 0) {
                         let domainOk = 0;
@@ -141,6 +140,23 @@ export async function handleFix1101(env: AppEnv, type: TemplateType) {
             }
             logItem.msg = steps.join(' → ');
             logs.push(logItem);
+        }
+
+        // Step 3(账号级): 至少一个 Worker 重建成功后，每账号只执行一次子域名轮换
+        if (accAnySuccess) {
+            try {
+                await fetchWithTimeout(cf.acctSubdomain(acc.accountId), { method: 'DELETE', headers });
+                // 加密安全随机子域（Math.random 可预测，会削弱熔断规避机制）
+                const randBuf = crypto.getRandomValues(new Uint8Array(6));
+                const randSubStr = Array.from(randBuf).map(b => 'abcdefghijklmnopqrstuvwxyz0123456789'[b % 36]).join('');
+                const randNum = crypto.getRandomValues(new Uint32Array(1))[0] % 99;
+                const randomSub = 'w' + randSubStr + randNum;
+                const subRes = await fetchWithTimeout(cf.acctSubdomain(acc.accountId), {
+                    method: 'PUT', headers,
+                    body: JSON.stringify({ subdomain: randomSub })
+                });
+                logs.push({ name: acc.alias, success: true, msg: subRes.ok ? `🌐 子域名 → ${randomSub}` : "🌐 子域名: 跳过(API限制)" });
+            } catch (e) { logs.push({ name: acc.alias, success: true, msg: "🌐 子域名: 跳过" }); }
         }
     }
 

@@ -56,7 +56,7 @@ export async function handleSaveYxip(env: AppEnv, reqData: YxipSaveRequest) {
     if (type === 'joey_var') {
         const VARS_KEY = KV_KEYS.vars('joey');
         try {
-            let variables = await getJSON(env.CONFIG_KV, VARS_KEY, []);
+            let variables = await getJSON<Array<{ key: string; value: string; type?: string }>>(env.CONFIG_KV, VARS_KEY, []);
             const idx = variables.findIndex((v: any) => v.key === 'yx');
             if (idx !== -1) {
                 variables[idx] = { key: 'yx', type: "plain_text", value: rawContent };
@@ -95,7 +95,7 @@ export async function handleSaveYxip(env: AppEnv, reqData: YxipSaveRequest) {
                     if (!bindRes.ok) throw new Error("无法读取绑定的变量");
 
                     const t = TEMPLATES[type];
-                    const binds = (await bindRes.json()).result;
+                    const binds = (await bindRes.json() as any).result;
                     const kvBind = binds.find((b: any) => b.type === 'kv_namespace' && b.name === t.kvBindingName);
                     if (!kvBind) {
                         logItem.msg = `❌ 该项目未绑定名为 ${t.kvBindingName} 的核心配置空间`;
@@ -115,7 +115,7 @@ export async function handleSaveYxip(env: AppEnv, reqData: YxipSaveRequest) {
                             logItem.success = true;
                             logItem.msg = `✅ 已更新对应命名空间的 ${targetKey}`;
                         } else {
-                            try { const errBody = await putRes.json(); logItem.msg = `❌ 写入失败: ${errBody.errors?.[0]?.message || 'Unknown error'}`; } catch(e) { logItem.msg = `❌ HTTP ${putRes.status}: ${putRes.statusText}`; }
+                            try { const errBody: any = await putRes.json(); logItem.msg = `❌ 写入失败: ${errBody.errors?.[0]?.message || 'Unknown error'}`; } catch(e) { logItem.msg = `❌ HTTP ${putRes.status}: ${putRes.statusText}`; }
                         }
                     }
                 } catch (e: any) { logItem.msg = `❌ ${e.message}`; }

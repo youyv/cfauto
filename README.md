@@ -1,8 +1,8 @@
-# 🚀 CF Auto — Cloudflare Worker 智能部署中控 (V11.7.2)
+# 🚀 CF Auto — Cloudflare Worker 智能部署中控 (V11.8.0)
 
 > 全部代码由 Claude Code 完成，自行修改延伸功能。
 
-> **版本状态**: V11.7.2 Stable — cmliu 模板新增 TCP_CONCURRENT_DIAL / PROXY_CONCURRENT_DIAL 环境变量
+> **版本状态**: V11.8.0 Stable — 安全架构升级（会话token化 · CSRF token · 数据安全修复 · 类型全量清零）
 > **详细变更**: 见 [CHANGELOG.md](CHANGELOG.md)
 
 ---
@@ -108,7 +108,7 @@ Request → KV 检查 → 公开路由 (/manifest.json, /api/login)
 | **joey** | `byJoey/cfnew` | 自动修复代理 | u | `C` → `c` (JSON) | ✅ |
 | **ech** | `hc990275/ech-wk` | WebSocket 代理 | PROXYIP | 无 | ❌ |
 
-### 🆕 cmliu 新增变量 (V11.7.2)
+### 🆕 cmliu 新增变量 (V11.7.2 引入)
 
 | 变量名 | 说明 |
 |--------|------|

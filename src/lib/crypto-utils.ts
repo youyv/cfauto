@@ -12,7 +12,7 @@ import { logger } from './logger';
 
 const ALGORITHM = { name: 'AES-GCM', length: 256 };
 const IV_LENGTH = 12;
-const VERSION_PREFIX = 'v1:';
+export const VERSION_PREFIX = 'v1:';
 
 /** 获取派生密钥的源材料: ENCRYPTION_SECRET 优先, 否则 ACCESS_CODE */
 function getSecret(env: AppEnv): string {
@@ -28,7 +28,7 @@ async function deriveKey(env: AppEnv): Promise<CryptoKey> {
     if (keyCache.has(env)) return keyCache.get(env)!;
     const secret = getSecret(env);
     const p = crypto.subtle.digest('SHA-256', new TextEncoder().encode(secret))
-        .then(keyMaterial => crypto.subtle.importKey('raw', keyMaterial, ALGORITHM, false, ['encrypt', 'decrypt']));
+        .then((keyMaterial: ArrayBuffer) => crypto.subtle.importKey('raw', keyMaterial, ALGORITHM, false, ['encrypt', 'decrypt']));
     keyCache.set(env, p);
     return p;
 }
@@ -56,7 +56,7 @@ export async function decryptKey(env: AppEnv, encrypted: string): Promise<string
     }
     try {
         const key = await deriveKey(env);
-        const combined = Uint8Array.from(atob(payload), c => c.charCodeAt(0));
+        const combined = Uint8Array.from(atob(payload), (c: string) => c.charCodeAt(0));
         const iv = combined.slice(0, IV_LENGTH);
         const ciphertext = combined.slice(IV_LENGTH);
         const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);

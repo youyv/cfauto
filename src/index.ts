@@ -3,7 +3,7 @@
  * ${FRONTEND_VERSION}
  */
 
-import { requireAccessCode, requireCookie, checkCsrf } from './middleware/auth';
+import { requireAccessCode, requireCookie, checkCsrf, sessionKey } from './middleware/auth';
 import { jsonError } from './lib/cloudflare-api';
 import { getRoute } from './routes/register';
 import { handleCronJob } from './cron';
@@ -16,7 +16,10 @@ export default {
     // === 定时任务：自动更新 & 熔断轮换 ===
     async scheduled(_event: ScheduledEvent, env: AppEnv, ctx: ExecutionContext) {
         if (env.CONFIG_KV) {
-            ctx.waitUntil(handleCronJob(env));
+            // cron 内部已兜底 lastCheck；此处再兜一层，避免 KV 读取等异常变成 unhandled rejection
+            ctx.waitUntil(handleCronJob(env).catch(e => {
+                logger.error('scheduled: handleCronJob rejected', e instanceof Error ? e : new Error(String(e)), { module: 'scheduled' });
+            }));
         }
     },
 
@@ -42,9 +45,27 @@ export default {
                 if (loginHandler) return await loginHandler(request, env);
             }
 
-            // [认证] 中间件链 — 任一检查不通过即返回对应错误
-            const syncCheck = requireAccessCode(env) || checkCsrf(request, url);
-            if (syncCheck) return syncCheck;
+            // [公开] 登出接口 — 删除 KV 会话 + 清 cookie（无需认证，无会话时幂等）
+            if (url.pathname === '/api/logout' && request.method === 'POST') {
+                const cookieHeader = request.headers.get('Cookie') || '';
+                const m = cookieHeader.match(/(?:^|;\s*)__Host-auth=([^;]*)/);
+                if (m) {
+                    await env.CONFIG_KV.delete(sessionKey(m[1])).catch((e: unknown) => logger.warn('logout: session delete failed', { error: e instanceof Error ? e.message : String(e) }));
+                }
+                return new Response(JSON.stringify({ success: true }), {
+                    headers: [
+                        ['Content-Type', 'application/json'],
+                        ['Set-Cookie', '__Host-auth=; Path=/; HttpOnly; Secure; Max-Age=0; SameSite=Lax'],
+                        ['Set-Cookie', '__Host-csrf=; Path=/; Secure; Max-Age=0; SameSite=Lax']
+                    ]
+                });
+            }
+
+            // [认证] 中间件链 — 任一检查不通过即返回对应错误（checkCsrf 需读 KV，为异步）
+            const accessCodeCheck = requireAccessCode(env);
+            if (accessCodeCheck) return accessCodeCheck;
+            const csrfCheck = await checkCsrf(request, url, env);
+            if (csrfCheck) return csrfCheck;
             const cookieCheck = await requireCookie(request, env);
             if (cookieCheck) return cookieCheck;
 
@@ -53,7 +74,7 @@ export default {
             if (handler) return await handler(request, env);
 
             // [回退] 无匹配路由 → 返回管理面板 HTML
-            return new Response(mainHtml(), { headers: { 'Content-Type': 'text/html;charset=UTF-8', 'Cache-Control': 'no-store, must-revalidate', 'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://www.cloudflare.com; connect-src 'self'" } });
+            return new Response(mainHtml(), { headers: { 'Content-Type': 'text/html;charset=UTF-8', 'Cache-Control': 'no-store, must-revalidate', 'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://www.cloudflare.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'", 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'no-referrer' } });
 
         } catch (err: any) {
             // 保留 Response 对象（如 safeJson 的 400、resolveCredentials 的 404）

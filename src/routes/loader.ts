@@ -21,7 +21,7 @@ ROUTES.set('POST /api/login', (req, env) => handleLogin(req, env));
 
 ROUTES.set('GET /api/check_update', (req, env) => {
     const url = new URL(req.url);
-    return handleCheckUpdate(env, url.searchParams.get('type') || '', url.searchParams.get('mode') || undefined, parseInt(url.searchParams.get('limit') || '10'));
+    return handleCheckUpdate(env, url.searchParams.get('type') || '', url.searchParams.get('mode') || undefined, parseInt(url.searchParams.get('limit') || '10', 10));
 });
 
 ROUTES.set('GET /api/get_code', (req, env) =>
@@ -35,7 +35,7 @@ ROUTES.set('POST /api/deploy', async (req, env) => {
     const body = await safeJson<DeployBody>(req);
     return handleManualDeploy(env, {
         type,
-        variables: body.variables,
+        variables: body.variables || [],
         deletedVariables: body.deletedVariables,
         targetSha: body.targetSha,
         customCode: body.customCode,
@@ -59,7 +59,7 @@ ROUTES.set('POST /api/all_workers', async (req, env) => {
 
 ROUTES.set('POST /api/delete_worker', async (req, env) => {
     const { accountId, workerName, deleteKv } = await safeJson<WorkerBody>(req);
-    return handleDeleteWorker(env, accountId, workerName, deleteKv);
+    return handleDeleteWorker(env, accountId, workerName, !!deleteKv);
 });
 
 ROUTES.set('POST /api/fetch_bindings', async (req, env) => {

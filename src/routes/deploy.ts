@@ -25,7 +25,7 @@ async function ensureKVNamespace(
 ): Promise<string> {
     const nsListRes = await fetch(cf.kvNamespaces(acc.accountId) + '?per_page=100', { headers: jsonHeaders });
     if (!nsListRes.ok) throw new Error("无法读取KV列表");
-    const nsList = (await nsListRes.json()).result;
+    const nsList = (await nsListRes.json() as any).result;
     const existNs = nsList.find((n: { title: string; id: string }) => n.title === kvName);
     if (existNs) return existNs.id;
 
@@ -33,10 +33,10 @@ async function ensureKVNamespace(
         method: 'POST', headers: jsonHeaders, body: JSON.stringify({ title: kvName })
     });
     if (!createNsRes.ok) {
-        let kvMsg; try { const e = await createNsRes.json(); kvMsg = e.errors?.[0]?.message; } catch (_) { logger.warn('KV creation error parse failed', { module: 'deploy' }); }
+        let kvMsg; try { const e: any = await createNsRes.json(); kvMsg = e.errors?.[0]?.message; } catch (_) { logger.warn('KV creation error parse failed', { module: 'deploy' }); }
         throw new Error("创建KV失败: " + (kvMsg || createNsRes.statusText));
     }
-    return (await createNsRes.json()).result.id;
+    return (await createNsRes.json() as any).result.id;
 }
 
 /** [提取] 构建批量部署的 Worker Bindings */
@@ -93,7 +93,7 @@ async function configureDomains(
             method: "POST", headers: jsonHeaders, body: JSON.stringify({ enabled: true })
         });
         const subRes = await fetch(cf.acctSubdomain(acc.accountId), { headers: jsonHeaders });
-        const prefix = (await subRes.json()).result?.subdomain || "unknown";
+        const prefix = (await subRes.json() as any).result?.subdomain || "unknown";
         msgs.push('\u2705 默认: https://' + workerName + '.' + prefix + '.workers.dev');
     }
     return msgs;
@@ -124,8 +124,9 @@ async function deployToSingleAccount(
             const msgs = await configureDomains(acc, workerName, jsonHeaders, customDomainPrefix, disableWorkersDev);
             log.msg = msgs.join(" | ");
             if (!getWorkerNames(acc, template).includes(workerName)) {
-                acc['workers_' + template] = acc['workers_' + template] || [];
-                acc['workers_' + template].push(workerName);
+                const accRec = acc as unknown as Record<string, string[]>;
+                accRec['workers_' + template] = accRec['workers_' + template] || [];
+                accRec['workers_' + template].push(workerName);
                 updated = true;
             }
         } else {
@@ -140,7 +141,7 @@ async function deployToSingleAccount(
  * 并行化：所有账号同时部署，利用 Worker 并发能力
  */
 export async function handleBatchDeploy(env: AppEnv, reqData: BatchDeployRequest) {
-    const validationError = validateRequired(reqData, ["template", "workerName", "targetAccounts"]);
+    const validationError = validateRequired(reqData as unknown as Record<string, unknown>, ["template", "workerName", "targetAccounts"]);
     if (validationError) return validationError;
     const templateErr = requireTemplateType(reqData.template as string);
     if (templateErr) return templateErr;
