@@ -194,7 +194,7 @@ function editAccount(i){
 }
 
 async function delAccount(i){ if(confirm('删除账号配置？')){ accounts.splice(i,1); await fetch('/api/accounts',{method:'POST',body:JSON.stringify(accounts)}); renderTable(); } }
-function resetFormForAdd(){ editingIndex=-1; $clearAll(); document.querySelectorAll('#account_form input').forEach(i=>i.value=''); $('in_zone_select').innerHTML='<option value="">(请先填写API信息后点击读取)</option>'; $('account_form').classList.remove('hidden'); }
+function resetFormForAdd(){ editingIndex=-1; $clearAll(); document.querySelectorAll('#account_form input').forEach(i=>i.value=''); $('in_gkey').placeholder='Global API Key'; $('in_zone_select').innerHTML='<option value="">(请先填写API信息后点击读取)</option>'; $('account_form').classList.remove('hidden'); }
 function cancelEdit(){ $('account_form').classList.add('hidden'); }
 async function deleteFromEdit(){ if(editingIndex>=0)delAccount(editingIndex); cancelEdit(); }
 
