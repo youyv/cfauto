@@ -59,7 +59,9 @@ export async function writeAccounts(env: AppEnv, accounts: AccountEntry[]): Prom
         if (a.globalKey && !isMaskedKey(a.globalKey)) {
             a.globalKey = await encryptKey(env, a.globalKey);
         } else {
-            const old = existing.find(e => e.accountId === a.accountId);
+            // 匹配旧密文：优先 accountId；编辑时若 accountId 被修改，用 alias+email 兜底，防止 key 丢失
+            const old = existing.find(e => e.accountId === a.accountId)
+                     || existing.find(e => e.alias === a.alias && e.email === a.email);
             a.globalKey = (old && old.globalKey) || '';
         }
     }));

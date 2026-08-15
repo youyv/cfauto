@@ -206,7 +206,8 @@ async function fetchZonesForAccount() {
     const id = document.getElementById('in_id').value;
     const select = document.getElementById('in_zone_select');
 
-    if (!email || !key) return Swal.fire('提示', '请先填写 Email, API Key', 'warning');
+    // key 仅在校验时需要；编辑模式 key 留空=不修改，后端用 KV 中的服务端凭据读取，故允许
+    if (!email || (!key && editingIndex < 0)) return Swal.fire('提示', '请先填写 Email, API Key', 'warning');
 
     select.innerHTML = '<option>Loading...</option>';
     try {
