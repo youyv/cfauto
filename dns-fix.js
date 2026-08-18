@@ -10,6 +10,11 @@
 // verifies with a real lookup. No hardcoded addresses — works on any machine
 // with zero configuration.
 //
+// IMPORTANT: All diagnostics go to STDERR only (console.error). This file is
+// loaded via NODE_OPTIONS into every Node process, including stdio-based MCP
+// servers where STDOUT is the JSON-RPC protocol channel — any stray STDOUT
+// output would corrupt the protocol.
+//
 // Note: Node 24 removed all dns.*Sync methods, so synchronous probing is done
 // via `nslookup` output inspection (Windows nslookup exit code is always 0,
 // so we check for the Addresses: result line instead).
@@ -17,6 +22,11 @@ const dns = require('dns');
 const cp = require('child_process');
 
 const PROBE_HOST = 'api.cloudflare.com';
+
+/** stderr 日志 — 绝不用 console.log/process.stdout，避免污染 stdio 协议通道 */
+function log(msg) {
+    try { process.stderr.write('[dns-fix] ' + msg + '\n'); } catch (_) { /* 无 stderr 时静默 */ }
+}
 
 /** 判定一个地址是否"绝对无效"：回环 / 0.0.0.0 / 广播。其余（192.168.x、10.x 等内网段）都可能是真实 DNS，一律保留 */
 function isUnusableIp(ip) {
@@ -72,11 +82,11 @@ function getSystemDnsViaPowershell() {
             '$out -join [char]10'
         ].join(' ');
         const cmd = 'powershell -NoProfile -Command "' + ps + '"';
-        const out = cp.execSync(cmd, { timeout: 5000, encoding: 'utf8', windowsHide: true });
+        const out = cp.execSync(cmd, { timeout: 5000, encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
         const ips = out.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
         return ips.filter((ip) => !isUnusableIp(ip));
     } catch (e) {
-        console.error('[dns-fix] PowerShell DNS detection failed:', (e && e.message) || e);
+        log('PowerShell DNS detection failed: ' + ((e && e.message) || e));
         return [];
     }
 }
@@ -84,7 +94,7 @@ function getSystemDnsViaPowershell() {
 /** Method 2: ipconfig 兜底 — 解析 DNS Servers 段落里的全部地址（含续行） */
 function getSystemDnsViaIpconfig() {
     try {
-        const out = cp.execSync('ipconfig /all', { timeout: 5000, encoding: 'utf8', windowsHide: true });
+        const out = cp.execSync('ipconfig /all', { timeout: 5000, encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
         const ips = [];
         let inDnsSection = false;
         for (const line of out.split(/\r?\n/)) {
@@ -100,7 +110,7 @@ function getSystemDnsViaIpconfig() {
         }
         return ips;
     } catch (e) {
-        console.error('[dns-fix] ipconfig DNS detection failed:', (e && e.message) || e);
+        log('ipconfig DNS detection failed: ' + ((e && e.message) || e));
         return [];
     }
 }
@@ -110,13 +120,13 @@ const originalServers = dns.getServers();
 if (allUnusable(originalServers)) {
     // 1) 同步探测当前配置：能用就保持（如本地确实跑了 DNS 服务）
     if (probeServer(originalServers[0])) {
-        console.log('[dns-fix] ' + originalServers.join(', ') + ' OK, keeping current DNS');
+        log(originalServers.join(', ') + ' OK, keeping current DNS');
     } else {
         // 2) 收集系统 DNS 候选：PowerShell 优先，ipconfig 兜底
         let candidates = getSystemDnsViaPowershell();
         if (candidates.length === 0) candidates = getSystemDnsViaIpconfig();
         if (candidates.length === 0) {
-            console.log('[dns-fix] ' + originalServers.join(', ') + ' unreachable, but no system DNS found; keeping current config');
+            log(originalServers.join(', ') + ' unreachable, but no system DNS found; keeping current config');
         } else {
             // 3) 逐个验证，取第一个可用的；全部失败则保持原配置
             let applied = null;
@@ -126,14 +136,14 @@ if (allUnusable(originalServers)) {
             if (applied) {
                 try {
                     dns.setServers([applied]);
-                    console.log('[dns-fix] ' + originalServers.join(', ') + ' unreachable, fell back to verified DNS ' + applied);
-                } catch (e) { console.error('[dns-fix] setServers failed:', (e && e.message) || e); }
+                    log(originalServers.join(', ') + ' unreachable, fell back to verified DNS ' + applied);
+                } catch (e) { log('setServers failed: ' + ((e && e.message) || e)); }
             } else {
-                console.log('[dns-fix] all candidates failed (' + candidates.join(', ') + '); keeping original config');
+                log('all candidates failed (' + candidates.join(', ') + '); keeping original config');
             }
         }
     }
 } else {
     // 配置里有真实 DNS（可能混合了 127.0.0.1 主备），Node 自带故障转移，不干预
-    console.log('[dns-fix] configured DNS ' + originalServers.join(', ') + ' looks valid, no change');
+    log('configured DNS ' + originalServers.join(', ') + ' looks valid, no change');
 }
