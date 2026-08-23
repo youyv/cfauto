@@ -44,11 +44,6 @@ function allUnusable(servers) {
     return servers.length > 0 && servers.every((s) => isUnusableIp(s));
 }
 
-/** 虚拟网卡别名特征（仅用于排序优先级，不丢弃） */
-function isVirtualAdapter(alias) {
-    return /virtual|vpn|tap|tun|vmware|virtualbox|hyper-v|hyperv|docker|wsl|loopback|bluetooth|ndis/i.test(alias || '');
-}
-
 /**
  * 同步探测：nslookup 指定服务器查询。
  * Windows nslookup 退出码恒为 0（失败也返回 0），所以用输出里是否出现

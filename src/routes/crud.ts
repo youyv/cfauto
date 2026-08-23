@@ -2,13 +2,13 @@
  * CRUD 路由 — KV 直接读写 + 诊断 + 导入导出备份恢复
  */
 import { KV_KEYS, TEMPLATES } from '../config/templates';
-import { json, jsonError, cf, getAuthHeaders, safeJson } from '../lib/cloudflare-api';
+import { json, jsonError, cf, getAuthHeaders, safeJson, fetchWithTimeout } from '../lib/cloudflare-api';
 import { getJSON, putJSON } from "../lib/kv-utils";
 import { readAccounts, readAccountsMasked, writeAccounts, getWorkerNames } from "../lib/account-store";
 import { decryptKey } from "../lib/crypto-utils";
 import { requireTemplateType } from '../lib/validate';
 import type { AppEnv } from "../config/env";
-import type { RouteHandler } from "./index";
+import type { RouteHandler } from "./register";
 import type { FavoriteItem } from '../lib/types';
 import { logger } from '../lib/logger';
 
@@ -62,8 +62,10 @@ ROUTES.set('POST /api/favorites', async (req, env) => {
     const key = KV_KEYS.favorites(type || '');
     const { action, item } = await safeJson<FavoriteAction>(req);
     let favs = await getJSON<FavoriteItem[]>(env.CONFIG_KV, key, []);
+    if (action !== 'add' && action !== 'remove') return jsonError("Invalid action: 仅支持 'add' | 'remove'", 400, 'VALIDATION_ERROR');
+    if (!item || typeof item.sha !== 'string' || !item.sha) return jsonError('Invalid item: 缺少 sha', 400, 'VALIDATION_ERROR');
     if (action === 'add') { if (!favs.find((f: FavoriteItem) => f.sha === item.sha)) favs.unshift(item); }
-    else if (action === 'remove') { favs = favs.filter((f: FavoriteItem) => f.sha !== item.sha); }
+    else { favs = favs.filter((f: FavoriteItem) => f.sha !== item.sha); }
     await putJSON(env.CONFIG_KV, key, favs);
     return json({ success: true, favorites: favs });
 });
@@ -75,15 +77,23 @@ ROUTES.set('POST /api/auto_config', async (req, env) => {
 });
 
 // --- 诊断端点 ---
-ROUTES.set('GET /api/verify_credentials', async (req, env) => {
+ROUTES.set('GET /api/verify_credentials', async (_req, env) => {
         const accounts = await readAccounts(env);
-        const results = await Promise.all(accounts.map(async (acc) => {
-            try {
-                const headers = getAuthHeaders(acc.email, acc.globalKey);
-                const res = await fetch(cf.userTokenVerify(), { method: 'GET', headers });
-                return { alias: acc.alias, ok: res.ok, status: res.status };
-            } catch(e: any) { return { alias: acc.alias, ok: false, error: e.message }; }
-        }));
+        // 分批节流：Cloudflare API 限流 1200 次/5 分钟，账号多时全量并发易被限流
+        const BATCH_SIZE = 5;
+        const results: Array<{ alias: string; ok: boolean; status?: number; error?: string }> = [];
+        for (let i = 0; i < accounts.length; i += BATCH_SIZE) {
+            const batch = accounts.slice(i, i + BATCH_SIZE);
+            const batchResults = await Promise.all(batch.map(async (acc) => {
+                try {
+                    const headers = getAuthHeaders(acc.email, acc.globalKey);
+                    const res = await fetchWithTimeout(cf.userTokenVerify(), { method: 'GET', headers });
+                    return { alias: acc.alias, ok: res.ok, status: res.status };
+                } catch(e: any) { return { alias: acc.alias, ok: false, error: e.message }; }
+            }));
+            results.push(...batchResults);
+            if (i + BATCH_SIZE < accounts.length) await new Promise(r => setTimeout(r, 200));
+        }
         return json(results);
     });
 
@@ -91,7 +101,7 @@ ROUTES.set('GET /api/deploy/preview', async (req, env) => {
         const type = new URL(req.url).searchParams.get('type') || '';
         const accounts = await readAccounts(env);
         const targetWorkers = accounts.flatMap((a) => getWorkerNames(a, type).map((w) => a.alias + ' -> [' + w + ']'));
-        return json({ accounts: accounts.filter((a) => getWorkerNames(a, type).length > 0).length, workers: targetWorkers.length, details: targetWorkers });
+        return json({ success: true, accounts: accounts.filter((a) => getWorkerNames(a, type).length > 0).length, workers: targetWorkers.length, details: targetWorkers });
     });
 
 ROUTES.set('GET /api/diag', async (_req, env) => {
@@ -102,10 +112,11 @@ ROUTES.set('GET /api/diag', async (_req, env) => {
         try {
             const v = await env.CONFIG_KV.get(k);
             results[k] = v === null ? '(not set)' : '(exists)';
-        } catch (e: any) { results[k] = 'ERROR: ' + e.message; }
+        } catch (e: any) { results[k] = '(error)'; logger.error('diag KV read failed', e instanceof Error ? e : new Error(String(e)), { module: 'crud', key: k }); }
     }
     results['__kv_bound'] = !!env.CONFIG_KV;
-    return new Response(JSON.stringify(results, null, 2), { headers: { 'Content-Type': 'application/json' } });
+    results['success'] = true;
+    return new Response(JSON.stringify(results, null, 2), { headers: { 'Content-Type': 'application/json', 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY' } });
 });
 
 
@@ -166,7 +177,12 @@ ROUTES.set('GET /api/backup', async (_req, env) => {
     const backup: Record<string, any> = { _time: new Date().toISOString() };
     for (const k of keys) {
         // 备份保留原始格式：JSON 解析失败时回退到原始字符串（不用 getJSON 是因为需要保留损坏数据）
-        try { backup[k] = JSON.parse(await env.CONFIG_KV.get(k) || 'null'); } catch (e) { backup[k] = await env.CONFIG_KV.get(k); }
+        try { backup[k] = JSON.parse(await env.CONFIG_KV.get(k) || 'null'); }
+        catch (e) {
+            // 非 JSON 值（历史遗留明文）原样备份，并记录以便排查
+            backup[k] = await env.CONFIG_KV.get(k);
+            logger.warn('backup: KV 值非 JSON，按原始字符串备份', { key: k, error: (e as Error).message });
+        }
     }
     return new Response(JSON.stringify(backup, null, 2), {
         headers: { 'Content-Type': 'application/json', 'Content-Disposition': 'attachment; filename="worker-backup.json"' }
@@ -189,7 +205,10 @@ ROUTES.set('POST /api/restore', async (req, env) => {
         let restored = 0, rejected = 0;
         for (const [k, v] of Object.entries(backup)) {
             if (k.startsWith('_')) continue;
-            if (!allowedPrefixes.some(p => k === p || k.startsWith(p))) {
+            // 精确匹配或"前缀 + 已知模板类型"，避免 VARS_cmliuX / ACCOUNTS_..._X 之类前缀注入
+            const isAllowed = allowedPrefixes.some(p => k === p)
+                || Object.keys(TEMPLATES).some(t => k === 'VARS_' + t || k === 'DEPLOY_CONFIG_' + t || k === 'FAVORITES_' + t);
+            if (!isAllowed) {
                 rejected++;
                 continue;
             }
@@ -220,8 +239,10 @@ ROUTES.set('GET /api/init_data', async (req, env) => {
         const vars: Record<string, any> = {};
         const deployConfigs: Record<string, any> = {};
         templateTypes.forEach((t: string, i: number) => {
-            try { vars[t] = JSON.parse(varsResults[i] || 'null'); } catch (e) { vars[t] = null; }
-            try { deployConfigs[t] = JSON.parse(deployCfgResults[i] || 'null'); } catch (e) { deployConfigs[t] = null; }
+            try { vars[t] = JSON.parse(varsResults[i] || 'null'); }
+            catch (e) { vars[t] = null; logger.warn('init_data: VARS 解析失败', { type: t, error: (e as Error).message }); }
+            try { deployConfigs[t] = JSON.parse(deployCfgResults[i] || 'null'); }
+            catch (e) { deployConfigs[t] = null; logger.warn('init_data: DEPLOY_CONFIG 解析失败', { type: t, error: (e as Error).message }); }
         });
         return json({
             accounts,

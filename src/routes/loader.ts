@@ -4,7 +4,7 @@
 import { safeJson } from '../lib/cloudflare-api';
 import { requireTemplateType } from '../lib/validate';
 import type { AppEnv } from "../config/env";
-import type { RouteHandler } from "./index";
+import type { RouteHandler } from "./register";
 import type { DeployBody, ZoneBody, WorkerBody, SubdomainBody, Fix1101Body } from '../lib/types';
 import { handleCheckUpdate, handleGetCode, handleStats, handleDiff } from './check';
 import { handleManualDeploy, handleBatchDeploy } from './deploy';

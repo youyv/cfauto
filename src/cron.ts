@@ -8,6 +8,7 @@ import { readAccounts } from './lib/account-store';
 import { fetchInternalStats } from './lib/stats';
 import { checkAndDeployUpdate, rotateUUIDAndDeploy } from './lib/auto-update';
 import { logger } from './lib/logger';
+import { fetchWithTimeout } from './lib/cloudflare-api';
 import type { AutoUpdateConfig } from './lib/types';
 import type { AppEnv } from "./config/env";
 
@@ -118,7 +119,7 @@ async function sendFuseAlert(env: AppEnv, alias: string, total: number, limit: n
             msgtype: 'text',
             text: { content: '[Worker中控] \u{1F525} 熔断触发: ' + alias + ' 用量达 ' + ((total/limit)*100).toFixed(1) + '% (阈值' + threshold + '%), 已自动轮换UUID并重新部署' }
         };
-        const webhookRes = await fetch(webhookUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        const webhookRes = await fetchWithTimeout(webhookUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, 10000);
         if (!webhookRes.ok) logger.warn('fuse webhook failed', { status: webhookRes.status });
     } catch (e) { logger.error('fuse webhook error', e as Error, { module: 'fuse' }); }
 }

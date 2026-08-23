@@ -1,7 +1,7 @@
 {
   "name": "worker-pro-refactor",
-  "version": "11.8.0",
-  "description": "Worker 智能中控 — V11.7.1 (Secret复选框修复 · 构建文件同步)",
+  "version": "11.9.0",
+  "description": "Worker 智能中控 — Cloudflare 多账号 Worker 部署管理平台",
   "scripts": {
     "build": "node build.js",
     "build:cloudflare": "node build.js",
@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:verify": "node verify.js",
-    "typecheck": "npx tsc --noEmit 2>&1 || echo \"(type errors expected — gradual migration)\""
+    "typecheck": "tsc --noEmit",
+    "test:smoke": "node test/smoke.js"
   },
   "devDependencies": {
     "esbuild": "^0.24.2",

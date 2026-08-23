@@ -73,7 +73,12 @@ export default {
             const handler = getRoute(request.method, url.pathname);
             if (handler) return await handler(request, env);
 
-            // [回退] 无匹配路由 → 返回管理面板 HTML
+            // [404] 未匹配的 API 路径必须返回 JSON，避免前端 r.json() 解析 HTML 崩溃
+            if (url.pathname.startsWith('/api/')) {
+                return jsonError('Not Found: ' + request.method + ' ' + url.pathname, 404);
+            }
+
+            // [回退] 非 API 路径 → 返回管理面板 HTML
             return new Response(mainHtml(), { headers: { 'Content-Type': 'text/html;charset=UTF-8', 'Cache-Control': 'no-store, must-revalidate', 'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://www.cloudflare.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'", 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'no-referrer' } });
 
         } catch (err: any) {

@@ -7,7 +7,7 @@
 
 import { KV_KEYS, TEMPLATES } from '../config/templates';
 import { readAccounts, writeAccounts, findAccount } from '../lib/account-store';
-import { cf, getAuthHeaders, jsonError, json } from '../lib/cloudflare-api';
+import { cf, getAuthHeaders, jsonError, json, fetchWithTimeout } from '../lib/cloudflare-api';
 import { getJSON, putJSON } from "../lib/kv-utils";
 import { logger } from '../lib/logger';
 import type { AppEnv } from "../config/env";
@@ -25,7 +25,7 @@ export async function handleGetZones(env: AppEnv, accountId: string) {
         let allZones: Array<{ id: string; name: string }> = [];
         let page = 1;
         while (true) {
-            const res = await fetch(cf.zones(aid) + '&page=' + page, { headers });
+            const res = await fetchWithTimeout(cf.zones(aid) + '&page=' + page, { headers });
             const data: any = await res.json();
             if (!data.result || data.result.length === 0) break;
             data.result.forEach((z: any) => allZones.push({ id: z.id, name: z.name }));
@@ -40,7 +40,7 @@ export async function handleGetZones(env: AppEnv, accountId: string) {
 export async function handleGetAllWorkers(env: AppEnv, accountId: string) {
     try {
         const { headers, accountId: aid } = await resolveCredentials(env, accountId);
-        const res = await fetch(cf.workerScripts(aid), { headers });
+        const res = await fetchWithTimeout(cf.workerScripts(aid), { headers });
         const data: any = await res.json();
         const workers = data.result.map((w: any) => ({
             id: w.id,
@@ -57,14 +57,14 @@ export async function handleDeleteWorker(env: AppEnv, accountId: string, workerN
 
         let kvNamespaceIds: string[] = [];
         if (deleteKv) {
-            const bindRes = await fetch(cf.workerBindings(aid, workerName), { headers });
+            const bindRes = await fetchWithTimeout(cf.workerBindings(aid, workerName), { headers });
             if (bindRes.ok) {
                 const binds = (await bindRes.json() as any).result;
                 kvNamespaceIds = binds.filter((b: any) => b.type === 'kv_namespace').map((b: any) => b.namespace_id);
             }
         }
 
-        const delWorkerRes = await fetch(cf.workerScript(aid, workerName), {
+        const delWorkerRes = await fetchWithTimeout(cf.workerScript(aid, workerName), {
             method: "DELETE", headers
         });
 
@@ -104,7 +104,7 @@ export async function handleDeleteWorker(env: AppEnv, accountId: string, workerN
                     let deleted = false;
                     for (let attempt = 0; attempt < 5; attempt++) {
                         if (attempt > 0) await new Promise(r => setTimeout(r, 2000));
-                        const delRes = await fetch(cf.kvNamespace(aid, nsId), {
+                        const delRes = await fetchWithTimeout(cf.kvNamespace(aid, nsId), {
                             method: "DELETE", headers
                         });
                         if (delRes.ok) { deleted = true; break; }
@@ -134,7 +134,7 @@ export async function handleDeleteWorker(env: AppEnv, accountId: string, workerN
 export async function handleFetchBindings(env: AppEnv, accountId: string, workerName: string) {
     try {
         const { headers, accountId: aid } = await resolveCredentials(env, accountId);
-        const res = await fetch(cf.workerBindings(aid, workerName), { headers });
+        const res = await fetchWithTimeout(cf.workerBindings(aid, workerName), { headers });
         const data: any = await res.json();
         const bindings = data.result
             .filter((b: any) => b.type === "plain_text" || b.type === "secret_text")
@@ -146,7 +146,7 @@ export async function handleFetchBindings(env: AppEnv, accountId: string, worker
 export async function handleGetSubdomain(env: AppEnv, accountId: string) {
     try {
         const { headers, accountId: aid } = await resolveCredentials(env, accountId);
-        const res = await fetch(cf.acctSubdomain(aid), { headers });
+        const res = await fetchWithTimeout(cf.acctSubdomain(aid), { headers });
         const data: any = await res.json();
         if (data.success) {
             return json({ success: true, subdomain: data.result?.subdomain || '' });
@@ -159,7 +159,7 @@ export async function handleGetSubdomain(env: AppEnv, accountId: string) {
 export async function handleChangeSubdomain(env: AppEnv, accountId: string, newSubdomain: string) {
     try {
         const { headers, accountId: aid } = await resolveCredentials(env, accountId);
-        let res = await fetch(cf.acctSubdomain(aid), {
+        let res = await fetchWithTimeout(cf.acctSubdomain(aid), {
             method: 'PUT',
             headers,
             body: JSON.stringify({ subdomain: newSubdomain })
@@ -172,7 +172,7 @@ export async function handleChangeSubdomain(env: AppEnv, accountId: string, newS
         if (errMsg.includes('already has')) {
             let oldSubdomain = '';
             try {
-                const getRes = await fetch(cf.acctSubdomain(aid), { headers });
+                const getRes = await fetchWithTimeout(cf.acctSubdomain(aid), { headers });
                 const getData: any = await getRes.json();
                 oldSubdomain = getData.result?.subdomain || '';
             } catch (_) { logger.warn('changeSubdomain get old subdomain failed', { module: 'zones' }); }
@@ -181,7 +181,7 @@ export async function handleChangeSubdomain(env: AppEnv, accountId: string, newS
             if (!oldSubdomain) {
                 return json({ success: false, msg: '无法获取当前子域名，已中止修改（防止删除后无法自动恢复）。请到 Dashboard → Workers & Pages → 设置中手动修改。' });
             }
-            const delRes = await fetch(cf.acctSubdomain(aid), { method: 'DELETE', headers });
+            const delRes = await fetchWithTimeout(cf.acctSubdomain(aid), { method: 'DELETE', headers });
             if (!delRes.ok) {
                 return json({ success: false, msg: 'Cloudflare 不支持通过 API 修改已有子域名，请到 Dashboard → Workers & Pages → 设置中手动修改。' });
             }
@@ -189,7 +189,7 @@ export async function handleChangeSubdomain(env: AppEnv, accountId: string, newS
             let putSuccess = false;
             for (let attempt = 0; attempt < 3; attempt++) {
                 if (attempt > 0) await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt - 1)));
-                res = await fetch(cf.acctSubdomain(aid), {
+                res = await fetchWithTimeout(cf.acctSubdomain(aid), {
                     method: 'PUT',
                     headers,
                     body: JSON.stringify({ subdomain: newSubdomain })
@@ -204,7 +204,7 @@ export async function handleChangeSubdomain(env: AppEnv, accountId: string, newS
 
             if (oldSubdomain) {
                 try {
-                    await fetch(cf.acctSubdomain(aid), {
+                    await fetchWithTimeout(cf.acctSubdomain(aid), {
                         method: 'PUT', headers,
                         body: JSON.stringify({ subdomain: oldSubdomain })
                     });

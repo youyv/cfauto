@@ -1,5 +1,47 @@
 # 版本更新日志
 
+## V11.9.0 (2026-08-23)
+
+### 🐛 真故障修复
+- **删除无效的「🔐 加密迁移」功能**: 前端按钮调用 `POST /api/migrate_encrypt_keys`，但后端从未注册该路由——点击后请求落到 HTML 回退分支，`r.json()` 抛 SyntaxError，弹出无意义的 "Unexpected token" 错误。按钮、函数体、window 导出全部清除
+- **未匹配的 `/api/*` 返回 404 JSON**: 原先任何拼错/废弃的 API 路径都返回 200 + 面板 HTML，导致前端 `r.json()` 崩溃且错误信息完全误导。现在 `/api/` 前缀未匹配时返回 `jsonError(404)`，非 API 路径仍正常回退面板
+- **renderTable 崩溃防御**: `b.stats.total` 在 stats 缺失或 accounts 非数组时抛 TypeError，表格空白且无提示。现加 `Array.isArray` 防御 + `(x.stats && x.stats.total) || 0` 兜底
+- **loadAccounts / loadStats 静默失败**: 补 `r.ok` 与数组校验，失败时 Swal 明确提示而非只 console.error
+- **refreshHistory 异步竞态**: 快速切换模板类型时慢响应会覆盖快响应，显示错类型的版本历史。新增 `_historyReqId` 序号守卫（请求返回与 catch 各一处校验），并对 `success:false` / 空历史给出显式提示
+- **doYxipDeploy 防重复点击**: 原先只切换图标不禁用，双击会触发两次 KV 写入/重复部署。新增 `_yxipDeploying` 锁（前置校验通过后置锁、finally 解锁）
+
+### 🛡️ 可靠性提升
+- **26 处裸 fetch 全部加超时**: zones.ts(12)、deploy.ts(5)、yxip.ts(2)、crud.ts(1)、deploy-utils.ts(1)、auto-update.ts(2)、cron.ts(1) 统一改为 `fetchWithTimeout`。Worker 脚本上传放宽到 60s，webhook 10s，其余默认 15s——避免上游挂起耗尽 Worker CPU 预算
+- **用量统计修复（影响自动更新）**: GraphQL `workersInvocationsAdaptive` 的 `limit: 10000` 超出 adaptive 数据集上限，会导致所有账号 stats 恒失败 → cron 判定 `allErrored` 后永久跳过自动更新。改为 1000；同时补 `res.ok` 检查（HTTP 错误页不再抛异常）
+- **dailyLimit=0 不再被 falsy 覆盖**: 新增 `resolveLimit()` 区分"未设置"与"显式设为 0"，替换 3 处 `acc.dailyLimit || 100000`
+- **前端写操作全面加固**: saveAccount 补必填校验（alias/accountId/email，新增账号强制填 key）+ `r.ok` 检查 + 失败回滚本地数组 + 按钮禁用；delAccount / batchDeleteAccounts 补回滚与提示；saveAutoConfig 不再失败也弹「已保存」；toggleFavorite 补 try/catch；loadVars / checkDeployConfig 补 `r.ok`
+- **verify_credentials 分批节流**: 原先 `Promise.all` 全量并发打 CF API，账号多时触发限流（1200 次/5 分钟）。改为每批 5 个 + 批间 200ms
+- **restore 白名单前缀注入封堵**: `k === p || k.startsWith(p)` 会放行 `VARS_cmliuX`、`ACCOUNTS_UNIFIED_STORAGE_EVIL` 等键。改为精确匹配 + 已知模板类型枚举
+- **favorites 参数校验**: 未知 action 与缺 sha 的 item 现返回 400（原本静默返回 success）
+- **静默失败清零**: init_data 的 JSON.parse 失败、backup 的非 JSON 值降级均补 logger 记录；`/api/diag` 不再把 KV 底层错误消息回显给客户端
+
+### 🧹 死代码与无效功能清理
+- **5 个死接口复活为可用功能**（原本后端已实现、前端无 UI 入口）:
+  - `GET /api/verify_credentials` → 账号工具栏「🔑 验证凭据」
+  - `GET /api/deploy_journal` → 工作台「📜 部署日志」
+  - `GET /api/deploy/preview` → 三个模板卡片各一个「🔍 预览」
+  - `GET /api/diag` → 工作台「🩺 诊断」（新增 `frontend/js/diagnostics.js`）
+  - `GET /api/get_code` → 工作台「📄 源码」（拉取上游模板源码摘要）
+- **删除无价值死代码**: `timeAgo`（history.js 完全未用）、`isVirtualAdapter`（dns-fix.js 逻辑已内联到 PowerShell）、`generateAuthToken`（安全升级后无引用）、`src/routes/index.ts`（纯 re-export 兼容层，crud/loader 改为直接从 register.ts 导入）
+- **previewDeploy 清理**: 移除收集后完全未使用的 vars 变量，补 `r.ok` 与空结果提示
+- **window 导出补齐**: `deleteFromEdit` / `fetchZonesForAccount` / `updateZoneInfo` / `saveAutoConfig` 此前缺导出（当前拼接模式可用，但 module 化后会全部失效）
+- **XSS 转义**: `verifyAllCredentials` 的 `x.error`（后端错误消息）补 `safeHtml`
+
+### 🔧 工程配置修复
+- **install.bat 只装 wrangler → 改为 `npm install`**: 原先遗漏 esbuild/typescript/vitest/workers-types，新克隆仓库执行 build.bat 必然失败
+- **setup-secrets.bat 补 ENCRYPTION_SECRET 设置入口**: 此前无官方入口，容易把变量名拼错（如 `ENCRYPTION_SECRETS`）导致静默回退到 ACCESS_CODE 派生密钥。新增第 3 步并内置拼写与时机警告
+- **build.bat 补 dns-fix**: build.js 需下载 SweetAlert2，缺 DNS 修复会失败（deploy/setup 已有）
+- **package.json**: 新增 `test:smoke`（test/smoke.js 此前无任何脚本调用）、`typecheck` 改为严格 `tsc --noEmit`（不再用 `|| echo` 掩盖失败）、description 去掉过期版本号
+
+### 🧪 测试
+- 新增 `test/audit-regression.test.ts`（19 个回归测试）: writeAccounts 掩码/空值/alias+email 兜底保护 6 项、restore 白名单前缀注入 4 项、resolveLimit 边界 4 项、API 404 判定 3 项、history 竞态守卫 1 项、renderTable stats 兜底 2 项
+- 测试总数 50 → **70，全部通过**；tsc 0 错误、verify 0 错误 0 警告
+
 ## V11.8.0 (2026-07-31)
 
 ### 🔒 安全架构升级（评审驱动）

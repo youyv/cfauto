@@ -1,5 +1,5 @@
 import type { AccountCredentials } from "../config/env";
-import { cf, getAuthHeaders } from "./cloudflare-api";
+import { cf, getAuthHeaders, fetchWithTimeout } from "./cloudflare-api";
 import { logger } from "./logger";
 
 /** 今天的兼容性日期 (YYYY-MM-DD) */
@@ -22,9 +22,10 @@ export async function uploadWorker(
     formData.append("metadata", JSON.stringify(metadata));
     formData.append("script", new Blob([scriptContent], { type: "application/javascript+module" }), "index.js");
     const headers = getAuthHeaders(cred.email, cred.globalKey, true);
-    const res = await fetch(cf.workerScript(cred.accountId, workerName), {
+    // 上传脚本可能较大（数百 KB），超时放宽到 60s
+    const res = await fetchWithTimeout(cf.workerScript(cred.accountId, workerName), {
         method: "PUT", headers, body: formData
-    });
+    }, 60000);
     return { ok: res.ok, res };
 }
 
@@ -57,6 +58,8 @@ export function mergeVariableBindings(
     }
 
     for (const v of variables) {
+        // 空值跳过（不写入绑定）：这样上游模板的默认值仍生效。
+        // 若需要真正移除某个变量，请通过 deletedVariables 显式声明。
         if (!v.value || v.value.trim() === "") continue;
         const bindingType = v.secret ? "secret_text" : "plain_text";
         bindingMap.set(v.key, { name: v.key, type: bindingType, text: v.value });

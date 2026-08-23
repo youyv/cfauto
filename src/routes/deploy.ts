@@ -4,7 +4,7 @@
 
 import { KV_KEYS, TEMPLATES } from '../config/templates';
 import type { TemplateType } from '../config/templates';
-import { cf, getAuthHeaders, json } from '../lib/cloudflare-api';
+import { cf, getAuthHeaders, json, fetchWithTimeout } from '../lib/cloudflare-api';
 import { uploadWorker, parseApiError, mergeVariableBindings } from '../lib/deploy-utils';
 import { readAccounts, writeAccounts, getWorkerNames } from "../lib/account-store";
 import { logger } from '../lib/logger';
@@ -23,13 +23,13 @@ export async function handleManualDeploy(env: AppEnv, opts: DeployOptions) {
 async function ensureKVNamespace(
     acc: AccountEntry, kvName: string, jsonHeaders: Record<string, string>
 ): Promise<string> {
-    const nsListRes = await fetch(cf.kvNamespaces(acc.accountId) + '?per_page=100', { headers: jsonHeaders });
+    const nsListRes = await fetchWithTimeout(cf.kvNamespaces(acc.accountId) + '?per_page=100', { headers: jsonHeaders });
     if (!nsListRes.ok) throw new Error("无法读取KV列表");
     const nsList = (await nsListRes.json() as any).result;
     const existNs = nsList.find((n: { title: string; id: string }) => n.title === kvName);
     if (existNs) return existNs.id;
 
-    const createNsRes = await fetch(cf.kvNamespaces(acc.accountId), {
+    const createNsRes = await fetchWithTimeout(cf.kvNamespaces(acc.accountId), {
         method: 'POST', headers: jsonHeaders, body: JSON.stringify({ title: kvName })
     });
     if (!createNsRes.ok) {
@@ -76,7 +76,7 @@ async function configureDomains(
     const msgs: string[] = [];
     if (customDomainPrefix && acc.defaultZoneId && acc.defaultZoneName) {
         const hostname = customDomainPrefix + '.' + acc.defaultZoneName;
-        const domainRes = await fetch(cf.workerDomains(acc.accountId), {
+        const domainRes = await fetchWithTimeout(cf.workerDomains(acc.accountId), {
             method: "PUT", headers: jsonHeaders,
             body: JSON.stringify({ hostname, service: workerName, zone_id: acc.defaultZoneId })
         });
@@ -84,15 +84,15 @@ async function configureDomains(
         else msgs.push('\u26A0\uFE0F 域名绑定失败');
     }
     if (disableWorkersDev) {
-        await fetch(cf.workerSubdomain(acc.accountId, workerName), {
+        await fetchWithTimeout(cf.workerSubdomain(acc.accountId, workerName), {
             method: "POST", headers: jsonHeaders, body: JSON.stringify({ enabled: false })
         });
         msgs.push('\u{1F6AB} 默认域名已禁用');
     } else {
-        await fetch(cf.workerSubdomain(acc.accountId, workerName), {
+        await fetchWithTimeout(cf.workerSubdomain(acc.accountId, workerName), {
             method: "POST", headers: jsonHeaders, body: JSON.stringify({ enabled: true })
         });
-        const subRes = await fetch(cf.acctSubdomain(acc.accountId), { headers: jsonHeaders });
+        const subRes = await fetchWithTimeout(cf.acctSubdomain(acc.accountId), { headers: jsonHeaders });
         const prefix = (await subRes.json() as any).result?.subdomain || "unknown";
         msgs.push('\u2705 默认: https://' + workerName + '.' + prefix + '.workers.dev');
     }

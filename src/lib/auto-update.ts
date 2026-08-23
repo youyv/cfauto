@@ -75,7 +75,7 @@ async function deploySingleWorker(
     try {
         const baseUrl = cf.workerScript(acc.accountId, wName);
         const jsonHeaders = getAuthHeaders(acc.email, acc.globalKey);
-        const bindingsRes = await fetch(baseUrl + '/bindings', { headers: jsonHeaders });
+        const bindingsRes = await fetchWithTimeout(baseUrl + '/bindings', { headers: jsonHeaders });
         // 安全: bindings 读取失败必须中止，否则空数组会覆盖该 Worker 全部既有绑定（KV/secret 丢失）
         if (!bindingsRes.ok) {
             throw new Error('获取 bindings 失败 (HTTP ' + bindingsRes.status + ')，已中止部署以保护既有绑定');
@@ -90,7 +90,7 @@ async function deploySingleWorker(
             const msgs = ['✅ Ver: ' + (deployedSha ? deployedSha.substring(0, 7) : 'Unknown')];
             if (type === 'ech') {
                 try {
-                    await fetch(cf.workerSubdomain(acc.accountId, wName), {
+                    await fetchWithTimeout(cf.workerSubdomain(acc.accountId, wName), {
                         method: 'POST', headers: jsonHeaders,
                         body: JSON.stringify({ enabled: !echDisableWorkersDev })
                     });

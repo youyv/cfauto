@@ -92,7 +92,7 @@ function addVarRow(t,k,v,s){
 }
 function removeVarRow(b,t){ const k=b.parentElement.querySelector('.key').value; if(k)deletedVars[t].push(k); b.parentElement.remove(); }
 
-async function loadVars(t){ const c=document.getElementById(`vars_${t}`); c.textContent='loading...'; try{ const r=await fetch(`/api/settings?type=${t}`); const v=await r.json(); const m=new Map(); if(Array.isArray(v))v.forEach(x=>m.set(x.key,x.value)); TEMPLATES[t].defaultVars.forEach(k=>{ if(!m.has(k))m.set(k,k===TEMPLATES[t].uuidField?crypto.randomUUID():'') }); c.innerHTML=''; deletedVars[t]=[]; m.forEach((val,key)=>addVarRow(t,key,val)); }catch(e){ console.error('[loadVars]',t,e); c.textContent='Load Error'; } }
+async function loadVars(t){ const c=document.getElementById(`vars_${t}`); c.textContent='loading...'; try{ const r=await fetch(`/api/settings?type=${t}`); if(!r.ok)throw new Error('HTTP '+r.status); const v=await r.json(); const m=new Map(); if(Array.isArray(v))v.forEach(x=>m.set(x.key,x.value)); TEMPLATES[t].defaultVars.forEach(k=>{ if(!m.has(k))m.set(k,k===TEMPLATES[t].uuidField?crypto.randomUUID():'') }); c.innerHTML=''; deletedVars[t]=[]; m.forEach((val,key)=>addVarRow(t,key,val)); }catch(e){ console.error('[loadVars]',t,e); c.textContent='Load Error'; } }
 
 function refreshUUID(t){ const k=TEMPLATES[t].uuidField; if(k)document.querySelectorAll(`.var-row-${t}`).forEach(r=>{ if(r.querySelector('.key').value===k){ const i=r.querySelector('.val'); i.value=crypto.randomUUID(); i.classList.add('bg-green-100'); setTimeout(()=>i.classList.remove('bg-green-100'),500); } }); }
 
@@ -191,7 +191,7 @@ async function checkUpdate(t){
     }
 }
 
-async function checkDeployConfig(t){ try{ const r=await fetch('/api/deploy_config?type='+t); const c=await r.json(); deployConfigs[t]=c; const b=document.getElementById('badge_'+t); if(c.mode==='fixed'){ b.className='text-[9px] px-1.5 py-0.5 rounded text-white bg-orange-500 font-bold'; b.innerText='Locked'; }else{ b.className='text-[9px] px-1.5 py-0.5 rounded text-white bg-green-500'; b.innerText='Auto Update'; } }catch(e){ console.error('[checkDeployConfig]', t, e); } }
+async function checkDeployConfig(t){ try{ const r=await fetch('/api/deploy_config?type='+t); if(!r.ok)throw new Error('HTTP '+r.status); const c=await r.json(); deployConfigs[t]=c; const b=document.getElementById('badge_'+t); if(c.mode==='fixed'){ b.className='text-[9px] px-1.5 py-0.5 rounded text-white bg-orange-500 font-bold'; b.innerText='Locked'; }else{ b.className='text-[9px] px-1.5 py-0.5 rounded text-white bg-green-500'; b.innerText='Auto Update'; } }catch(e){ console.error('[checkDeployConfig]', t, e); } }
 
 // @exports
 window.renderProxySelector = renderProxySelector;

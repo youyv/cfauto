@@ -2,16 +2,17 @@
 
 
 async function previewDeploy(t) {
-    const vars = []; document.querySelectorAll('.var-row-' + t).forEach(r => { const k = r.querySelector('.key').value; const v = r.querySelector('.val').value; const secret = r.querySelector('.is-secret').value === '1'; if(k) vars.push({key: k, value: v, secret: secret}); });
     openWorkbench();
     wbLog('🔍 预览部署 ' + t + '...', 'text-blue-400');
     try {
         const res = await fetch('/api/deploy/preview?type=' + t);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
         const data = await res.json();
         wbLog('📋 将影响 ' + data.accounts + ' 个账号, ' + data.workers + ' 个 Worker:', 'text-white');
-        if (data.details) data.details.forEach(d => wbLog('   ' + d, 'text-slate-400'));
+        if (Array.isArray(data.details) && data.details.length) data.details.forEach(d => wbLog('   ' + d, 'text-slate-400'));
+        else wbLog('   (无匹配的 Worker，请先在账号中配置)', 'text-orange-400');
         wbLog('✅ 预览完成，确认无误后可执行实际部署', 'text-green-400');
-    } catch(e) { wbLog('❌ 预览失败: ' + e.message, 'text-red-500'); }
+    } catch(e) { console.error('[previewDeploy]', e); wbLog('❌ 预览失败: ' + e.message, 'text-red-500'); }
 }
 
 function toggleEchToken() {

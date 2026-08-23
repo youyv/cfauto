@@ -3,7 +3,7 @@
  */
 
 import { TEMPLATES, KV_KEYS } from '../config/templates';
-import { cf, getAuthHeaders, json, jsonError } from '../lib/cloudflare-api';
+import { cf, getAuthHeaders, json, jsonError, fetchWithTimeout } from '../lib/cloudflare-api';
 import { getJSON, putJSON } from "../lib/kv-utils";
 import { readAccounts } from "../lib/account-store";
 import { logger } from '../lib/logger';
@@ -91,7 +91,7 @@ export async function handleSaveYxip(env: AppEnv, reqData: YxipSaveRequest) {
             for (const wName of targetWorkers) {
                 const logItem = { name: `[${workerTypeName}] ${wName}`, success: false, msg: "" };
                 try {
-                    const bindRes = await fetch(cf.workerBindings(targetAccount.accountId, wName), { headers: jsonHeaders });
+                    const bindRes = await fetchWithTimeout(cf.workerBindings(targetAccount.accountId, wName), { headers: jsonHeaders });
                     if (!bindRes.ok) throw new Error("无法读取绑定的变量");
 
                     const t = TEMPLATES[type];
@@ -105,7 +105,7 @@ export async function handleSaveYxip(env: AppEnv, reqData: YxipSaveRequest) {
                         const finalContent = t.yxipBuildContent ? t.yxipBuildContent(rawContent) : rawContent;
                         const contentType = t.yxipContentType || 'text/plain';
 
-                        const putRes = await fetch(cf.kvValue(targetAccount.accountId, nsId, targetKey), {
+                        const putRes = await fetchWithTimeout(cf.kvValue(targetAccount.accountId, nsId, targetKey), {
                             method: "PUT",
                             headers: { ...jsonHeaders, "Content-Type": contentType },
                             body: finalContent

@@ -1,8 +1,8 @@
-# 🚀 CF Auto — Cloudflare Worker 智能部署中控 (V11.8.0)
+# 🚀 CF Auto — Cloudflare Worker 智能部署中控 (V11.9.0)
 
 > 全部代码由 Claude Code 完成，自行修改延伸功能。
 
-> **版本状态**: V11.8.0 Stable — 安全架构升级（会话token化 · CSRF token · 数据安全修复 · 类型全量清零）
+> **版本状态**: V11.9.0 Stable — 全量代码审计修复（死代码清理 · 死接口复活 · 超时保护 · 竞态修复）
 > **详细变更**: 见 [CHANGELOG.md](CHANGELOG.md)
 
 ---

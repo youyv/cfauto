@@ -59,11 +59,6 @@ export function requireAccessCode(env: AppEnv): Response | null {
     return null;
 }
 
-/** 兼容旧引用：登录不再用 ACCESS_CODE 哈希，改随机 token */
-export async function generateAuthToken(_accessCode: string): Promise<string> {
-    return generateRandomToken();
-}
-
 /** 检查 Cookie 会话是否有效 — 查 KV SESSION_<token>（TTL 自动过期，登出可撤销） */
 export async function requireCookie(request: Request, env: AppEnv): Promise<Response | null> {
     const cookieValue = extractAuthCookie(request);

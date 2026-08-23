@@ -138,7 +138,7 @@
                     </div>
                     <div class="flex gap-2">
                         <button onclick="refreshUUID('cmliu')" class="flex-1 bg-gray-100 text-gray-600 text-xs py-1.5 rounded">🎲 刷 UUID</button>
-                        <button onclick="deploy('cmliu')" id="btn_deploy_cmliu" class="flex-[2] bg-red-600 text-white text-xs py-1.5 rounded font-bold hover:bg-red-700">🚀 部署更新</button>
+                        <button onclick="previewDeploy('cmliu')" class="flex-1 bg-slate-100 text-slate-600 text-xs py-1.5 rounded hover:bg-slate-200" title="预览本次部署将影响的账号与 Worker">🔍 预览</button><button onclick="deploy('cmliu')" id="btn_deploy_cmliu" class="flex-[2] bg-red-600 text-white text-xs py-1.5 rounded font-bold hover:bg-red-700">🚀 部署更新</button>
                     </div>
                     <button onclick="fix1101('cmliu')" id="btn_fix1101_cmliu" class="w-full mt-2 bg-orange-500 text-white text-xs py-1.5 rounded font-bold hover:bg-orange-600">🔧 一键修复 1101</button>
                 </div>
@@ -161,7 +161,7 @@
                     </div>
                     <div class="flex gap-2">
                         <button onclick="refreshUUID('joey')" class="flex-1 bg-gray-100 text-gray-600 text-xs py-1.5 rounded">🎲 刷 UUID</button>
-                        <button onclick="deploy('joey')" id="btn_deploy_joey" class="flex-[2] bg-blue-600 text-white text-xs py-1.5 rounded font-bold hover:bg-blue-700">🚀 部署更新</button>
+                        <button onclick="previewDeploy('joey')" class="flex-1 bg-slate-100 text-slate-600 text-xs py-1.5 rounded hover:bg-slate-200" title="预览本次部署将影响的账号与 Worker">🔍 预览</button><button onclick="deploy('joey')" id="btn_deploy_joey" class="flex-[2] bg-blue-600 text-white text-xs py-1.5 rounded font-bold hover:bg-blue-700">🚀 部署更新</button>
                     </div>
                 </div>
             </div>
@@ -186,7 +186,7 @@
                         </div>
                     </div>
                     <div class="flex gap-2">
-                        <button onclick="deploy('ech')" id="btn_deploy_ech" class="w-full bg-green-600 text-white text-xs py-1.5 rounded font-bold hover:bg-green-700">🚀 部署配置</button>
+                        <button onclick="previewDeploy('ech')" class="flex-1 bg-slate-100 text-slate-600 text-xs py-1.5 rounded hover:bg-slate-200" title="预览本次部署将影响的账号与 Worker">🔍 预览</button><button onclick="deploy('ech')" id="btn_deploy_ech" class="w-full bg-green-600 text-white text-xs py-1.5 rounded font-bold hover:bg-green-700">🚀 部署配置</button>
                     </div>
                 </div>
             </div>
@@ -387,6 +387,9 @@
             <div id="workbench_drag" class="flex justify-between items-center px-4 py-2 border-b border-slate-700 cursor-move select-none" style="cursor:move">
                 <h3 class="text-sm font-bold text-green-400 flex items-center gap-2">📋 工作台 <span id="wb_status" class="text-[10px] text-slate-500 font-normal"></span></h3>
                 <div class="flex gap-2">
+                    <button onclick="showDeployJournal()" class="text-[10px] text-slate-400 hover:text-white border border-slate-600 px-2 py-0.5 rounded" title="查看最近部署记录">📜 部署日志</button>
+                    <button onclick="runDiagnostics()" class="text-[10px] text-slate-400 hover:text-white border border-slate-600 px-2 py-0.5 rounded" title="检查 KV 绑定与关键配置">🩺 诊断</button>
+                    <button onclick="viewTemplateCode()" class="text-[10px] text-slate-400 hover:text-white border border-slate-600 px-2 py-0.5 rounded" title="查看上游模板源码摘要">📄 源码</button>
                     <button onclick="document.getElementById('workbench_log').innerHTML=''" class="text-[10px] text-slate-500 hover:text-slate-300 border border-slate-600 px-2 py-0.5 rounded">🗑️ 清空</button>
                     <button onclick="closeWorkbench()" class="text-slate-400 hover:text-white text-lg leading-none">&times;</button>
                 </div>

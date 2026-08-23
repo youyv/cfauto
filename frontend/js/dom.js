@@ -17,6 +17,7 @@ window.$clearAll = $clearAll;
 
 // ===== CSRF 安全 =====
 // 从非 HttpOnly 的 __Host-csrf cookie 读取 token（登录时由服务端下发，与会话绑定）
+// [内部函数] 仅被下方 fetch 拦截器调用，无需 window 导出
 function getCsrfToken() {
     const m = document.cookie.match(/(?:^|;\s*)__Host-csrf=([^;]*)/);
     return m ? m[1] : '';

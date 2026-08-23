@@ -1,11 +1,14 @@
 // ===== 版本历史 & 收藏 =====
 
-function timeAgo(s){ const sec=(new Date()-new Date(s))/1000; if(sec>86400)return Math.floor(sec/86400)+"天前"; if(sec>3600)return Math.floor(sec/3600)+"小时前"; return "刚刚"; }
 
 async function openVersionHistory(type){ currentHistoryType=type; refreshHistory(); }
 
+// 请求序号：并发时只接受最后一次请求的结果，防止慢响应覆盖快响应
+let _historyReqId = 0;
+
 async function refreshHistory() {
     const type = currentHistoryType; if(!type) return;
+    const myReqId = ++_historyReqId;
     const limit = document.getElementById('history_limit_input').value || 10;
     const modal=document.getElementById('history_modal');const hList=document.getElementById('history_list');
 
@@ -19,7 +22,10 @@ async function refreshHistory() {
       const[histRes,favRes]=await Promise.all([fetch(`/api/check_update?type=${type}&mode=history&limit=${limit}`),fetch(`/api/favorites?type=${type}`)]);
       const histData=await histRes.json();const favData=await favRes.json();
 
-      window.currentFavData = favData || [];
+      // 竞态守卫：已有更新的请求发出，本次结果作废（防止慢响应覆盖快响应显示错类型）
+      if (myReqId !== _historyReqId) return;
+
+      window.currentFavData = Array.isArray(favData) ? favData : [];
 
       hList.innerHTML='';
       const latestBtn=document.createElement('div');
@@ -28,14 +34,26 @@ async function refreshHistory() {
       latestBtn.onclick=()=>{modal.classList.add('hidden');deploy(type,'latest');};
       hList.appendChild(latestBtn);
 
-      if(histData.history){
+      if(histData.history && histData.history.length){
           histData.history.forEach(commit=>{
               const item={sha:commit.sha,date:commit.commit.committer.date,message:commit.commit.message};
               const isFav=window.currentFavData.find(f=>f.sha===item.sha);
               renderHistoryItem(type,item,hList,false,isFav);
           });
+      } else {
+          // 显式反馈：GitHub 拉取失败或无记录，避免"只有 Latest 按钮"的误导
+          const tip=document.createElement('div');
+          tip.className='text-xs text-orange-500 py-2';
+          tip.textContent = histData.success === false
+              ? ('历史获取失败: ' + (histData.msg || '未知错误'))
+              : '暂无历史版本记录';
+          hList.appendChild(tip);
       }
-    }catch(e){console.error('[refreshHistory]',e);hList.innerHTML='<div class="text-red-400 text-xs">网络错误: ' + safeHtml(e.message) + '</div>';}
+    }catch(e){
+      if (myReqId !== _historyReqId) return;
+      console.error('[refreshHistory]',e);
+      hList.innerHTML='<div class="text-red-400 text-xs">网络错误: ' + safeHtml(e.message) + '</div>';
+    }
 }
 
 function openFavoritesPanel() {
@@ -85,13 +103,21 @@ function renderHistoryItem(type,item,container,isFavSection,isFavInHist){
 }
 
 async function toggleFavorite(type,item,isRemove){
-    await fetch(`/api/favorites?type=${type}`,{method:'POST',body:JSON.stringify({action:isRemove?'remove':'add',item:item})});
-    const r = await fetch(`/api/favorites?type=${type}`);
-    window.currentFavData = await r.json();
-    if(!document.getElementById('fav_panel_view').classList.contains('hidden')) {
-        openFavoritesPanel();
-    } else {
-        refreshHistory();
+    try {
+        const w = await fetch(`/api/favorites?type=${type}`,{method:'POST',body:JSON.stringify({action:isRemove?'remove':'add',item:item})});
+        if(!w.ok) throw new Error('HTTP ' + w.status);
+        const r = await fetch(`/api/favorites?type=${type}`);
+        if(!r.ok) throw new Error('HTTP ' + r.status);
+        const d = await r.json();
+        window.currentFavData = Array.isArray(d) ? d : [];
+        if(!document.getElementById('fav_panel_view').classList.contains('hidden')) {
+            openFavoritesPanel();
+        } else {
+            refreshHistory();
+        }
+    } catch(e) {
+        console.error('[toggleFavorite]', e);
+        if (typeof Swal !== 'undefined') Swal.fire('收藏操作失败', e.message, 'error');
     }
 }
 

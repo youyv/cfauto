@@ -13,8 +13,8 @@ async function init() {
         if (!r.ok) throw new Error('HTTP ' + r.status);
         const d = await r.json();
 
-        // 恢复 accounts
-        accounts = d.accounts || [];
+        // 恢复 accounts（防御：后端异常时可能非数组）
+        accounts = Array.isArray(d.accounts) ? d.accounts : [];
         accounts.forEach(a => a.stats = a.stats || { total: 0, max: a.dailyLimit || 100000 });
 
         // 恢复 deployConfigs
