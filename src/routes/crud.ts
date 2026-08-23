@@ -85,10 +85,27 @@ ROUTES.set('GET /api/verify_credentials', async (_req, env) => {
         for (let i = 0; i < accounts.length; i += BATCH_SIZE) {
             const batch = accounts.slice(i, i + BATCH_SIZE);
             const batchResults = await Promise.all(batch.map(async (acc) => {
+                // readAccounts 解密失败（ENCRYPTION_SECRET/ACCESS_CODE 变更）时会清空 globalKey，
+                // 此时发请求毫无意义，直接给出可操作的提示
+                if (!acc.globalKey) {
+                    return { alias: acc.alias, ok: false, error: '密钥缺失或解密失败，请重新填写 API Key' };
+                }
+                if (!acc.accountId) {
+                    return { alias: acc.alias, ok: false, error: '缺少 Account ID' };
+                }
                 try {
                     const headers = getAuthHeaders(acc.email, acc.globalKey);
-                    const res = await fetchWithTimeout(cf.userTokenVerify(), { method: 'GET', headers });
-                    return { alias: acc.alias, ok: res.ok, status: res.status };
+                    // 用 /accounts/{aid}：支持 Global API Key，且同时验证 accountId 归属
+                    const res = await fetchWithTimeout(cf.account(acc.accountId), { method: 'GET', headers });
+                    if (res.ok) return { alias: acc.alias, ok: true, status: res.status };
+                    // 解析 CF 真实错误消息（9103 = 凭据无效，7003 = accountId 不存在/无权限）
+                    let msg = 'HTTP ' + res.status;
+                    try {
+                        const body: any = await res.json();
+                        const cfMsg = body?.errors?.[0]?.message;
+                        if (cfMsg) msg = cfMsg;
+                    } catch (pe) { logger.warn('verify_credentials: 错误响应非 JSON', { alias: acc.alias, status: res.status }); }
+                    return { alias: acc.alias, ok: false, status: res.status, error: msg };
                 } catch(e: any) { return { alias: acc.alias, ok: false, error: e.message }; }
             }));
             results.push(...batchResults);

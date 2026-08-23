@@ -16,7 +16,10 @@ export const cf = {
     kvNamespace:    (aid: string, nsId: string)      => `${CF_API}/accounts/${aid}/storage/kv/namespaces/${nsId}`,
     kvValue:        (aid: string, nsId: string, key: string) => `${CF_API}/accounts/${aid}/storage/kv/namespaces/${nsId}/values/${key}`,
     zones:          (aid: string)                    => `${CF_API}/zones?account.id=${aid}&per_page=50`,
-    userTokenVerify:()                               => `${CF_API}/user/tokens/verify`,
+    /** 账号详情 — 支持 Global API Key 认证，可同时验证凭据有效性与 accountId 归属。
+     *  注意：不要用 /user/tokens/verify，它只支持 API Token（Bearer），
+     *  用 X-Auth-Key 调用会返回 400 "Missing Authorization header"。 */
+    account:        (aid: string)                    => `${CF_API}/accounts/${aid}`,
     graphql:        ()                               => `${CF_API}/graphql`,
 };
 
