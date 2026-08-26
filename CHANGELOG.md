@@ -61,16 +61,20 @@
   - `routes.test.ts`（47）：部署部分失败语义、熔断作用域（验证只对目标账号发请求）、cron 全路径（含「ech 确实被部署」这条直接覆盖本次 bug 的断言）、CRUD 路由校验
   - `handlers.test.ts`（50）：批量部署、zones 全部 handler、yxip、fix1101、check
   - `auth-security.test.ts`（41）：会话/CSRF/限流/登录页 CSP nonce
-- **新增 `.github/workflows/ci.yml`**: build → typecheck → verify → test，并检查产物非空、`wrangler.toml` 未被 build 意外改动。此前四个脚本全靠手动跑
+- **新增 `.github/workflows/ci.yml`**: build → typecheck → verify → test，并检查产物非空、构建过程未改动被跟踪文件。此前四个脚本全靠手动跑
 - **`verify.js` 重写**: 文件清单不再硬编码 43 条（CHANGELOG 记录过漏同步）。后端递归扫 `src/`，前端从 `build.js` 的 `jsFiles` 解析（单一真相源），并反向检查「存在但未被 build 引用」的孤儿文件。新增：真 JS 解析（`vm.Script`，替代数反引号）、`data-act` 与 `registerActions` 双向对齐、`data-args` JSON 合法性、元素 ID 可解析性、前端调用的端点是否都已注册、静态资源与 CSP 一致性、反模式扫描（裸 `res.json()` / 裸 `fetch` / 值快照式 window 导出）
 - **`test/smoke.js` 扩充**: 新增资源拆分验证（`/app.js`、`/app.css` 的 Content-Type 与 immutable 缓存）、主 HTML 体积上限、CSP 无 `unsafe-inline`、API 未认证返回 JSON、`/api/*` 404 为 JSON、CSRF 三种拒绝路径
-- **新增 `check.bat` 与 `npm run check`**: 本地一键跑完与 CI 相同的检查链
+- **新增 `check.bat` 与 `pnpm run check`**: 本地一键跑完与 CI 相同的检查链
 
 ### 🔧 工程配置
 
+- **统一到 pnpm**: 仓库一直只有 `pnpm-lock.yaml`，但 `install.bat` 用的是 `npm install`（忽略该 lockfile、解析出的版本与锁定的不一致），首版 CI 也因此在 `setup-node` 的缓存步骤直接失败（找不到 `package-lock.json`）。现在 `install.bat` / `check.bat` / CI / `wrangler.local.toml` 的 build 命令全部走 pnpm；`package.json` 增加 `packageManager: pnpm@11.22.0` 让 corepack 与 CI 锁定同一版本；`install.bat` 检测不到 pnpm 时自动 `corepack enable pnpm`
+- **`pnpm-lock.yaml` 补齐缺失依赖**: lockfile 里缺 `@cloudflare/workers-types` 与新增的 `sweetalert2`，`--frozen-lockfile` 会直接失败
+- **CI action 版本升级**: `actions/checkout@v5` + `actions/setup-node@v6` + `pnpm/action-setup@v4`，避开已弃用的 Node 20 runtime（GitHub 已默认改用 Node 24 执行 action）
 - **构建可复现**: `build.js` 此前从 `https://cdn.jsdelivr.net/npm/sweetalert2@11`（浮动 tag）下载并内联进 worker，无版本 pin、无 hash 校验，每次构建可能拿到不同代码。现在优先从 `node_modules` 读取（`sweetalert2` 加入 pinned devDependency `11.14.5`），缺失时才回退到 **pin 了版本号**的 CDN，并打印 SHA-256 供比对
 - **`build.js` 失败即退出**: 缺少前端文件时明确报错而非产出残缺 bundle；输出各资源体积便于观察
 - **前端 JS 拼接加文件分隔注释**，便于在浏览器里定位来源
+- **`bump-version.js` 修正**: 原本用 `replaceAll(oldTag, newTag)` 全文替换 README，会把历史说明里的版本引用一起改掉。现在只精确替换标题与「版本状态」行，找不到匹配时给出警告而非静默无操作
 
 ---
 

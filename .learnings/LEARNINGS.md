@@ -658,3 +658,91 @@ initStarfield 在 starAnimId 非空时直接返回。
 - Source: code_review
 - Related Files: frontend/js/starfield.js
 - Recurrence-Count: 1
+---
+
+## [LRN-20260826-016] error
+
+**Status**: resolved
+**Area**: infra
+**Pattern-Key**: ci.package.manager.mismatch.lockfile
+
+### Summary
+CI 用的包管理器必须与仓库里的 lockfile 匹配，否则第一次运行就在依赖安装步失败。
+
+### Details
+仓库只有 pnpm-lock.yaml，但 install.bat 与首版 CI 都写 `npm install` / `npm ci`。
+CI 报错：`Dependencies lock file is not found ... Supported file patterns:
+package-lock.json, npm-shrinkwrap.json, yarn.lock`——actions/setup-node 的
+`cache: 'npm'` 找不到 npm 系 lockfile 直接 fail。
+
+更隐蔽的是本地：`npm install` 会**忽略** pnpm-lock.yaml 重新解析版本，
+于是「本地能过」与「锁定的版本」根本不是同一套依赖，可复现性形同虚设。
+
+**修复**:
+- CI 改为 pnpm/action-setup@v4 + setup-node 的 `cache: 'pnpm'`
+  （pnpm 必须先装，setup-node 才能解析 store 路径）
+- install.bat / check.bat / wrangler.local.toml 的 build 命令统一到 pnpm
+- package.json 加 `packageManager: pnpm@<version>`，让 corepack 与 CI 锁同一版本
+- 顺带发现 lockfile 缺了两个 devDependency，`--frozen-lockfile` 会失败——
+  说明之前从没在「锁定模式」下装过
+
+**教训**: lockfile 是包管理器的选择声明。仓库里有哪个 lockfile，
+所有入口（本地脚本、CI、构建钩子）就都得用对应的包管理器，不能混用。
+
+### Metadata
+- Source: error
+- Related Files: .github/workflows/ci.yml, install.bat, check.bat, package.json, pnpm-lock.yaml
+- Recurrence-Count: 1
+---
+
+## [LRN-20260826-017] best_practice
+
+**Status**: resolved
+**Area**: infra
+**Pattern-Key**: github.action.node20.deprecated
+
+### Summary
+GitHub Actions 的 Node 20 runtime 已弃用，旧 major 版本的 action 会持续告警。
+
+### Details
+CI 日志开头：`Node 20 is being deprecated. This workflow is running with
+Node 24 by default.`（见 GitHub 2025-09-19 变更公告）。actions/checkout@v4 与
+actions/setup-node@v4 声明的是 node20 runtime。
+
+**修复**: 升级到 actions/checkout@v5 + actions/setup-node@v6。
+
+**教训**: runner 侧的 runtime 弃用会波及所有 action 的 major 版本。
+看到这类平台级告警就一次性把 action 版本抬上去，别逐个等它变成硬错误。
+
+### Metadata
+- Source: error
+- Related Files: .github/workflows/ci.yml
+- Recurrence-Count: 1
+---
+
+## [LRN-20260826-018] best_practice
+
+**Status**: resolved
+**Area**: build
+**Pattern-Key**: verify.ci.locally.before.trusting
+
+### Summary
+本地校验通过不等于 CI 通过：环境、包管理器、Node 版本、平台二进制都可能不同。
+
+### Details
+V12.0.0 本地 build/typecheck/verify/323 测试全绿就推送了，CI 第一步就挂——
+本地用 pnpm 装的 node_modules，CI 却被写成 npm。这类差异本地永远测不出来。
+
+**修复**: 推送前在本地按 CI 的确切命令跑一遍
+（`pnpm install --frozen-lockfile --ignore-scripts` 而非平时的 `pnpm install`），
+并确认 lockfile 里有目标平台的可选依赖（@esbuild/linux-x64 等）。
+CI 里加一步 `git diff --quiet` 确认构建过程没改动被跟踪文件。
+
+**教训**: 首次引入 CI 时，先在本地模拟它的**确切**命令序列，
+尤其是 install 命令的 flag——`install` 与 `install --frozen-lockfile`
+是两种不同的行为。
+
+### Metadata
+- Source: error
+- Related Files: .github/workflows/ci.yml
+- Recurrence-Count: 1

@@ -2,6 +2,9 @@ name: CI
 
 # 每次 push 与 PR 都跑完整校验链：build → typecheck → verify → test。
 # 顺序有依赖：build 生成 src/frontend-bundle.ts，typecheck 需要它才能通过。
+#
+# 包管理器用 pnpm：仓库里只有 pnpm-lock.yaml，用 npm 会因为找不到
+# package-lock.json 而在 setup-node 的缓存步骤直接失败。
 on:
   push:
     branches: ['**']
@@ -14,43 +17,47 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      # pnpm 必须先装：setup-node 的 cache: pnpm 需要 pnpm 已在 PATH 中
+      # 才能解析出 store 路径。版本由 package.json 的 packageManager 字段决定。
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
-          cache: 'npm'
+          cache: 'pnpm'
 
+      # --ignore-scripts: esbuild / workerd / sharp 的 postinstall 在 CI 里不需要
+      # （esbuild 通过 @esbuild/<platform> 可选依赖直接拿到二进制），跳过可避免
+      # 下载失败拖垮整个流程。
       - name: Install dependencies
-        run: npm ci --ignore-scripts || npm install --ignore-scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Build (生成 frontend-bundle.ts + dist/worker.js)
-        run: npm run build
+        run: pnpm run build
 
       - name: Typecheck (tsc --noEmit，0 容忍)
-        run: npm run typecheck
+        run: pnpm run typecheck
 
       - name: Verify (源码结构 / 路由 / CSP / 反模式扫描)
-        run: npm run test:verify
+        run: pnpm run test:verify
 
       - name: Unit & integration tests
-        run: npm test
+        run: pnpm test
 
       - name: 检查构建产物存在且非空
         run: |
           test -s dist/worker.js
           echo "dist/worker.js: $(wc -c < dist/worker.js) bytes"
 
-      - name: 确认生成物未被误提交
+      - name: 确认仓库未被构建过程改动
         run: |
-          # frontend-bundle.ts 与 dist/ 都在 .gitignore 中；若出现在 diff 里说明 gitignore 失效
-          if ! git diff --quiet -- src/frontend-bundle.ts dist 2>/dev/null; then
-            echo "::warning::构建产物出现在 git diff 中，检查 .gitignore"
-          fi
+          # frontend-bundle.ts 与 dist/ 都在 .gitignore 中，不应出现在 diff 里。
           # wrangler.toml 的 compatibility_date 由 build.js 同步为固定常量，
-          # 若这里出现改动说明常量与仓库中的值不一致，应显式提交
-          if ! git diff --quiet -- wrangler.toml; then
-            echo "::error::build.js 修改了 wrangler.toml，请提交 compatibility_date 变更"
-            git diff -- wrangler.toml
+          # 若这里出现改动说明常量与仓库中的值不一致，应显式提交。
+          if ! git diff --quiet; then
+            echo "::error::构建过程修改了被跟踪的文件，请提交这些改动"
+            git diff --stat
             exit 1
           fi

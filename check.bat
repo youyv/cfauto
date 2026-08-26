@@ -17,7 +17,7 @@ if %errorlevel% neq 0 goto :fail
 
 echo.
 echo === [2/4] Typecheck (tsc --noEmit) ===
-call npx tsc --noEmit
+call pnpm exec tsc --noEmit
 if %errorlevel% neq 0 goto :fail
 
 echo.
@@ -27,7 +27,7 @@ if %errorlevel% neq 0 goto :fail
 
 echo.
 echo === [4/4] Tests (vitest run) ===
-call npx vitest run
+call pnpm exec vitest run
 if %errorlevel% neq 0 goto :fail
 
 echo.

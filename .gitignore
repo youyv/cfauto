@@ -3,3 +3,6 @@ dist/
 src/frontend-bundle.ts
 
 wrangler.local.toml
+
+# pnpm 本地 store（依赖缓存，可再生；node_modules 会硬链接到它，勿手动删除）
+.pnpm-store/

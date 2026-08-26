@@ -95,7 +95,7 @@ cfauto/
 ├── build.js                    # 构建脚本 (拼接前端 + esbuild 打包)
 ├── build.bat / deploy.bat      # Windows 批处理
 ├── check.bat                   # 本地一键跑完整检查链
-├── install.bat                 # 依赖安装
+├── install.bat                 # 依赖安装 (pnpm)
 ├── setup-secrets.bat           # 密钥配置
 ├── wrangler.toml               # 部署配置模板
 ├── wrangler.local.toml         # 本地部署配置 (不入 git)
@@ -114,11 +114,14 @@ Request → KV 检查 → 公开路由 (/manifest.json, /api/login, /api/logout)
        → 回退 → 管理面板 SPA HTML
 ```
 
-**质量校验**（提交前建议跑 `npm run check` 或双击 `check.bat`）:
+**质量校验**（提交前建议跑 `pnpm run check` 或双击 `check.bat`）:
 ```
 build (生成 frontend-bundle.ts) → typecheck (tsc --noEmit)
   → verify (结构/路由/CSP/反模式) → test (vitest run, 323 个)
 ```
+
+> 包管理器用 **pnpm**（仓库只有 `pnpm-lock.yaml`，没有 `package-lock.json`）。
+> `install.bat` 在检测不到 pnpm 时会用 corepack 自动启用；CI 同样走 pnpm。
 
 ---
 
@@ -149,7 +152,7 @@ build (生成 frontend-bundle.ts) → typecheck (tsc --noEmit)
 
 | 步骤 | 操作 | 说明 |
 |------|------|------|
-| **1** | 双击 `install.bat` | 安装 Node.js 依赖 |
+| **1** | 双击 `install.bat` | 用 pnpm 安装依赖（缺 pnpm 会自动 corepack 启用） |
 | **2** | 修改 `wrangler.toml` | ① `name` 改成 Worker 名 ② 首次部署取消 `[[kv_namespaces]]` 注释，填入 KV ID ③ 需要时取消 `routes` / `triggers` 注释 |
 | **3** | 双击 `build.bat` | 拼接前端 + esbuild 打包 → `dist/worker.js` |
 | **4** | 双击 `setup-secrets.bat` | 设置面板密码和 GitHub Token (加密存储到 CF) |
@@ -165,7 +168,7 @@ build.bat → deploy.bat
 改过代码后建议先跑一次完整校验：
 
 ```
-check.bat            # 或 npm run check
+check.bat            # 或 pnpm run check
 ```
 它按 CI 相同顺序执行 build → typecheck → verify → test（323 个测试）。任一步失败就不要部署。
 
