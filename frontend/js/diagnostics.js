@@ -5,13 +5,21 @@ async function runDiagnostics() {
     openWorkbench();
     wbLog('🩺 正在诊断系统配置...', 'text-blue-400');
     try {
-        const r = await fetch('/api/diag');
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        const d = await r.json();
+        const d = await apiFetch('/api/diag');
         wbLog('─── 系统诊断结果 ───', 'text-white');
         wbLog('KV 绑定: ' + (d.__kv_bound ? '✅ 已绑定' : '❌ 未绑定'), d.__kv_bound ? 'text-green-300' : 'text-red-400');
+        wbLog('ACCESS_CODE: ' + (d.__access_code_set ? '✅ 已设置' : '❌ 未设置'), d.__access_code_set ? 'text-green-300' : 'text-red-400');
+        wbLog('GITHUB_TOKEN: ' + (d.__github_token_set ? '✅ 已设置' : '⚠️ 未设置（GitHub API 限额 60/小时）'), d.__github_token_set ? 'text-green-300' : 'text-orange-400');
+        wbLog('ENCRYPTION_SECRET: ' + (d.__encryption_secret_set
+            ? '✅ 已设置（改 ACCESS_CODE 不影响已存凭证）'
+            : '⚠️ 未设置（密钥由 ACCESS_CODE 派生，改密码会导致所有 API Key 解密失败）'),
+            d.__encryption_secret_set ? 'text-green-300' : 'text-orange-400');
+        if (d.__encryption_fingerprint) {
+            wbLog('加密密钥指纹: ' + d.__encryption_fingerprint + '（导出/备份文件会带上它用于校验）', 'text-slate-400');
+        }
+        wbLog('─── KV 键状态 ───', 'text-slate-500');
         Object.keys(d).forEach(function (k) {
-            if (k === '__kv_bound' || k === 'success') return;
+            if (k.startsWith('__') || k === 'success') return;
             const v = String(d[k]);
             const cls = v === '(exists)' ? 'text-green-300' : (v === '(not set)' ? 'text-orange-400' : 'text-red-400');
             wbLog('  ' + k + ': ' + v, cls);
@@ -25,9 +33,8 @@ async function runDiagnostics() {
 
 /** 查看上游模板源码摘要（行数 / 大小 / 前若干行） */
 async function viewTemplateCode() {
-    const types = Object.keys(TEMPLATES);
     const opts = {};
-    types.forEach(function (t) { opts[t] = (TEMPLATES[t].name || t); });
+    Object.keys(TEMPLATES).forEach(function (t) { opts[t] = (TEMPLATES[t].name || t); });
     const picked = await Swal.fire({
         title: '查看上游源码',
         input: 'select',
@@ -43,9 +50,7 @@ async function viewTemplateCode() {
     openWorkbench();
     wbLog('📄 正在拉取 ' + t + ' 上游源码...', 'text-blue-400');
     try {
-        const r = await fetch('/api/get_code?type=' + encodeURIComponent(t));
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        const d = await r.json();
+        const d = await apiFetch('/api/get_code?type=' + encodeURIComponent(t));
         if (!d.success || typeof d.code !== 'string') throw new Error(d.msg || '返回格式异常');
         const lines = d.code.split('\n');
         const kb = (d.code.length / 1024).toFixed(1);
@@ -62,6 +67,7 @@ async function viewTemplateCode() {
     }
 }
 
-// @exports
-window.runDiagnostics = runDiagnostics;
-window.viewTemplateCode = viewTemplateCode;
+registerActions({
+    runDiagnostics: runDiagnostics,
+    viewTemplateCode: viewTemplateCode
+});

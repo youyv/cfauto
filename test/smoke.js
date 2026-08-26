@@ -1,9 +1,9 @@
 /**
- * 冒烟测试 — 部署后运行，验证关键端点可用
+ * 冒烟测试 — 部署后运行，验证关键端点可用（不需要登录凭据）
  * 用法: node test/smoke.js <BASE_URL>
  * 示例: node test/smoke.js https://your-worker.workers.dev
  */
-const BASE = process.argv[2];
+const BASE = (process.argv[2] || '').replace(/\/+$/, '');
 if (!BASE) {
     console.log('用法: node test/smoke.js <BASE_URL>');
     console.log('示例: node test/smoke.js https://your-worker.workers.dev');
@@ -15,81 +15,163 @@ let passed = 0, failed = 0;
 async function test(name, fn) {
     try {
         await fn();
-        console.log(`  ✅ ${name}`);
+        console.log('  ✅ ' + name);
         passed++;
     } catch (e) {
-        console.log(`  ❌ ${name}: ${e.message}`);
+        console.log('  ❌ ' + name + ': ' + e.message);
         failed++;
     }
 }
 
+function assert(cond, msg) {
+    if (!cond) throw new Error(msg);
+}
+
 (async () => {
-    console.log(`\n🚀 Smoke test: ${BASE}\n`);
+    console.log('\n🚀 Smoke test: ' + BASE + '\n');
 
     // ===== 1. 公开端点（无需认证）=====
     console.log('── 公开端点 ──');
 
-    await test('GET / → 返回 HTML 管理面板', async () => {
+    let panelHtml = '';
+    await test('GET / → 返回管理面板 HTML（外链 app.js / app.css）', async () => {
         const r = await fetch(BASE);
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        const html = await r.text();
-        if (!html.includes('Worker 部署中控')) throw new Error('页面标题缺失');
-        if (!html.includes('TEMPLATES')) throw new Error('JS 模板数据缺失');
+        assert(r.ok, 'HTTP ' + r.status);
+        panelHtml = await r.text();
+        assert(panelHtml.includes('Worker 部署中控') || panelHtml.includes('Worker 智能中控'), '页面标题缺失');
+        // 前端已拆为外部资源；主 HTML 里不应再内联整个 JS
+        assert(/src="\/app\.js\?v=/.test(panelHtml), '未引用外部 /app.js');
+        assert(/href="\/app\.css\?v=/.test(panelHtml), '未引用外部 /app.css');
+    });
+
+    await test('主 HTML 体积显著小于旧版全内联（< 80KB）', async () => {
+        const kb = Buffer.byteLength(panelHtml, 'utf8') / 1024;
+        assert(kb < 80, '主 HTML 仍有 ' + kb.toFixed(1) + ' KB，资源拆分可能未生效');
+    });
+
+    await test('面板 CSP 不含 script-src \'unsafe-inline\'', async () => {
+        const r = await fetch(BASE);
+        const csp = r.headers.get('content-security-policy') || '';
+        assert(csp, '缺少 Content-Security-Policy 头');
+        const scriptSrc = (csp.split(';').find(p => p.trim().startsWith('script-src')) || '');
+        assert(!scriptSrc.includes("'unsafe-inline'"), 'script-src 仍允许 unsafe-inline');
+    });
+
+    await test('HTML 响应带完整安全头', async () => {
+        const r = await fetch(BASE);
+        assert(r.headers.get('x-content-type-options') === 'nosniff', '缺 X-Content-Type-Options');
+        assert(r.headers.get('x-frame-options') === 'DENY', '缺 X-Frame-Options');
+        assert((r.headers.get('cache-control') || '').includes('no-store'), '主 HTML 应 no-store');
+    });
+
+    await test('GET /app.js → JS 且长缓存', async () => {
+        const r = await fetch(BASE + '/app.js');
+        assert(r.ok, 'HTTP ' + r.status);
+        assert((r.headers.get('content-type') || '').includes('javascript'), 'Content-Type 不是 JS');
+        assert((r.headers.get('cache-control') || '').includes('immutable'), '静态资源应长缓存 immutable');
+        const js = await r.text();
+        assert(js.includes('window.TEMPLATES'), '模板数据未注入');
+        assert(js.includes('registerActions'), '事件委托注册器缺失');
+    });
+
+    await test('GET /app.css → CSS 且长缓存', async () => {
+        const r = await fetch(BASE + '/app.css');
+        assert(r.ok, 'HTTP ' + r.status);
+        assert((r.headers.get('content-type') || '').includes('css'), 'Content-Type 不是 CSS');
+        assert((r.headers.get('cache-control') || '').includes('immutable'), '静态资源应长缓存');
     });
 
     await test('GET /manifest.json → 返回 PWA manifest', async () => {
         const r = await fetch(BASE + '/manifest.json');
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        assert(r.ok, 'HTTP ' + r.status);
         const d = await r.json();
-        if (!d.name || !d.short_name) throw new Error('manifest 字段缺失');
+        assert(d.name && d.short_name, 'manifest 字段缺失');
     });
 
-    await test('POST /api/login (错误密码) → 401', async () => {
+    await test('POST /api/login (错误密码) → 401 JSON', async () => {
         const r = await fetch(BASE + '/api/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ code: 'wrong_password_12345' })
         });
-        if (r.status !== 401) throw new Error(`期望 401，实际 ${r.status}`);
+        assert(r.status === 401, '期望 401，实际 ' + r.status);
         const d = await r.json();
-        if (d.success !== false) throw new Error('success 应为 false');
+        assert(d.success === false, 'success 应为 false');
     });
 
-    await test('POST /api/login (空body) → 400', async () => {
+    await test('POST /api/login (非法 JSON) → 400', async () => {
         const r = await fetch(BASE + '/api/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: 'not json'
         });
-        if (r.status !== 400) throw new Error(`期望 400，实际 ${r.status}`);
+        assert(r.status === 400, '期望 400，实际 ' + r.status);
+    });
+
+    await test('POST /api/logout 无会话时幂等成功', async () => {
+        const r = await fetch(BASE + '/api/logout', { method: 'POST' });
+        assert(r.ok, 'HTTP ' + r.status);
+        assert((await r.json()).success === true, '应返回 success');
     });
 
     // ===== 2. 认证拦截 =====
     console.log('── 认证拦截 ──');
 
-    await test('GET /api/accounts (无Cookie) → 被拦截', async () => {
+    await test('GET /api/accounts (无 Cookie) → 401 JSON（而非 HTML）', async () => {
         const r = await fetch(BASE + '/api/accounts');
-        if (r.ok) throw new Error('应被认证中间件拦截');
+        assert(!r.ok, '应被认证中间件拦截');
+        assert(r.status === 401, '期望 401，实际 ' + r.status);
+        assert((r.headers.get('content-type') || '').includes('json'), 'API 未认证应返回 JSON 而非登录页 HTML');
     });
 
-    await test('POST /api/deploy (无Cookie) → 被拦截', async () => {
+    await test('GET /api/init_data (无 Cookie) → 401', async () => {
+        const r = await fetch(BASE + '/api/init_data');
+        assert(r.status === 401, '期望 401，实际 ' + r.status);
+    });
+
+    await test('POST /api/deploy (无 Cookie) → 被拦截', async () => {
         const r = await fetch(BASE + '/api/deploy?type=cmliu', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ variables: [] })
         });
-        if (r.ok) throw new Error('应被认证中间件拦截');
+        assert(!r.ok, '应被拦截');
+    });
+
+    await test('未匹配的 /api/* → 404 JSON（不返回面板 HTML）', async () => {
+        const r = await fetch(BASE + '/api/definitely_not_a_route');
+        assert(r.status === 404 || r.status === 401, '期望 404/401，实际 ' + r.status);
+        assert((r.headers.get('content-type') || '').includes('json'), '/api/* 未匹配必须返回 JSON');
     });
 
     // ===== 3. CSRF 防护 =====
     console.log('── CSRF 防护 ──');
 
-    await test('POST 请求无 Origin → 不拦截 (同源)', async () => {
-        // 没有 Origin 头的 POST 在某些场景下合法（如服务器间调用）
-        // 这里只验证 API 可达
-        const r = await fetch(BASE + '/api/accounts', { method: 'POST' });
-        // 应该被认证拦截而不是 CSRF 拦截（401/HTML 而不是 403）
-        if (r.status === 403) throw new Error('不应被 CSRF 拦截（无Origin）');
+    await test('跨站 Sec-Fetch-Site 的写请求 → 403', async () => {
+        const r = await fetch(BASE + '/api/accounts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Sec-Fetch-Site': 'cross-site' },
+            body: '[]'
+        });
+        assert(r.status === 403, '期望 403，实际 ' + r.status);
+    });
+
+    await test('跨站 Origin 的写请求 → 403', async () => {
+        const r = await fetch(BASE + '/api/accounts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Origin: 'https://evil.example.com' },
+            body: '[]'
+        });
+        assert(r.status === 403, '期望 403，实际 ' + r.status);
+    });
+
+    await test('无 CSRF token 的写请求 → 403', async () => {
+        const r = await fetch(BASE + '/api/accounts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: '[]'
+        });
+        assert(r.status === 403, '期望 403（CSRF token 缺失），实际 ' + r.status);
     });
 
     // ===== 4. 速率限制 =====
@@ -105,12 +187,12 @@ async function test(name, fn) {
             });
             if (r.status === 429) { rateLimited = true; break; }
         }
-        if (!rateLimited) throw new Error('6 次错误登录后未被限流');
+        assert(rateLimited, '6 次错误登录后未被限流（注意 KV 最终一致性可能有传播延迟）');
     });
 
     // ===== 结果 =====
-    console.log(`\n${'='.repeat(40)}`);
-    console.log(`  ✅ ${passed} 通过  ❌ ${failed} 失败`);
-    console.log(`${'='.repeat(40)}\n`);
+    console.log('\n' + '='.repeat(40));
+    console.log('  ✅ ' + passed + ' 通过  ❌ ' + failed + ' 失败');
+    console.log('='.repeat(40) + '\n');
     process.exit(failed > 0 ? 1 : 0);
 })();

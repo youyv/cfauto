@@ -14,6 +14,8 @@ export const TEMPLATES: Record<string, {
     yxipKey: string;
     yxipContentType: string;
     yxipBuildContent: (raw: string) => string;
+    /** 是否参与 cron 自动版本更新。与 uuidField 无关 —— 无 UUID 的模板同样需要跟随上游更新 */
+    autoUpdate: boolean;
 }> = {
     // ===== CMliu (EdgeTunnel) =====
     // 上游: cmliu/edgetunnel  main 分支  _worker.js
@@ -31,6 +33,7 @@ export const TEMPLATES: Record<string, {
         yxipKey: 'ADD.txt',                           // KV 中存储优选节点的键
         yxipContentType: 'text/plain',                // 写入 KV 时的 Content-Type
         yxipBuildContent: (raw) => raw,               // 直接透传原始内容
+        autoUpdate: true,
     },
     // ===== Joey (cfnew) =====
     // 上游: byJoey/cfnew  main 分支  少年你相信光吗
@@ -55,6 +58,7 @@ export const TEMPLATES: Record<string, {
             "yx": raw, "dkby": "yes", "ech": "yes",
             "scu": "https://SUBAPI.cmliussss.net"
         }),
+        autoUpdate: true,
     },
     // ===== ECH (WebSocket Proxy) =====
     // 上游: hc990275/ech-wk  main 分支  _worker.js
@@ -72,8 +76,20 @@ export const TEMPLATES: Record<string, {
         yxipKey: '',
         yxipContentType: 'text/plain',
         yxipBuildContent: (raw: string) => raw,
+        // ech 无 UUID，无法参与熔断轮换，但版本更新必须跟随上游
+        autoUpdate: true,
     }
 };
+
+/** 参与 cron 自动版本更新的模板类型 */
+export function autoUpdateTypes(): string[] {
+    return Object.entries(TEMPLATES).filter(([, t]) => t.autoUpdate).map(([k]) => k);
+}
+
+/** 可参与熔断 UUID 轮换的模板类型（必须有 uuidField 才能换 UUID） */
+export function fuseRotatableTypes(): string[] {
+    return Object.entries(TEMPLATES).filter(([, t]) => t.uuidField).map(([k]) => k);
+}
 
 /** 绑定类型常量 — 避免魔法字符串散落各处 */
 export const BINDING = {
@@ -96,11 +112,27 @@ export const ECH_PROXIES = [
 export const KV_KEYS = {
     ACCOUNTS: 'ACCOUNTS_UNIFIED_STORAGE',              // 账号列表
     GLOBAL_CONFIG: 'AUTO_UPDATE_CFG_GLOBAL',            // 自动更新全局配置
-    vars: (type: string) => `VARS_${type}`,             // 各模板变量（如 VARS_cmliu）
+    vars: (type: string) => `VARS_${type}`,             // 各模板全局变量（如 VARS_cmliu）
+    /** 账号级变量覆盖（如 VARS_cmliu_ACC_<accountId>）— 熔断轮换 UUID 时只影响单个账号 */
+    accountVars: (type: string, accountId: string) => `VARS_${type}_ACC_${accountId}`,
     deployConfig: (type: string) => `DEPLOY_CONFIG_${type}`, // 部署配置（锁定版本等）
     favorites: (type: string) => `FAVORITES_${type}`,   // 版本收藏
     DEPLOY_JOURNAL: 'DEPLOY_JOURNAL',                // 部署操作日志
 };
+
+/** 账号级变量键的正则 — 供 restore 白名单精确校验，防止前缀注入 */
+export const ACCOUNT_VARS_KEY_RE = /^VARS_([A-Za-z0-9_-]+)_ACC_([A-Za-z0-9]{1,64})$/;
+
+/** 判断某个 KV 键是否为合法的账号级变量键（模板类型必须已知） */
+export function isAccountVarsKey(key: string): boolean {
+    const m = ACCOUNT_VARS_KEY_RE.exec(key);
+    return !!m && !!TEMPLATES[m[1]];
+}
+
+/** 模板类型 → AutoUpdateConfig 开关字段名（cmliu → autoCmliu），无需逐个硬编码 */
+export function autoFlagKey(type: string): string {
+    return 'auto' + type.charAt(0).toUpperCase() + type.slice(1);
+}
 
 /** PWA Manifest */
 export const MANIFEST = {

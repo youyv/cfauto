@@ -1,6 +1,6 @@
 {
   "name": "worker-pro-refactor",
-  "version": "11.9.0",
+  "version": "12.0.0",
   "description": "Worker 智能中控 — Cloudflare 多账号 Worker 部署管理平台",
   "scripts": {
     "build": "node build.js",
@@ -11,13 +11,15 @@
     "test:watch": "vitest",
     "test:verify": "node verify.js",
     "typecheck": "tsc --noEmit",
-    "test:smoke": "node test/smoke.js"
+    "test:smoke": "node test/smoke.js",
+    "check": "node build.js && tsc --noEmit && node verify.js && vitest run"
   },
   "devDependencies": {
     "esbuild": "^0.24.2",
     "typescript": "^6.0.3",
     "vitest": "^4.1.9",
     "wrangler": "^4.99.0",
-    "@cloudflare/workers-types": "^5.20260731.1"
+    "@cloudflare/workers-types": "^5.20260731.1",
+    "sweetalert2": "11.14.5"
   }
 }

@@ -75,7 +75,33 @@ function isMaskedKey(key: string): boolean {
 
 /** 从 AccountEntry 动态获取对应模板的 Worker 列表 — 模板驱动，无需硬编码 switch */
 export function getWorkerNames(a: AccountEntry, type: string): string[] {
-    return (a as unknown as Record<string, unknown>)['workers_' + type] as string[] || [];
+    return a[`workers_${type}`] || [];
+}
+
+/** 覆盖某模板的 Worker 列表（就地修改，供调用方随后整体 writeAccounts） */
+export function setWorkerNames(a: AccountEntry, type: string, names: string[]): void {
+    a[`workers_${type}`] = names;
+}
+
+/** 追加一个 Worker 名，已存在则不动。返回是否发生了修改 */
+export function addWorkerName(a: AccountEntry, type: string, name: string): boolean {
+    const list = getWorkerNames(a, type);
+    if (list.includes(name)) return false;
+    setWorkerNames(a, type, [...list, name]);
+    return true;
+}
+
+/** 移除一个 Worker 名。返回是否发生了修改 */
+export function removeWorkerName(a: AccountEntry, type: string, name: string): boolean {
+    const list = getWorkerNames(a, type);
+    if (!list.includes(name)) return false;
+    setWorkerNames(a, type, list.filter(n => n !== name));
+    return true;
+}
+
+/** 某模板在任一账号下是否还有已部署的 Worker */
+export function hasAnyWorker(accounts: AccountEntry[], type: string): boolean {
+    return accounts.some(a => getWorkerNames(a, type).length > 0);
 }
 
 /** 根据 accountId 查找单个账号（自动解密） */

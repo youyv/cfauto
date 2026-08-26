@@ -15,22 +15,29 @@ import { fetchGithubVersion } from '../lib/auto-update';
 import { logger } from '../lib/logger';
 import { fetchInternalStats } from '../lib/stats';
 
+/** history 模式的 per_page 上限（GitHub API 最大 100） */
+const MAX_HISTORY_LIMIT = 100;
+
 export async function handleGetCode(env: AppEnv, type: TemplateType) {
+    const templateErr = requireTemplateType(type); if (templateErr) return templateErr;
     try {
-        const templateErr = requireTemplateType(type); if (templateErr) return templateErr;
         const { scriptUrl } = getGithubUrls(type);
         const res = await fetchWithTimeout(scriptUrl);
-        if (!res.ok) throw new Error("Fetch failed: " + res.status);
+        if (!res.ok) throw new Error("上游返回 HTTP " + res.status);
         const code = await res.text();
         return json({ success: true, code });
-    } catch (e: any) { logger.error('handleGetCode failed', e instanceof Error ? e : new Error(String(e)), { module: 'check' }); return jsonError('Code fetch failed'); }
+    } catch (e: any) {
+        logger.error('handleGetCode failed', e instanceof Error ? e : new Error(String(e)), { module: 'check' });
+        return jsonError('源码拉取失败: ' + (e?.message || 'unknown'), 502, 'GITHUB_API_ERROR');
+    }
 }
 
 export async function handleCheckUpdate(env: AppEnv, type: TemplateType, mode?: string, limit = 10) {
+    const templateErr = requireTemplateType(type); if (templateErr) return templateErr;
     try {
-        const templateErr = requireTemplateType(type); if (templateErr) return templateErr;
         if (mode === 'history') {
-            const ghData = await fetchGithubCommits(type, env, { perPage: limit, cacheBust: true });
+            const perPage = Math.min(Math.max(1, Number.isFinite(limit) ? limit : 10), MAX_HISTORY_LIMIT);
+            const ghData = await fetchGithubCommits(type, env, { perPage, cacheBust: true });
             return json({ success: true, history: ghData });
         }
 
@@ -45,16 +52,20 @@ export async function handleCheckUpdate(env: AppEnv, type: TemplateType, mode?: 
             success: true,
             local: localCommitInfo,
             remote: { sha: ver.remoteSha, date: ver.remoteDate, message: ver.remoteMsg },
-            mode: ver.mode
+            mode: ver.mode,
+            // 上一轮部分失败的目标：前端据此提示「N 个 Worker 仍落后」，而非误显示「已是最新」
+            pending: ver.pendingTargets || [],
+            lastAttempt: ver.lastAttempt || null
         });
     } catch (e: any) {
-        logger.error('handleCheckUpdate failed', e instanceof Error ? e : new Error(String(e)), { module: 'check' }); return jsonError('Version check failed', 500);
+        logger.error('handleCheckUpdate failed', e instanceof Error ? e : new Error(String(e)), { module: 'check' });
+        return jsonError('版本检查失败: ' + (e?.message || 'unknown'), 502, 'GITHUB_API_ERROR');
     }
 }
 
 export async function handleDiff(env: AppEnv, type: TemplateType) {
+    const templateErr = requireTemplateType(type); if (templateErr) return templateErr;
     try {
-        const templateErr = requireTemplateType(type); if (templateErr) return templateErr;
         const ver = await fetchGithubVersion(env, type);
         const localSha = ver.localSha;
         const remoteSha = ver.remoteSha;
@@ -65,7 +76,12 @@ export async function handleDiff(env: AppEnv, type: TemplateType) {
                 commits: [],
                 localSha: localSha?.substring(0, 7) || 'none',
                 remoteSha: remoteSha?.substring(0, 7),
-                message: localSha ? '已是最新版本' : '暂无部署记录'
+                pending: ver.pendingTargets || [],
+                message: localSha
+                    ? ((ver.pendingTargets || []).length > 0
+                        ? '版本号已是最新，但有 ' + ver.pendingTargets!.length + ' 个目标上一轮部署失败，仍在重试'
+                        : '已是最新版本')
+                    : '暂无部署记录'
             });
         }
 
@@ -88,9 +104,13 @@ export async function handleDiff(env: AppEnv, type: TemplateType) {
                 date: cm.commit?.author?.date
             })),
             localSha: localSha?.substring(0, 7),
-            remoteSha: remoteSha?.substring(0, 7)
+            remoteSha: remoteSha?.substring(0, 7),
+            pending: ver.pendingTargets || []
         });
-    } catch (e: any) { logger.error('handleDiff failed', e instanceof Error ? e : new Error(String(e)), { module: 'check' }); return jsonError('Diff failed'); }
+    } catch (e: any) {
+        logger.error('handleDiff failed', e instanceof Error ? e : new Error(String(e)), { module: 'check' });
+        return jsonError('差异对比失败: ' + (e?.message || 'unknown'), 502, 'GITHUB_API_ERROR');
+    }
 }
 
 export async function handleStats(env: AppEnv) {
@@ -98,5 +118,5 @@ export async function handleStats(env: AppEnv) {
         const accounts = await readAccounts(env);
         const results = await fetchInternalStats(accounts);
         return json(results);
-    } catch (e: any) { logger.error('handleStats failed', e instanceof Error ? e : new Error(String(e)), { module: 'check' }); return jsonError('Stats fetch failed'); }
+    } catch (e: any) { logger.error('handleStats failed', e instanceof Error ? e : new Error(String(e)), { module: 'check' }); return jsonError('用量查询失败: ' + (e?.message || 'unknown')); }
 }

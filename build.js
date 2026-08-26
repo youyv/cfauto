@@ -1,90 +1,155 @@
 /**
  * 构建脚本：将 src/ 模块打包 + frontend/ 文件内联 → dist/worker.js
  * 用法: node build.js
+ *
+ * 可复现性约定：
+ *  - SweetAlert2 优先从 node_modules 读取（版本由 package.json 钉住）；
+ *    只有本地缺失时才回退到 pin 了版本号的 CDN，并打印 SHA-256 供比对。
+ *  - compatibility_date 写入固定常量而非 "今天"：动态日期会让每次构建都不同，
+ *    并可能把未验证的运行时行为变更带进部署。
  */
 const esbuild = require('esbuild');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
-// 读取前端文件
+/** 中控 Worker 自身的兼容性日期（升级前请先验证部署可用） */
+const WORKER_COMPATIBILITY_DATE = '2026-07-16';
+/** SweetAlert2 版本 —— 与 package.json 的 devDependency 保持一致 */
+const SWEETALERT2_VERSION = '11.14.5';
+
+const ROOT = __dirname;
 const pkg = require('./package.json');
-let htmlContent = fs.readFileSync(path.join(__dirname, 'frontend/index.html'), 'utf-8');
+
+// ===== 1. 读取前端资源 =====
+let htmlContent = fs.readFileSync(path.join(ROOT, 'frontend/index.html'), 'utf-8');
 htmlContent = htmlContent.replace(/\{\{VERSION\}\}/g, pkg.version);
-const cssContent = fs.readFileSync(path.join(__dirname, 'frontend/css/style.css'), 'utf-8');
+const cssContent = fs.readFileSync(path.join(ROOT, 'frontend/css/style.css'), 'utf-8');
+
+// 拼接顺序即依赖顺序：dom.js 提供 $/registerActions/apiFetch，state.js 提供 state，
+// starfield.js 位于最后并负责启动应用（bootApp）。verify.js 以此数组为文件清单的真相源。
 const jsFiles = [
     'dom.js', 'state.js', 'accounts.js', 'accounts-io.js', 'accounts-worker.js',
     'deploy.js', 'vars.js', 'history.js', 'yxip.js', 'workbench.js', 'diagnostics.js', 'starfield.js'
 ];
 const jsContent = jsFiles
-    .map(f => fs.readFileSync(path.join(__dirname, 'frontend/js', f), 'utf-8'))
+    .map(f => {
+        const p = path.join(ROOT, 'frontend/js', f);
+        if (!fs.existsSync(p)) {
+            console.error('❌ 缺少前端文件: frontend/js/' + f);
+            process.exit(1);
+        }
+        return '// ===== ' + f + ' =====\n' + fs.readFileSync(p, 'utf-8');
+    })
     .join('\n\n');
 
-// 下载 SweetAlert2 以便内联（消除 CDN 依赖，离线可用）
-let sweetalert2Content = '';
+const sha256 = (s) => crypto.createHash('sha256').update(s).digest('hex');
 
-(async () => {
-try {
-    console.log('📥 Downloading SweetAlert2...');
-    const https = require('https');
-    const download = new Promise((resolve, reject) => {
-        https.get('https://cdn.jsdelivr.net/npm/sweetalert2@11', (res) => {
-            if (res.statusCode !== 200) { reject(new Error('HTTP ' + res.statusCode)); return; }
-            let data = '';
-            res.on('data', chunk => data += chunk);
-            res.on('end', () => resolve(data));
-        }).on('error', reject);
-    });
-    sweetalert2Content = await Promise.race([
-        download,
-        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000))
-    ]);
-    console.log('✅ SweetAlert2 downloaded (' + (sweetalert2Content.length / 1024).toFixed(1) + ' KB)');
-} catch (e) {
-    console.warn('⚠️  SweetAlert2 download failed, falling back to CDN: ' + e.message);
-    sweetalert2Content = '';
+/** 读取 SweetAlert2：本地 node_modules 优先，缺失时回退 pin 版本的 CDN */
+async function loadSweetAlert2() {
+    const localCandidates = [
+        'node_modules/sweetalert2/dist/sweetalert2.all.min.js',
+        'node_modules/sweetalert2/dist/sweetalert2.all.js'
+    ];
+    for (const rel of localCandidates) {
+        const p = path.join(ROOT, rel);
+        if (!fs.existsSync(p)) continue;
+        const content = fs.readFileSync(p, 'utf-8');
+        let installed = 'unknown';
+        try { installed = require('./node_modules/sweetalert2/package.json').version; } catch (e) { /* 版本读不到不致命 */ }
+        console.log('✅ SweetAlert2 ' + installed + ' from ' + rel + ' (' + (content.length / 1024).toFixed(1) + ' KB, sha256=' + sha256(content).slice(0, 16) + ')');
+        if (installed !== 'unknown' && installed !== SWEETALERT2_VERSION) {
+            console.warn('⚠️  node_modules 中的 SweetAlert2 版本 (' + installed + ') 与 build.js 常量 (' + SWEETALERT2_VERSION + ') 不一致');
+        }
+        return content;
+    }
+
+    // 回退：pin 了版本号的 CDN（不再用 @11 这种浮动 tag，否则每次构建可能拿到不同代码）
+    const url = 'https://cdn.jsdelivr.net/npm/sweetalert2@' + SWEETALERT2_VERSION + '/dist/sweetalert2.all.min.js';
+    console.warn('⚠️  node_modules 中没有 sweetalert2，回退下载: ' + url);
+    console.warn('    建议执行 `npm install` 安装 pin 版本，使构建完全离线可复现。');
+    try {
+        const https = require('https');
+        const download = new Promise((resolve, reject) => {
+            const req = https.get(url, (res) => {
+                if (res.statusCode === 301 || res.statusCode === 302) {
+                    // jsdelivr 可能重定向
+                    https.get(res.headers.location, (r2) => {
+                        if (r2.statusCode !== 200) { reject(new Error('HTTP ' + r2.statusCode)); return; }
+                        let d = ''; r2.on('data', c => d += c); r2.on('end', () => resolve(d));
+                    }).on('error', reject);
+                    return;
+                }
+                if (res.statusCode !== 200) { reject(new Error('HTTP ' + res.statusCode)); return; }
+                let data = '';
+                res.on('data', chunk => data += chunk);
+                res.on('end', () => resolve(data));
+            });
+            req.on('error', reject);
+        });
+        const content = await Promise.race([
+            download,
+            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000))
+        ]);
+        console.log('✅ SweetAlert2 downloaded (' + (content.length / 1024).toFixed(1) + ' KB, sha256=' + sha256(content).slice(0, 16) + ')');
+        return content;
+    } catch (e) {
+        console.warn('⚠️  SweetAlert2 获取失败，运行时将回退到 CDN <script>: ' + e.message);
+        return '';
+    }
 }
 
-// 注入前端资源到全局变量（供 src/index.ts 使用）
-const frontendBundle = `
-// AUTO-GENERATED by build.js — DO NOT EDIT
-export const FRONTEND_VERSION = ${JSON.stringify('V' + pkg.version)};
-export const FRONTEND_HTML = ${JSON.stringify(htmlContent)};
-export const FRONTEND_CSS = ${JSON.stringify(cssContent)};
-export const FRONTEND_JS = ${JSON.stringify(jsContent)};
-export const FRONTEND_SWEETALERT2 = ${JSON.stringify(sweetalert2Content)};
-`;
+(async () => {
+    const sweetalert2Content = await loadSweetAlert2();
 
-fs.writeFileSync(path.join(__dirname, 'src/frontend-bundle.ts'), frontendBundle, 'utf-8');
+    // ===== 2. 生成 frontend-bundle.ts =====
+    const frontendBundle = [
+        '// AUTO-GENERATED by build.js — DO NOT EDIT',
+        'export const FRONTEND_VERSION = ' + JSON.stringify('V' + pkg.version) + ';',
+        'export const FRONTEND_HTML = ' + JSON.stringify(htmlContent) + ';',
+        'export const FRONTEND_CSS = ' + JSON.stringify(cssContent) + ';',
+        'export const FRONTEND_JS = ' + JSON.stringify(jsContent) + ';',
+        'export const FRONTEND_SWEETALERT2 = ' + JSON.stringify(sweetalert2Content) + ';',
+        ''
+    ].join('\n');
+    fs.writeFileSync(path.join(ROOT, 'src/frontend-bundle.ts'), frontendBundle, 'utf-8');
 
-// 删除旧输出文件 (避免占用锁定)
-try { fs.unlinkSync(path.join(__dirname, 'dist/worker.js')); } catch(e) { /* 文件不存在则跳过 */ }
+    // ===== 3. esbuild 打包 =====
+    fs.mkdirSync(path.join(ROOT, 'dist'), { recursive: true });
+    // 删除旧输出（wrangler 可能仍持有文件句柄导致写入被拒）
+    try { fs.unlinkSync(path.join(ROOT, 'dist/worker.js')); } catch (e) { /* 不存在则跳过 */ }
 
-// esbuild 打包 (absroot 保证不受 cwd 影响)
-const absroot = __dirname;
-esbuild.buildSync({
-    absWorkingDir: absroot,
-    entryPoints: [path.join(absroot, 'src/index.ts')],
-    bundle: true,
-    outfile: path.join(absroot, 'dist/worker.js'),
-    format: 'esm',
-    platform: 'neutral',
-    target: 'es2022',
-    minify: true,
-    banner: {
-        js: `// Worker 智能中控 — 前后端分离构建 (${new Date().toISOString()})`
-    }
+    esbuild.buildSync({
+        absWorkingDir: ROOT,
+        entryPoints: [path.join(ROOT, 'src/index.ts')],
+        bundle: true,
+        outfile: path.join(ROOT, 'dist/worker.js'),
+        format: 'esm',
+        platform: 'neutral',
+        target: 'es2022',
+        minify: true,
+        banner: { js: '// Worker 智能中控 v' + pkg.version + ' — 前后端分离构建' }
+    });
+
+    const outSize = fs.statSync(path.join(ROOT, 'dist/worker.js')).size;
+
+    // ===== 4. 同步 compatibility_date（固定常量，优先 wrangler.local.toml）=====
+    try {
+        const localToml = path.join(ROOT, 'wrangler.local.toml');
+        const tomlPath = fs.existsSync(localToml) ? localToml : path.join(ROOT, 'wrangler.toml');
+        let toml = fs.readFileSync(tomlPath, 'utf-8');
+        const next = toml.replace(/compatibility_date = "\d{4}-\d{2}-\d{2}"/, 'compatibility_date = "' + WORKER_COMPATIBILITY_DATE + '"');
+        if (next !== toml) {
+            fs.writeFileSync(tomlPath, next, 'utf-8');
+            console.log('📅 compatibility_date → ' + WORKER_COMPATIBILITY_DATE + ' (' + path.basename(tomlPath) + ')');
+        }
+    } catch (e) { /* toml 不存在则跳过 */ }
+
+    console.log('✅ Build complete → dist/worker.js (' + (outSize / 1024).toFixed(1) + ' KB)');
+    console.log('   前端资源: HTML ' + (htmlContent.length / 1024).toFixed(1) + ' KB · CSS ' +
+        (cssContent.length / 1024).toFixed(1) + ' KB · JS ' + (jsContent.length / 1024).toFixed(1) + ' KB' +
+        (sweetalert2Content ? ' · SweetAlert2 ' + (sweetalert2Content.length / 1024).toFixed(1) + ' KB' : ' · SweetAlert2 走 CDN'));
+})().catch(e => {
+    console.error('❌ Build failed: ' + (e && e.stack || e));
+    process.exit(1);
 });
-
-
-// 自动更新 compatibility_date 为今天（优先 wrangler.local.toml）
-try {
-    const localToml = path.join(__dirname, 'wrangler.local.toml');
-    const tomlPath = fs.existsSync(localToml) ? localToml : path.join(__dirname, 'wrangler.toml');
-    const today = new Date().toISOString().split('T')[0];
-    let toml = fs.readFileSync(tomlPath, 'utf-8');
-    toml = toml.replace(/compatibility_date = "\d{4}-\d{2}-\d{2}"/, 'compatibility_date = "' + today + '"');
-    fs.writeFileSync(tomlPath, toml, 'utf-8');
-    console.log('📅 compatibility_date → ' + today + ' (' + path.basename(tomlPath) + ')');
-} catch (e) { /* toml 不存在则跳过 */ }
-console.log('✅ Build complete → dist/worker.js');
-})();

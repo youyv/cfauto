@@ -1,5 +1,79 @@
 # 版本更新日志
 
+## V12.0.0 (2026-08-26)
+
+> 全量优化：确定性 bug 修复 · 测试改为真实模块 · 并发策略统一 · 前端资源拆分 + CSP 收紧
+
+### 🐛 确定性故障修复
+
+- **ECH 自动更新彻底失效（功能性 bug）**: `cron.ts` 用 `filter(t => t.uuidField)` 筛选参与版本检查的模板，ech 的 `uuidField` 为空字符串被静默排除。UI 有 `auto_ech_toggle`、配置有 `autoEch`、`AUTO_FLAG` 也映射了 ech —— 用户打开开关后什么都不会发生。现在模板显式声明 `autoUpdate` 字段，与「能否轮换 UUID」（`fuseRotatableTypes`）彻底解耦
+- **熔断波及全部账号（高危）**: `rotateUUIDAndDeploy` 不接收 accountIds，一个账号用量超阈值会把**所有**账号的 UUID 一起换掉，全部订阅链接同时失效。根因是 `VARS_<type>` 全局单份。现在新增账号级覆盖键 `VARS_<type>_ACC_<accountId>`：熔断只写超限账号的键并只对该账号重新部署，未超限账号继续用全局变量。函数强制要求非空 accountIds，空数组直接拒绝执行
+- **熔断与版本更新不再互斥**: 此前 `if (!actionTaken)` 让熔断触发的那一轮完全跳过版本检查。熔断只影响超限账号的 UUID，其余账号仍应跟随上游，两者现在并行
+- **部分失败的部署永不重试（高危）**: `finalizeDeploy` 只要有一个目标成功就把 `currentSha` 推进到新 SHA，于是 `localSha === remoteSha`，cron 判定「已是最新」，失败的 Worker 永远停在旧版本且无任何告警。现在**全部成功才推进 SHA**；失败目标记入 `DeployConfig.pendingTargets`（`<accountId>::<workerName>` 形式）+ `pendingSha`，cron 下一轮通过 `resolveUpdatePlan` 识别并**只重试这些目标**。`/api/check_update` 与 `/api/diff` 返回 `pending`，前端在版本区显示「N 个 Worker 部署失败，待重试」
+- **fix1101 先睡后试**: 退避 `sleep` 写在上传**之前**，首次即可成功也要白等 2s，三次全失败等 14s，且对每个 Worker 都如此。改为先试一次、失败才退避（删除后仅保留 1.5s 的 CF 异步删除等待）
+- **fix1101 绑定读不到仍删 Worker（高危）**: 读 bindings 失败只记一条 warning 就继续删除+重建，导致该 Worker 的 KV / secret 绑定永久丢失。现在读取失败直接中止该 Worker 的修复
+- **大量缺失的 `res.ok` 检查**: `handleGetZones` / `handleGetAllWorkers` / `handleFetchBindings` / `handleGetRegionsData` / `ensureKVNamespace` 等处直接 `await res.json()`，上游返回 HTML 错误页时抛 TypeError 被 catch 吞掉，前端只看到「handleGetAllWorkers failed」这种零信息提示。新增 `readApiJson` / `readApiResult` 统一解析：非 2xx 抛出带 CF `errors[0].message` 的 Error，2xx 非 JSON 明确报错
+- **优选节点源失败被当成成功**: `handleGetRegionsData` 不判 `res.ok`，`zip.cm.edu.kg` 返回 503 HTML 时把错误页当节点列表解析，然后返回 `success: true` + 空数据。现在补 `res.ok`、体积上限、以及「解析出 0 个区域」的兜底判定，全部返回 502 + 明确原因
+- **alias 重复导致操作错行**: alias 是前端反查下标、部署日志标识、yxip 选账号的事实主键，但只校验非空。新增 `validateAccountsPayload` 强制 alias / accountId 唯一 + accountId 必须是 32 位十六进制；前端 `renderTable` 改用 accountId 反查下标，`saveAccount` 增加本地唯一性预检
+- **`POST /api/settings` / `/api/auto_config` 零校验**: 任意 JSON 直接落 KV，写入对象而非数组后读取侧 `.map()` 会在部署时崩掉。新增 `normalizeVariables`（数组结构、变量名规则、重复检查、数量与长度上限、剥离未知字段）与 `normalizeAutoConfig`（interval 1-1440、fuseThreshold 0-100、webhook 必须 https、只保留已知模板开关键、保留 cron 的 lastCheck 不被清零）
+- **`compatibility_date` 用当天日期**: 上传被管理 Worker 时用 `new Date()`，把未经验证的运行时行为变更引入用户的代理 Worker，且日期超出目标账号 workerd 支持范围时上传会被拒。改为固定常量 `MANAGED_WORKER_COMPATIBILITY_DATE`
+- **`handleChangeSubdomain` 缺格式校验**: 非法子域名（大写、空格、超长、首尾连字符）会走到「删除旧子域名 → 设置新值失败」的不可恢复路径。现在前置正则校验 + 归一化小写，且恢复旧子域名失败时明确告知需手动处理
+- **cron lastCheck 覆盖其他字段**: 用内存里的旧快照写回，会把本轮部署期间写入的其他配置字段覆盖掉。改为重读 KV 后只合并 lastCheck
+- **账号级覆盖的生效语义**: cron 自动更新走 `accountOverrides: 'apply'`（账号级 UUID 叠加在全局变量之上，熔断刚轮换的值不会被冲掉）；用户在面板点部署走 `'clear'`（面板显示的就是全局变量，其意图是所有账号统一，因此清除覆盖）。若用量仍超限，下轮 cron 会重新熔断
+
+### 🏗️ 并发策略统一
+
+- **新增 `lib/concurrency.ts`**: `pooledMap` / `pooledMapSettled` 提供有界并发（默认 5）。此前项目里是两个极端：`coreDeployLogic` 全串行遍历账号（账号多必然超时），`handleBatchDeploy` 用 `Promise.allSettled` 全并发（容易撞 CF 的 1200 次/5 分钟限流与 1000 subrequest 上限），`verify_credentials` 手写了一份分批逻辑。三处 + `fetchInternalStats` 现在统一走 `pooledMap`
+- **`coreDeployLogic` 展平为目标列表**: 双层循环改为 `(账号, worker)` 展平后有界并发，同时支持 `targetKeys` 过滤（pending 重试路径）
+
+### 🔐 安全加固
+
+- **面板 CSP 去掉 `script-src 'unsafe-inline'`**: 前端 JS/CSS 拆成外部资源 `/app.js`、`/app.css`（带 `?v=<version>` + `immutable` 长缓存），`index.html` 的 47 个 `onclick` 与 6 个 `onchange` 全部改为 `data-act` / `data-act-change` + 事件委托（`registerActions` 注册表，参数走 `data-args` JSON）。主 HTML 从约 290KB 全内联降到几 KB
+- **登录页改用 CSP nonce**: 每个响应生成一次性 nonce，`script-src`/`style-src` 从 `'unsafe-inline'` 改为 `'nonce-...'`；同时补齐 `object-src 'none'`、`form-action`、`Permissions-Policy`
+- **API 未认证返回 401 JSON 而非登录页 HTML**: 前端 `apiFetch` 会 `r.json()`，收到 HTML 会报「不是合法 JSON」这种误导性错误，而不是「请重新登录」
+- **导出/备份带加密密钥指纹**: `secretFingerprint`（SHA-256 前 8 位 hex）写入导出文件，导入时先比对即可判断「注定解密失败」，而不是等所有 globalKey 被清空后才提示。`/api/diag` 也报告 `ENCRYPTION_SECRET` 是否启用及其指纹
+- **`/api/favorites` 只保留已知字段**: 此前把前端传来的整个 item 存进 KV
+- **`resolveCredentials` 增加密钥缺失检查**: 解密失败的账号不再带着空 key 去调 CF API
+- **`buildYxipList` 用 `crypto.getRandomValues` 洗牌**: 替换可预测的 `Math.random()`
+
+### 🧹 死代码与结构清理
+
+- **`withErrorBoundary` 复活**: 该函数已导出但从未被使用，异常靠 `index.ts` 顶层 catch 兜底，代价是丢失出错路由名。现在 `route()` 注册时统一包装，并对重复注册直接抛错
+- **`routes/loader.ts` 删除**: 文件名为「懒加载」实为静态导入（自己的注释也承认），合并进 `register.ts` 的 `registerBusinessRoutes`
+- **前端僵尸 `window` 导出清除**: `window.accounts = accounts` 之类是**初始化时的值快照**，后续 `accounts = d.accounts` 重新绑定局部变量不会更新 `window.accounts`——它永远是那个空数组。改为单一 `state` 对象 + `Object.defineProperties` 访问器，读写都落到同一份引用
+- **`dom.js` 的 `$cache` 删除**: 缓存 `getElementById` 收益可忽略，却要求每次 DOM 重建后手动 `$clear`，漏调就拿到脱离文档的僵尸节点（`renderTable` / `loadVars` 都会重建子树）
+- **`workers_<type>` 字符串拼接收口**: 6 个文件里散落的 `'workers_' + type` + `as unknown as Record<...>` 断言，改为 `AccountEntry` 的模板字面量索引签名 + `getWorkerNames` / `setWorkerNames` / `addWorkerName` / `removeWorkerName` / `hasAnyWorker` 访问器
+- **`stats.ts` 重复的 `Account` 接口删除**，统一用 `types.ts` 的 `AccountEntry`；`VariableBinding` 与 `VariableEntry` 合并
+- **`joey_var` magic string 提为 `YXIP_TARGET_JOEY_VAR` 常量**，yxip 的 KV 模式改为按模板的 `kvBindingName` / `yxipKey` 判定（不再硬编码 cmliu/joey）
+- **`mainHtml` 的恒真缓存判定简化**（`FRONTEND_VERSION` 是编译时常量）
+- **starfield 重复初始化修复**: `initStarfield` 被主题切换 / visibilitychange / 系统主题变化多次调用，每次都新增 resize 监听并额外启动一个 rAF 循环（越切越卡）。改为场景只建一次 + 运行中直接返回
+- **CSS 选择器转义修复**: `.hover\\:bg-indigo-100` 是内联到模板字面量时代的残留，作为独立 `.css` 文件供给浏览器时该规则整条失效，改为 `.hover\:bg-indigo-100`
+- **ECH 卡片补齐 UI**: 新增版本状态区 `ver_ech`、`badge_ech`、变量增删与同步按钮、历史/收藏入口——此前 ech 有后端支持但前端缺入口
+- **批量部署模板下拉补 ECH 选项**；KV 选项按模板 `kvBindingName` 自动禁用；UUID 输入对所有有 `uuidField` 的模板可见（此前 cmliu 的 UUID 输入被藏在 joey 分支里）
+
+### 🧪 测试与 CI（这是本次最大的质量改动）
+
+- **测试从「内联复刻」改为 import 真实模块**: 旧的 `kv-utils.test.ts` 与 `audit-regression.test.ts` 在测试文件内部重写了一份被测逻辑（注释理由是「避免 CF Workers 运行时依赖」），这类测试**永远不会因源码改动而失败**——70 个「全部通过」里含水量最大的部分。现在新增 `test/helpers.ts` 提供语义完整的内存 KV mock（含 `list` 前缀过滤与 `expirationTtl`）、CF 响应构造器、`stubFetch` 请求桩，所有测试直接 import `src/` 真实实现
+- **测试规模 70 → 323**，6 个文件：
+  - `kv-utils.test.ts`（40）：`mergeVariableBindings`、`getCompatibilityDate`、`kv-utils`、`getGithubUrls`、`applyTemplateTransform`、`withErrorBoundary`、路由表
+  - `audit-regression.test.ts`（75）：凭证保护全链路（真实 AES-GCM 加解密）、密钥轮换、脱敏、Worker 列表访问器、restore 白名单、`resolveLimit`、模板类型派生、三个校验函数
+  - `reliability.test.ts`（70）：`pooledMap` 并发上限与顺序、`readApiJson` 错误路径、`fetchWithTimeout` 超时、`fetchInternalStats` 各失败分支、`isFuseTriggered`、`mergePendingTargets`、`resolveUpdatePlan`、`rebuildBindings`、`parseRegionPools`
+  - `routes.test.ts`（47）：部署部分失败语义、熔断作用域（验证只对目标账号发请求）、cron 全路径（含「ech 确实被部署」这条直接覆盖本次 bug 的断言）、CRUD 路由校验
+  - `handlers.test.ts`（50）：批量部署、zones 全部 handler、yxip、fix1101、check
+  - `auth-security.test.ts`（41）：会话/CSRF/限流/登录页 CSP nonce
+- **新增 `.github/workflows/ci.yml`**: build → typecheck → verify → test，并检查产物非空、`wrangler.toml` 未被 build 意外改动。此前四个脚本全靠手动跑
+- **`verify.js` 重写**: 文件清单不再硬编码 43 条（CHANGELOG 记录过漏同步）。后端递归扫 `src/`，前端从 `build.js` 的 `jsFiles` 解析（单一真相源），并反向检查「存在但未被 build 引用」的孤儿文件。新增：真 JS 解析（`vm.Script`，替代数反引号）、`data-act` 与 `registerActions` 双向对齐、`data-args` JSON 合法性、元素 ID 可解析性、前端调用的端点是否都已注册、静态资源与 CSP 一致性、反模式扫描（裸 `res.json()` / 裸 `fetch` / 值快照式 window 导出）
+- **`test/smoke.js` 扩充**: 新增资源拆分验证（`/app.js`、`/app.css` 的 Content-Type 与 immutable 缓存）、主 HTML 体积上限、CSP 无 `unsafe-inline`、API 未认证返回 JSON、`/api/*` 404 为 JSON、CSRF 三种拒绝路径
+- **新增 `check.bat` 与 `npm run check`**: 本地一键跑完与 CI 相同的检查链
+
+### 🔧 工程配置
+
+- **构建可复现**: `build.js` 此前从 `https://cdn.jsdelivr.net/npm/sweetalert2@11`（浮动 tag）下载并内联进 worker，无版本 pin、无 hash 校验，每次构建可能拿到不同代码。现在优先从 `node_modules` 读取（`sweetalert2` 加入 pinned devDependency `11.14.5`），缺失时才回退到 **pin 了版本号**的 CDN，并打印 SHA-256 供比对
+- **`build.js` 失败即退出**: 缺少前端文件时明确报错而非产出残缺 bundle；输出各资源体积便于观察
+- **前端 JS 拼接加文件分隔注释**，便于在浏览器里定位来源
+
+---
+
 ## V11.9.0 (2026-08-23)
 
 ### 🐛 真故障修复
@@ -74,7 +148,6 @@
 - **TypeScript 全量清零**: 安装 @cloudflare/workers-types、getJSON 12 处显式泛型、res.json() 类型断言等，tsc --noEmit 从 150 个错误降到 0
 - **新增 21 个安全单元测试**: test/auth-security.test.ts 覆盖会话发放/TTL/恒定时间/限流/CSRF 全链路（测试总数 50，全部通过）
 - **verify.js 清单同步**: 补上 accounts-io.js / accounts-worker.js 拆分文件
-
 
 ## V11.7.1 (2026-07-16)
 
@@ -516,3 +589,4 @@
 
 * 熔断/自动更新动态化，compatibility_date 动态化。
 * 前后端数据消除重复，由后端动态注入。
+

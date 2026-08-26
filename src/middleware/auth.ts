@@ -1,4 +1,4 @@
-import { loginHtml } from '../config/login-html';
+import { loginResponse } from '../config/login-html';
 import { jsonError } from '../lib/cloudflare-api';
 import { logger } from '../lib/logger';
 import type { AppEnv } from "../config/env";
@@ -62,14 +62,22 @@ export function requireAccessCode(env: AppEnv): Response | null {
 /** 检查 Cookie 会话是否有效 — 查 KV SESSION_<token>（TTL 自动过期，登出可撤销） */
 export async function requireCookie(request: Request, env: AppEnv): Promise<Response | null> {
     const cookieValue = extractAuthCookie(request);
-    if (!cookieValue) return new Response(loginHtml(), {
-        headers: { 'Content-Type': 'text/html;charset=UTF-8', 'Cache-Control': 'no-store, must-revalidate', 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'", 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'no-referrer' }
-    });
+    // 无 cookie 或会话已失效 → 返回登录页。
+    // API 请求返回 401 JSON 而不是 HTML：前端 apiFetch 会 r.json()，收到 HTML 会报
+    // 「不是合法 JSON」这种误导性错误，而不是「请重新登录」。
+    if (!cookieValue) return unauthenticated(request);
     const session = await env.CONFIG_KV.get(sessionKey(cookieValue));
-    if (!session) return new Response(loginHtml(), {
-        headers: { 'Content-Type': 'text/html;charset=UTF-8', 'Cache-Control': 'no-store, must-revalidate', 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'", 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'no-referrer' }
-    });
+    if (!session) return unauthenticated(request);
     return null;
+}
+
+/** 未认证响应：API 路径给 JSON 401，页面路径给登录页 */
+function unauthenticated(request: Request): Response {
+    const url = new URL(request.url);
+    if (url.pathname.startsWith('/api/')) {
+        return jsonError('会话已过期，请重新登录', 401, 'AUTH_FAILED');
+    }
+    return loginResponse();
 }
 
 /**

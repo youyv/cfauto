@@ -3,19 +3,16 @@
  */
 
 import { cf, getAuthHeaders, fetchWithTimeout } from './cloudflare-api';
+import { pooledMap } from './concurrency';
+import type { AccountEntry } from './types';
 
-interface Account {
-    alias: string;
-    accountId: string;
-    email: string;
-    globalKey: string;
-    dailyLimit?: number;
-}
+/** 免费计划的每日请求硬上限 */
+export const FREE_PLAN_DAILY_LIMIT = 100000;
 
 /** 根据当日实际用量推算每日配额上限：超过10万必然不是免费计划 */
 function guessDailyLimit(total: number): number {
-    if (total > 100000) return 10000000; // paid plan: 每天可能达千万级
-    return 100000;                       // free plan: 硬限制 100K/天
+    if (total > FREE_PLAN_DAILY_LIMIT) return 10000000; // paid plan: 每天可能达千万级
+    return FREE_PLAN_DAILY_LIMIT;                       // free plan: 硬限制 100K/天
 }
 
 export interface StatResult {
@@ -25,12 +22,15 @@ export interface StatResult {
     error?: string;
 }
 
-/** 解析账号配额上限：显式设置且 > 0 时用它，否则回落默认 10 万（免费计划） */
-function resolveLimit(acc: Account): number {
-    return (acc.dailyLimit !== undefined && acc.dailyLimit > 0) ? acc.dailyLimit : 100000;
+/**
+ * 解析账号配额上限：显式设置且 > 0 时用它，否则回落默认 10 万（免费计划）。
+ * 区分「未设置」与「显式设为 0」——后者不应被 falsy 判断吞掉。
+ */
+export function resolveLimit(acc: Pick<AccountEntry, 'dailyLimit'>): number {
+    return (acc.dailyLimit !== undefined && acc.dailyLimit > 0) ? acc.dailyLimit : FREE_PLAN_DAILY_LIMIT;
 }
 
-export async function fetchInternalStats(accounts: Account[]): Promise<StatResult[]> {
+export async function fetchInternalStats(accounts: AccountEntry[]): Promise<StatResult[]> {
     const now = new Date();
     const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0));
     const query = `query getBillingMetrics($AccountID: String!, $filter: AccountWorkersInvocationsAdaptiveFilter_InputObject) {
@@ -38,8 +38,12 @@ export async function fetchInternalStats(accounts: Account[]): Promise<StatResul
              workersInvocationsAdaptive(limit: 1000, filter: $filter) { sum { requests } }
              pagesFunctionsInvocationsAdaptiveGroups(limit: 1000, filter: $filter) { sum { requests } }
          }}}`;
-    return await Promise.all(accounts.map(async (acc) => {
+    // 有界并发：账号多时全量并发容易撞 CF 限流（1200 次/5 分钟）
+    return pooledMap(accounts, async (acc) => {
         try {
+            if (!acc.globalKey) {
+                return { alias: acc.alias, total: 0, max: resolveLimit(acc), error: '密钥缺失或解密失败，请重新填写 API Key' };
+            }
             const res = await fetchWithTimeout(cf.graphql(), {
                 method: "POST", headers: getAuthHeaders(acc.email, acc.globalKey),
                 body: JSON.stringify({ query: query, variables: { AccountID: acc.accountId, filter: { datetime_geq: todayStart.toISOString(), datetime_leq: now.toISOString() } } })
@@ -48,15 +52,23 @@ export async function fetchInternalStats(accounts: Account[]): Promise<StatResul
             if (!res.ok) {
                 return { alias: acc.alias, total: 0, max: resolveLimit(acc), error: "HTTP " + res.status + " (检查 API Key 权限)" };
             }
-            const data: any = await res.json();
+            let data: any;
+            try { data = await res.json(); }
+            catch { return { alias: acc.alias, total: 0, max: resolveLimit(acc), error: 'GraphQL 响应不是合法 JSON' }; }
             // GraphQL 返回的错误信息（API Key 无权限等）
             if (data.errors) return { alias: acc.alias, total: 0, max: resolveLimit(acc), error: data.errors[0]?.message || "GraphQL error" };
             const accountData = data.data?.viewer?.accounts?.[0];
             if (!accountData) return { alias: acc.alias, total: 0, max: resolveLimit(acc), error: "无数据(检查 Account ID 是否正确)" };
-            const workerReqs = accountData.workersInvocationsAdaptive?.reduce((a: number, b: any) => a + (b.sum.requests || 0), 0) || 0;
-            const pagesReqs = accountData.pagesFunctionsInvocationsAdaptiveGroups?.reduce((a: number, b: any) => a + (b.sum.requests || 0), 0) || 0;
+            const workerReqs = sumRequests(accountData.workersInvocationsAdaptive);
+            const pagesReqs = sumRequests(accountData.pagesFunctionsInvocationsAdaptiveGroups);
             const total = workerReqs + pagesReqs;
             return { alias: acc.alias, total, max: (acc.dailyLimit !== undefined && acc.dailyLimit > 0) ? acc.dailyLimit : guessDailyLimit(total) };
         } catch (e: any) { return { alias: acc.alias, total: 0, max: resolveLimit(acc), error: e.message }; }
-    }));
+    });
+}
+
+/** 累加 GraphQL 分组的 requests，容忍缺失的 sum 节点 */
+function sumRequests(groups: unknown): number {
+    if (!Array.isArray(groups)) return 0;
+    return groups.reduce((acc: number, g: any) => acc + (g?.sum?.requests || 0), 0);
 }

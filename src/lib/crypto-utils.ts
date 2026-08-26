@@ -67,3 +67,15 @@ export async function decryptKey(env: AppEnv, encrypted: string): Promise<string
         return encrypted;
     }
 }
+
+/**
+ * 加密密钥指纹 — SHA-256(secret) 的前 8 位 hex。
+ *
+ * 用于在导出/备份文件里标记「这批密文属于哪个密钥」，导入时先比对指纹即可判断
+ * 是否注定解密失败，而不是等到所有 globalKey 被清空后才发现。
+ * 只暴露摘要前缀，无法反推 secret 本身。
+ */
+export async function secretFingerprint(env: AppEnv): Promise<string> {
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(getSecret(env)));
+    return Array.from(new Uint8Array(digest)).slice(0, 4).map(b => b.toString(16).padStart(2, '0')).join('');
+}

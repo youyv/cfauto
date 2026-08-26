@@ -42,6 +42,39 @@ export function getAuthHeaders(email: string, key: string, upload = false) {
     return upload ? base : { ...base, "Content-Type": "application/json" };
 }
 
+/**
+ * 读取上游 API 响应体 — 非 2xx 或非 JSON 一律抛出带上游错误消息的 Error。
+ *
+ * 直接 `await res.json()` 而不判 res.ok 是本项目历史上最常见的静默失败源：
+ * CF/GitHub 出错时返回的 HTML 错误页会让 json() 抛 TypeError，被外层 catch 吞掉后
+ * 只剩一句无信息的 "xxx failed"。此处统一解析 CF 的 errors[0].message 作为诊断。
+ */
+export async function readApiJson<T = any>(res: Response, context: string): Promise<T> {
+    if (!res.ok) {
+        let detail = 'HTTP ' + res.status;
+        try {
+            const body: any = await res.json();
+            const upstream = body?.errors?.[0]?.message || body?.message;
+            if (upstream) detail = upstream + ' (HTTP ' + res.status + ')';
+        } catch (e) {
+            // 错误响应非 JSON（HTML 错误页/网关页），保留 HTTP 状态码作为唯一线索
+            logger.warn('readApiJson: error response is not JSON', { context, status: res.status });
+        }
+        throw new Error(context + ': ' + detail);
+    }
+    try {
+        return await res.json() as T;
+    } catch (e) {
+        throw new Error(context + ': 上游返回的不是合法 JSON');
+    }
+}
+
+/** 读取 CF API 的 `result` 字段 — 包装 readApiJson，省去每处的 `as any).result` */
+export async function readApiResult<T = any>(res: Response, context: string): Promise<T> {
+    const body = await readApiJson<{ result?: T }>(res, context);
+    return body.result as T;
+}
+
 /** 标准化错误码 — 便于前端区分错误类型 */
 export type ErrorCode = 'AUTH_FAILED' | 'KV_NOT_BOUND' | 'GITHUB_API_ERROR' | 'CF_API_ERROR' | 'VALIDATION_ERROR' | 'RATE_LIMITED';
 

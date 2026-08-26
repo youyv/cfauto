@@ -1,10 +1,21 @@
 import type { AccountCredentials } from "../config/env";
 import { cf, getAuthHeaders, fetchWithTimeout } from "./cloudflare-api";
+import { BINDING } from "../config/templates";
 import { logger } from "./logger";
+import type { VariableEntry } from "./types";
 
-/** 今天的兼容性日期 (YYYY-MM-DD) */
+/**
+ * 上传被管理 Worker 时使用的兼容性日期。
+ *
+ * 必须是固定且验证过的日期，不能用 `new Date()`：动态的「今天」会把未经测试的运行时行为
+ * 变更引入用户的代理 Worker，且当日期超出目标账号 workerd 支持范围时上传会被直接拒绝。
+ * 升级此常量前请先在一个账号上验证代理模板仍能正常工作。
+ */
+export const MANAGED_WORKER_COMPATIBILITY_DATE = '2026-07-16';
+
+/** 上传被管理 Worker 使用的兼容性日期（固定值，见常量注释） */
 export function getCompatibilityDate(): string {
-    return new Date().toISOString().split("T")[0];
+    return MANAGED_WORKER_COMPATIBILITY_DATE;
 }
 
 /** 上传 Worker 脚本到 Cloudflare */
@@ -41,27 +52,32 @@ export async function parseApiError(res: Response): Promise<string> {
 }
 
 /** 将变量列表合并到现有 bindings — 覆盖同名、新增、排除已删除项。
- *  消除 coreDeployLogic 和 handleBatchDeploy 的重复逻辑。 */
+ *  消除 coreDeployLogic 和 handleBatchDeploy 的重复逻辑。
+ *
+ *  注意：空值（含纯空白）会被**跳过而非清空**，这样上游模板的默认值仍生效。
+ *  要真正移除某个变量，必须通过 deletedVariables 显式声明（前端对应「×」删除按钮）。 */
 export function mergeVariableBindings(
     currentBindings: Array<Record<string, unknown>>,
-    variables: Array<{ key: string; value: string; secret?: boolean }>,
+    variables: VariableEntry[],
     deletedVariables: string[] = []
 ): Array<Record<string, unknown>> {
     const deletedSet = new Set(deletedVariables);
     // 使用 Map 替代 findIndex 将 O(n*m) 降为 O(n+m)
     const bindingMap = new Map<string, Record<string, unknown>>();
-    for (const b of currentBindings) {
-        const name = b.name as string;
-        if (!deletedSet.has(name)) {
+    for (const b of currentBindings || []) {
+        const name = b?.name as string;
+        if (name && !deletedSet.has(name)) {
             bindingMap.set(name, b);
         }
     }
 
-    for (const v of variables) {
-        // 空值跳过（不写入绑定）：这样上游模板的默认值仍生效。
+    for (const v of variables || []) {
+        // 空 key 跳过（前端空行）；空值跳过（不写入绑定）：这样上游模板的默认值仍生效。
         // 若需要真正移除某个变量，请通过 deletedVariables 显式声明。
+        if (!v || !v.key) continue;
+        if (deletedSet.has(v.key)) continue;
         if (!v.value || v.value.trim() === "") continue;
-        const bindingType = v.secret ? "secret_text" : "plain_text";
+        const bindingType = v.secret ? BINDING.SECRET_TEXT : BINDING.PLAIN_TEXT;
         bindingMap.set(v.key, { name: v.key, type: bindingType, text: v.value });
     }
     return Array.from(bindingMap.values());

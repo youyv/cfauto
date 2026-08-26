@@ -92,7 +92,10 @@
       [data-theme="dark"] .bg-purple-100 { background: rgba(88,28,135,0.2) !important; }
       [data-theme="dark"] .text-purple-600 { color: #c4b5fd !important; }
       [data-theme="dark"] .text-indigo-600 { color: #a5b4fc !important; }
-      [data-theme="dark"] .hover\\:bg-indigo-100:hover { background: rgba(49,46,129,0.2) !important; }
+      /* Tailwind 的 hover:bg-indigo-100 类名含冒号，选择器里需转义为 \: （单反斜杠）。
+         此前写作 \\: —— 那是把 CSS 内联进模板字面量时代的残留，作为独立 .css 文件供给
+         浏览器时该规则整条失效。 */
+      [data-theme="dark"] .hover\:bg-indigo-100:hover { background: rgba(49,46,129,0.2) !important; }
 
       /* ── 文本颜色 ── */
       [data-theme="dark"] .text-slate-800, [data-theme="dark"] .text-gray-700,
@@ -167,7 +170,8 @@
       [data-theme="dark"] #batch_deploy_modal > div > div:first-child,
       [data-theme="dark"] #account_manage_modal > div,
       [data-theme="dark"] #history_modal > div > div,
-      [data-theme="dark"] #sync_select_modal > div {
+      [data-theme="dark"] #sync_select_modal > div,
+      [data-theme="dark"] #yxip_modal > div {
         background: var(--glass-modal) !important;
         backdrop-filter: blur(28px); -webkit-backdrop-filter: blur(28px);
         border: 1px solid var(--border-color) !important;

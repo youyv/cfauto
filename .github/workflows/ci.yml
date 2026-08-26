@@ -1,0 +1,56 @@
+name: CI
+
+# 每次 push 与 PR 都跑完整校验链：build → typecheck → verify → test。
+# 顺序有依赖：build 生成 src/frontend-bundle.ts，typecheck 需要它才能通过。
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts || npm install --ignore-scripts
+
+      - name: Build (生成 frontend-bundle.ts + dist/worker.js)
+        run: npm run build
+
+      - name: Typecheck (tsc --noEmit，0 容忍)
+        run: npm run typecheck
+
+      - name: Verify (源码结构 / 路由 / CSP / 反模式扫描)
+        run: npm run test:verify
+
+      - name: Unit & integration tests
+        run: npm test
+
+      - name: 检查构建产物存在且非空
+        run: |
+          test -s dist/worker.js
+          echo "dist/worker.js: $(wc -c < dist/worker.js) bytes"
+
+      - name: 确认生成物未被误提交
+        run: |
+          # frontend-bundle.ts 与 dist/ 都在 .gitignore 中；若出现在 diff 里说明 gitignore 失效
+          if ! git diff --quiet -- src/frontend-bundle.ts dist 2>/dev/null; then
+            echo "::warning::构建产物出现在 git diff 中，检查 .gitignore"
+          fi
+          # wrangler.toml 的 compatibility_date 由 build.js 同步为固定常量，
+          # 若这里出现改动说明常量与仓库中的值不一致，应显式提交
+          if ! git diff --quiet -- wrangler.toml; then
+            echo "::error::build.js 修改了 wrangler.toml，请提交 compatibility_date 变更"
+            git diff -- wrangler.toml
+            exit 1
+          fi
