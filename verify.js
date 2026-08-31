@@ -181,7 +181,7 @@ if (danglingIds.length > 0) {
 
 // ===== 5. 后端路由注册完整性 =====
 console.log('\n=== 5. API route coverage ===');
-const routesTS = ['src/routes/register.ts', 'src/routes/crud.ts']
+const routesTS = ['src/routes/register.ts', 'src/routes/crud.ts', 'src/routes/crud-backup.ts', 'src/routes/crud-diag.ts']
     .map(f => fs.readFileSync(path.join(ROOT, f), 'utf-8')).join('\n');
 const expectedRoutes = [
     'GET /api/accounts', 'POST /api/accounts',

@@ -8,6 +8,7 @@
 import { KV_KEYS, TEMPLATES } from '../config/templates';
 import { readAccounts, writeAccounts, findAccount, removeWorkerName, hasAnyWorker } from '../lib/account-store';
 import { cf, getAuthHeaders, jsonError, json, fetchWithTimeout, readApiJson, readApiResult } from '../lib/cloudflare-api';
+import { readWorkerBindings, deleteKvNamespaces } from '../lib/deploy-utils';
 import { putJSON } from "../lib/kv-utils";
 import { logger } from '../lib/logger';
 import type { AppEnv } from "../config/env";
@@ -72,12 +73,14 @@ export async function handleDeleteWorker(env: AppEnv, accountId: string, workerN
 
         let kvNamespaceIds: string[] = [];
         if (deleteKv) {
-            const bindRes = await fetchWithTimeout(cf.workerBindings(aid, workerName), { headers });
-            if (bindRes.ok) {
-                const binds = await readApiResult<Array<{ type: string; namespace_id?: string }>>(bindRes, '读取绑定') || [];
-                kvNamespaceIds = binds.filter((b) => b.type === 'kv_namespace' && b.namespace_id).map((b) => b.namespace_id!);
+            const { ok, bindings } = await readWorkerBindings(aid, workerName, headers);
+            if (ok) {
+                kvNamespaceIds = bindings
+                    .filter((b) => b.type === 'kv_namespace' && b.namespace_id)
+                    .map((b) => b.namespace_id!);
             } else {
-                logger.warn('deleteWorker: bindings 读取失败，跳过 KV 清理', { module: 'zones', status: bindRes.status, workerName });
+                // 读不到绑定就跳过 KV 清理，而不是盲目删除所有命名空间
+                logger.warn('deleteWorker: bindings 读取失败，跳过 KV 清理', { module: 'zones', workerName });
             }
         }
 
@@ -121,25 +124,9 @@ export async function handleDeleteWorker(env: AppEnv, accountId: string, workerN
             }
         }
 
-        const kvDeleteErrors: string[] = [];
-        if (deleteKv && kvNamespaceIds.length > 0) {
-            for (const nsId of kvNamespaceIds) {
-                let deleted = false;
-                for (let attempt = 0; attempt < 5; attempt++) {
-                    const delRes = await fetchWithTimeout(cf.kvNamespace(aid, nsId), {
-                        method: "DELETE", headers
-                    });
-                    if (delRes.ok) { deleted = true; break; }
-                    // 409 = 命名空间仍被引用（CF 解绑异步），退避后重试；其他错误立即放弃
-                    if (delRes.status !== 409) break;
-                    await new Promise(r => setTimeout(r, 2000));
-                }
-                if (!deleted) {
-                    kvDeleteErrors.push(nsId);
-                    logger.warn('KV namespace deletion failed', { module: 'zones', nsId });
-                }
-            }
-        }
+        const kvDeleteErrors = deleteKv
+            ? await deleteKvNamespaces(aid, kvNamespaceIds, headers)
+            : [];
 
         if (kvDeleteErrors.length > 0) {
             return json({ success: true, kvWarnings: kvDeleteErrors.length + ' 个 KV 命名空间删除失败，请到 Cloudflare Dashboard 手动清理' });

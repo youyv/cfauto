@@ -1,5 +1,5 @@
 import type { AccountCredentials } from "../config/env";
-import { cf, getAuthHeaders, fetchWithTimeout } from "./cloudflare-api";
+import { cf, getAuthHeaders, fetchWithTimeout, readApiResult } from "./cloudflare-api";
 import { BINDING } from "../config/templates";
 import { logger } from "./logger";
 import type { VariableEntry } from "./types";
@@ -49,6 +49,58 @@ export async function parseApiError(res: Response): Promise<string> {
         logger.warn('parseApiError response.json() failed', { status: res.status, error: String(_) });
         return "❌ HTTP " + res.status;
     }
+}
+
+/**
+ * 读取 Worker 的现有绑定列表。
+ *
+ * 抽自 zones.ts 与 fix1101.ts 中重复的「读 bindings」片段。调用方必须对
+ * 失败保持警惕：拿到空数组就当「无绑定」继续操作，会永久删除该 Worker 的
+ * KV / secret 绑定。因此这里同时返回 ok 标记，让调用方能明确区分
+ * 「确实没有绑定」与「读取失败」。
+ */
+export async function readWorkerBindings(
+    accountId: string, workerName: string, headers: Record<string, string>
+): Promise<{ ok: boolean; bindings: Array<Record<string, any>> }> {
+    const res = await fetchWithTimeout(cf.workerBindings(accountId, workerName), { headers });
+    if (!res.ok) {
+        logger.warn('readWorkerBindings failed', { module: 'deploy-utils', accountId, workerName, status: res.status });
+        return { ok: false, bindings: [] };
+    }
+    const bindings = await readApiResult<Array<Record<string, any>>>(res, '读取绑定') || [];
+    return { ok: true, bindings };
+}
+
+/**
+ * 删除 KV 命名空间，带 409 退避重试。
+ *
+ * CF 解绑命名空间是异步的，删除常返回 409（仍被引用）。抽自 zones.ts
+ * 中已验证的重试策略，供 fix1101 等其它删除路径复用。
+ *
+ * @returns 未能删除的命名空间 ID 列表（空数组表示全部成功）
+ */
+export async function deleteKvNamespaces(
+    accountId: string, namespaceIds: string[], headers: Record<string, string>,
+    maxAttempts = 5, baseDelayMs = 2000
+): Promise<string[]> {
+    const failed: string[] = [];
+    for (const nsId of namespaceIds) {
+        let deleted = false;
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            const delRes = await fetchWithTimeout(cf.kvNamespace(accountId, nsId), {
+                method: "DELETE", headers
+            });
+            if (delRes.ok) { deleted = true; break; }
+            // 409 = 命名空间仍被引用（CF 解绑异步），退避后重试；其他错误立即放弃
+            if (delRes.status !== 409) break;
+            await new Promise(r => setTimeout(r, baseDelayMs));
+        }
+        if (!deleted) {
+            failed.push(nsId);
+            logger.warn('KV namespace deletion failed', { module: 'deploy-utils', accountId, nsId });
+        }
+    }
+    return failed;
 }
 
 /** 将变量列表合并到现有 bindings — 覆盖同名、新增、排除已删除项。

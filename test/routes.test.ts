@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { getRoute } from '../src/routes/register';
 import { handleCronJob } from '../src/cron';
-import { coreDeployLogic, finalizeDeploy, rotateUUIDAndDeploy, readEffectiveVars, mergeVarLists } from '../src/lib/auto-update';
+import { coreDeployLogic, finalizeDeploy, rotateUUIDAndDeploy, mergeVarLists } from '../src/lib/auto-update';
 import { handleManualDeploy } from '../src/routes/deploy';
 import { writeAccounts } from '../src/lib/account-store';
 import { KV_KEYS } from '../src/config/templates';
@@ -258,16 +258,6 @@ describe('rotateUUIDAndDeploy — 熔断作用域', () => {
             await rotateUUIDAndDeploy(env, 'ech', [AID_A]);
             expect(stub.calls).toHaveLength(0);
         } finally { stub.restore(); }
-    });
-
-    it('readEffectiveVars: 账号级覆盖优先，回落全局', async () => {
-        const kv = mockKV();
-        const env = mockEnv(kv);
-        await kv.put(KV_KEYS.vars('cmliu'), JSON.stringify([{ key: 'UUID', value: 'g' }]));
-        expect((await readEffectiveVars(env, 'cmliu', AID_A))[0].value).toBe('g');
-        await kv.put(KV_KEYS.accountVars('cmliu', AID_A), JSON.stringify([{ key: 'UUID', value: 'per-acc' }]));
-        expect((await readEffectiveVars(env, 'cmliu', AID_A))[0].value).toBe('per-acc');
-        expect((await readEffectiveVars(env, 'cmliu', AID_B))[0].value).toBe('g');
     });
 
     it('mergeVarLists: override 覆盖同名键，其余全局键保留', () => {

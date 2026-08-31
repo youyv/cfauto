@@ -30,6 +30,22 @@ export function resolveLimit(acc: Pick<AccountEntry, 'dailyLimit'>): number {
     return (acc.dailyLimit !== undefined && acc.dailyLimit > 0) ? acc.dailyLimit : FREE_PLAN_DAILY_LIMIT;
 }
 
+/** 账号是否显式配置了配额上限（区别于「未设置」与「显式设为 0」） */
+function hasExplicitLimit(acc: Pick<AccountEntry, 'dailyLimit'>): boolean {
+    return acc.dailyLimit !== undefined && acc.dailyLimit > 0;
+}
+
+/**
+ * 统一的配额上限解析 — 成功路径与失败路径都必须走这里。
+ *
+ * 此前成功路径内联了 `dailyLimit > 0 ? dailyLimit : guessDailyLimit(total)`，
+ * 与失败路径的 resolveLimit 在「未显式设置」时给出不同结果（1000 万 vs 10 万），
+ * 导致同一账号统计成功时熔断永不触发、失败时却可能触发。
+ */
+function resolveMax(acc: Pick<AccountEntry, 'dailyLimit'>, total: number): number {
+    return hasExplicitLimit(acc) ? acc.dailyLimit! : guessDailyLimit(total);
+}
+
 export async function fetchInternalStats(accounts: AccountEntry[]): Promise<StatResult[]> {
     const now = new Date();
     const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0));
@@ -62,7 +78,7 @@ export async function fetchInternalStats(accounts: AccountEntry[]): Promise<Stat
             const workerReqs = sumRequests(accountData.workersInvocationsAdaptive);
             const pagesReqs = sumRequests(accountData.pagesFunctionsInvocationsAdaptiveGroups);
             const total = workerReqs + pagesReqs;
-            return { alias: acc.alias, total, max: (acc.dailyLimit !== undefined && acc.dailyLimit > 0) ? acc.dailyLimit : guessDailyLimit(total) };
+            return { alias: acc.alias, total, max: resolveMax(acc, total) };
         } catch (e: any) { return { alias: acc.alias, total: 0, max: resolveLimit(acc), error: e.message }; }
     });
 }

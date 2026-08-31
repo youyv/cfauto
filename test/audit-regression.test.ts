@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readAccounts, readAccountsMasked, writeAccounts, getWorkerNames, setWorkerNames, addWorkerName, removeWorkerName, hasAnyWorker, findAccount } from '../src/lib/account-store';
 import { encryptKey, decryptKey, secretFingerprint, VERSION_PREFIX } from '../src/lib/crypto-utils';
 import { resolveLimit, FREE_PLAN_DAILY_LIMIT } from '../src/lib/stats';
-import { isRestorableKey, backupKeys } from '../src/routes/crud';
+import { isRestorableKey, backupKeys } from '../src/routes/crud-backup';
 import { isAccountVarsKey, KV_KEYS, autoUpdateTypes, fuseRotatableTypes, autoFlagKey, TEMPLATES } from '../src/config/templates';
 import { validateAccountsPayload, normalizeVariables, normalizeAutoConfig, requireTemplateType, validateRequired } from '../src/lib/validate';
 import { mockKV, mockEnv, readKV } from './helpers';

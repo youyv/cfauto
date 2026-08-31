@@ -164,8 +164,7 @@ function bootstrapScript(): string {
                 defaultVars: v.defaultVars,
                 uuidField: v.uuidField,
                 name: v.name,
-                kvBindingName: v.kvBindingName,
-                autoUpdate: v.autoUpdate
+                kvBindingName: v.kvBindingName
             }])
         )
     );

@@ -23,10 +23,6 @@ export interface VariableEntry {
     type?: string;
 }
 
-// ===== 变量绑定 =====
-/** @deprecated 与 VariableEntry 同构，保留别名以便渐进迁移；新代码请用 VariableEntry */
-export type VariableBinding = VariableEntry;
-
 // ===== 部署配置 =====
 export interface DeployConfig {
     mode: 'latest' | 'fixed';

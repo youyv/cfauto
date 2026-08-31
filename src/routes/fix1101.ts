@@ -9,7 +9,7 @@ import { KV_KEYS } from '../config/templates';
 import type { TemplateType } from '../config/templates';
 import { cf, getAuthHeaders, json, fetchWithTimeout, readApiResult } from '../lib/cloudflare-api';
 import { fetchGithubCode, applyTemplateTransform } from '../lib/github';
-import { uploadWorker, parseApiError } from '../lib/deploy-utils';
+import { uploadWorker, parseApiError, readWorkerBindings } from '../lib/deploy-utils';
 import { getJSON, putJSON } from "../lib/kv-utils";
 import { readAccounts, getWorkerNames } from "../lib/account-store";
 import { deployTargetKey } from '../lib/auto-update';
@@ -121,13 +121,10 @@ export async function handleFix1101(env: AppEnv, type: TemplateType) {
                 let savedBindings: Array<Record<string, any>> = [];
                 let bindingsReadOk = false;
                 try {
-                    const bindRes = await fetchWithTimeout(`${baseUrl}/bindings`, { headers });
-                    if (bindRes.ok) {
-                        savedBindings = await readApiResult<Array<Record<string, any>>>(bindRes, '读取绑定') || [];
-                        bindingsReadOk = true;
-                    } else {
-                        steps.push('⚠️ 记录绑定失败 (HTTP ' + bindRes.status + ')');
-                    }
+                    const r = await readWorkerBindings(acc.accountId, wName, headers);
+                    savedBindings = r.bindings;
+                    bindingsReadOk = r.ok;
+                    if (!r.ok) steps.push('⚠️ 记录绑定失败');
                 } catch (e) { steps.push('⚠️ 记录绑定失败: ' + (e as Error).message); }
 
                 // 安全闸门：绑定读不到就不能删。删了再重建等于永久丢失该 Worker 的 KV/secret 绑定。

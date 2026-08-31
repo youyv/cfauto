@@ -127,6 +127,22 @@ async function deploySingleWorker(
 }
 
 /**
+ * 取上游最新 commit 的提交日期。
+ *
+ * 失败仅告警：commitDate 只用于 UI 展示「落后多久」与 diff 的 since 参数，
+ * 拿不到不应阻断部署结果的落盘。
+ */
+async function fetchCommitDate(env: AppEnv, type: TemplateType): Promise<string | null> {
+    try {
+        const commits = await fetchGithubCommits(type, env, { perPage: 1 });
+        return commits[0]?.commit?.committer?.date || null;
+    } catch (e) {
+        logger.warn('commitDate fetch after deploy failed', { error: (e as Error).message, module: 'auto-update' });
+        return null;
+    }
+}
+
+/**
  * [提取] 部署后写入日志和配置
  *
  * 关键语义：`currentSha` 只在**本轮全部目标都成功**时前进。此前只要有一个成功就写新 SHA，
@@ -139,11 +155,21 @@ export async function finalizeDeploy(
 ): Promise<void> {
     const failedLogs = logs.filter(l => !l.success);
     const allSucceeded = failedLogs.length === 0 && logs.length > 0;
+    const mode = isLatestMode ? 'latest' : 'fixed';
+    const nowIso = new Date().toISOString();
 
+    // 两处 KV 读取互不依赖 → 并行；commitDate 的网络请求也提前发起，
+    // 避免它串行排在「读 deployConfig」之后（此前三者是完全串行的 N+1）。
+    const [existing, prev, commitDate] = await Promise.all([
+        getJSON<JournalEntry[]>(env.CONFIG_KV, KV_KEYS.DEPLOY_JOURNAL, []),
+        getJSON<DeployConfig>(env.CONFIG_KV, KV_KEYS.deployConfig(type), { mode: 'latest' }),
+        allSucceeded ? fetchCommitDate(env, type) : Promise.resolve(null),
+    ]);
+
+    // 写 journal
     try {
-        const existing = await getJSON<JournalEntry[]>(env.CONFIG_KV, KV_KEYS.DEPLOY_JOURNAL, []);
         const journalEntry: JournalEntry = {
-            time: new Date().toISOString(), type, sha: deployedSha,
+            time: nowIso, type, sha: deployedSha,
             accounts: logs.filter(l => l.success).length, total: logs.length,
             summary: logs.map(l => l.name + ': ' + (l.success ? 'OK' : l.msg)).join('; ').substring(0, 500)
         };
@@ -152,10 +178,6 @@ export async function finalizeDeploy(
         existing.unshift(journalEntry);
         await putJSON(env.CONFIG_KV, KV_KEYS.DEPLOY_JOURNAL, existing.slice(0, 100));
     } catch (e) { logger.warn("deploy journal write failed", { error: (e as Error).message }); }
-
-    const prev = await getJSON<DeployConfig>(env.CONFIG_KV, KV_KEYS.deployConfig(type), { mode: 'latest' });
-    const mode = isLatestMode ? 'latest' : 'fixed';
-    const nowIso = new Date().toISOString();
 
     // 只有全部成功才推进 currentSha / deployTime；否则保留旧值并记录 pending
     const dp: DeployConfig = allSucceeded
@@ -178,11 +200,6 @@ export async function finalizeDeploy(
         };
 
     if (allSucceeded) {
-        let commitDate: string | null = null;
-        try {
-            const commits = await fetchGithubCommits(type, env, { perPage: 1 });
-            commitDate = commits[0]?.commit?.committer?.date || null;
-        } catch (e) { logger.warn('commitDate fetch after deploy failed', { error: (e as Error).message, module: 'auto-update' }); }
         dp.commitDate = commitDate || undefined;
         logger.audit('deploy completed', { type, sha: deployedSha, targets: logs.length });
     } else {
@@ -421,10 +438,4 @@ export function rotateUuidField(variables: VariableEntry[], uuidField: string, n
     const next = variables.map(v => (v.key === uuidField ? { ...v, value: newUuid } : { ...v }));
     if (!next.some(v => v.key === uuidField)) next.push({ key: uuidField, value: newUuid });
     return next;
-}
-
-/** 读取某账号生效的变量：账号级覆盖优先，回落全局 */
-export async function readEffectiveVars(env: AppEnv, type: TemplateType, accountId: string): Promise<VariableEntry[]> {
-    const globalVars = await getJSON<VariableEntry[]>(env.CONFIG_KV, KV_KEYS.vars(type), []);
-    return getJSON<VariableEntry[]>(env.CONFIG_KV, KV_KEYS.accountVars(type, accountId), globalVars);
 }
