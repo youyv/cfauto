@@ -208,9 +208,6 @@ async function confirmDeleteWorker(workerId, accIndex) {
     }
 }
 
-// @exports
-window.openAccountManage = openAccountManage;
-
 registerActions({
     promptChangeSubdomain: promptChangeSubdomain
 });

@@ -121,12 +121,23 @@ export const KV_KEYS = {
 };
 
 /** 账号级变量键的正则 — 供 restore 白名单精确校验，防止前缀注入 */
-export const ACCOUNT_VARS_KEY_RE = /^VARS_([A-Za-z0-9_-]+)_ACC_([A-Za-z0-9]{1,64})$/;
+const ACCOUNT_VARS_KEY_RE = /^VARS_([A-Za-z0-9_-]+)_ACC_([A-Za-z0-9]{1,64})$/;
+
+/**
+ * 解析账号级变量键 `VARS_<type>_ACC_<accountId>`。
+ *
+ * 模板类型未知时返回 null —— 既用于 restore 白名单（防前缀注入），也用于 KV 回收
+ * （模板被删除后其遗留键同样属于孤儿）。
+ */
+export function parseAccountVarsKey(key: string): { type: string; accountId: string } | null {
+    const m = ACCOUNT_VARS_KEY_RE.exec(key);
+    if (!m || !TEMPLATES[m[1]]) return null;
+    return { type: m[1], accountId: m[2] };
+}
 
 /** 判断某个 KV 键是否为合法的账号级变量键（模板类型必须已知） */
 export function isAccountVarsKey(key: string): boolean {
-    const m = ACCOUNT_VARS_KEY_RE.exec(key);
-    return !!m && !!TEMPLATES[m[1]];
+    return parseAccountVarsKey(key) !== null;
 }
 
 /** 模板类型 → AutoUpdateConfig 开关字段名（cmliu → autoCmliu），无需逐个硬编码 */

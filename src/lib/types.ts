@@ -44,6 +44,8 @@ export interface DeployConfig {
 export interface AutoUpdateConfig {
     enabled?: boolean;
     lastCheck?: number;
+    /** 上一次 KV 回收的时间戳（cron 按 GC_INTERVAL_MS 节流，与 enabled 无关） */
+    lastGc?: number;
     interval?: string | number;
     fuseThreshold?: string | number;
     fuseWebhook?: string;

@@ -24,11 +24,36 @@ async function runDiagnostics() {
             const cls = v === '(exists)' ? 'text-green-300' : (v === '(not set)' ? 'text-orange-400' : 'text-red-400');
             wbLog('  ' + k + ': ' + v, cls);
         });
+        renderKvUsage(d.__kv_usage);
         wbLog('✅ 诊断完成', 'text-green-400');
     } catch (e) {
         console.error('[runDiagnostics]', e);
         wbLog('❌ 诊断失败: ' + e.message, 'text-red-500');
     }
+}
+
+/**
+ * KV 占用概览。
+ *
+ * 这块是「KV 会不会被撑爆」唯一可见的窗口：孤儿键与部署日志是两类会随使用时长
+ * 增长的数据，其余键数量固定。孤儿数 > 0 只是说明还没到 24h 回收窗口，不是错误。
+ */
+function renderKvUsage(u) {
+    if (!u || typeof u !== 'object') return;
+    wbLog('─── KV 占用 ───', 'text-slate-500');
+    if (u.error) { wbLog('  统计失败: ' + u.error, 'text-red-400'); return; }
+    wbLog('  总键数: ' + u.totalKeys + (u.listComplete === false ? ' （未列完，实际更多）' : ''),
+        u.listComplete === false ? 'text-orange-400' : 'text-slate-400');
+    wbLog('  会话 / 限流（带 TTL 自动过期）: ' + u.sessions + ' / ' + u.rateLimits, 'text-slate-400');
+    const orphan = u.orphanAccountVars;
+    const hasOrphan = typeof orphan === 'number' && orphan > 0;
+    wbLog('  账号级变量覆盖: ' + u.accountVars + '（其中孤儿 ' + orphan + '）',
+        hasOrphan ? 'text-orange-400' : 'text-slate-400');
+    if (hasOrphan) wbLog('    ↳ 孤儿键会在下一次 24h 回收窗口自动删除', 'text-slate-500');
+    const kb = (Number(u.journalBytes) || 0) / 1024;
+    wbLog('  部署日志: ' + u.journalEntries + ' 条 / ' + kb.toFixed(1) + ' KB（保留 ' + u.journalRetentionDays + ' 天）',
+        kb > 512 ? 'text-orange-400' : 'text-slate-400');
+    wbLog('  上次自动回收: ' + u.lastGc, 'text-slate-400');
 }
 
 /** 查看上游模板源码摘要（行数 / 大小 / 前若干行） */

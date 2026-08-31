@@ -176,10 +176,6 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e)
     if (!localStorage.getItem('worker_theme')) setDarkMode(e.matches);
 });
 
-// @exports
-window.initStarfield = initStarfield;
-window.applyTheme = applyTheme;
-
 registerActions({
     toggleTheme: toggleTheme
 });

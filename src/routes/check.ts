@@ -18,7 +18,13 @@ import { fetchInternalStats } from '../lib/stats';
 /** history 模式的 per_page 上限（GitHub API 最大 100） */
 const MAX_HISTORY_LIMIT = 100;
 
-export async function handleGetCode(env: AppEnv, type: TemplateType) {
+/**
+ * 拉取上游模板源码（面板「📄 源码」按钮）。
+ *
+ * 不需要 env：raw.githubusercontent.com 是匿名可读的，GITHUB_TOKEN 只用于 api.github.com
+ * 的限额提升。此前签名里带着一个从未使用的 env 参数。
+ */
+export async function handleGetCode(type: TemplateType) {
     const templateErr = requireTemplateType(type); if (templateErr) return templateErr;
     try {
         const { scriptUrl } = getGithubUrls(type);

@@ -337,18 +337,10 @@ async function checkDeployConfig(t) {
     }
 }
 
-// @exports
-window.renderProxySelector = renderProxySelector;
-window.addVarRow = addVarRow;
-window.collectVars = collectVars;
-window.loadVars = loadVars;
-window.checkUpdate = checkUpdate;
-window.checkDeployConfig = checkDeployConfig;
-window.previewDiff = previewDiff;
-
+// previewDiff 不注册为 action：它只挂在 checkUpdate 动态生成的「🔍差异」按钮上
+// （addEventListener），HTML 里没有对应的 data-act。
 registerActions({
     addVarRow: addVarRow,
     refreshUUID: refreshUUID,
-    selectSyncAccount: selectSyncAccount,
-    previewDiff: previewDiff
+    selectSyncAccount: selectSyncAccount
 });

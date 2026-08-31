@@ -529,17 +529,6 @@ async function saveAutoConfig() {
     }
 }
 
-// @exports
-window.safeHtml = safeHtml;
-window.renderTable = renderTable;
-window.loadAccounts = loadAccounts;
-window.loadStats = loadStats;
-window.loadGlobalConfig = loadGlobalConfig;
-window.updateAutoToggleLabel = updateAutoToggleLabel;
-window.editAccount = editAccount;
-window.delAccount = delAccount;
-window.updateBatchToolbar = updateBatchToolbar;
-
 registerActions({
     doSearch: doSearch,
     clearSearch: clearSearch,

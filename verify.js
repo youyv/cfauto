@@ -135,6 +135,17 @@ if (unregistered.length > 0) {
     console.log('  ✅ 全部 ' + usedActions.size + ' 个 data-act 均已注册（共声明 ' + declaredActions.size + ' 个动作）');
 }
 
+// 反向：注册了却没有任何 data-act 会派发它 —— 死注册。
+// 事件委托只按 data-act 属性查表，注册一个无人引用的动作既不会被调用，
+// 也让「action ↔ data-act」这层检查失去意义（直接调用的函数不该注册）。
+const unreachableActions = [...declaredActions].filter(a => !usedActions.has(a));
+if (unreachableActions.length > 0) {
+    console.log('  ❌ 以下动作已注册但没有任何 data-act 引用（死注册）: ' + unreachableActions.join(', '));
+    errors.push('Unreachable registered actions: ' + unreachableActions.join(', '));
+} else {
+    console.log('  ✅ 无死注册动作（每个已注册动作都有 data-act 引用）');
+}
+
 // data-args 必须是合法 JSON
 for (const m of html.matchAll(/data-args='([^']+)'/g)) {
     try { JSON.parse(m[1]); }
@@ -342,6 +353,77 @@ if (snapshotExports.length > 0) {
     errors.push('Snapshot-style window exports: ' + snapshotExports.map(m => m[1]).join(', '));
 } else {
     console.log('  ✅ 前端无值快照式 window 导出');
+}
+
+// 所有前端模块被拼接进同一个脚本作用域，跨文件直接同名调用即可 ——
+// `window.foo = foo` 形式的「导出」没有任何读取方，是纯噪声。
+// 唯一合法的 window 赋值是 window.fetch（CSRF 拦截）。
+const deadWindowExports = [...concatenated.matchAll(/^window\.([A-Za-z_$][\w$]*)\s*=/gm)]
+    .map(m => m[1])
+    .filter(n => n !== 'fetch');
+if (deadWindowExports.length > 0) {
+    console.log('  ❌ 前端有无消费者的 window 导出（同作用域可直接调用）: ' + [...new Set(deadWindowExports)].join(', '));
+    errors.push('Redundant window exports: ' + [...new Set(deadWindowExports)].join(', '));
+} else {
+    console.log('  ✅ 前端无冗余 window 导出');
+}
+
+// HTML 里的 id 必须有人用：被 JS 引用（$('x') / querySelector / 字符串拼接）或被 CSS 选中。
+// 谁都不引用的 id 是上一版功能删除后留下的死元素（历史上 #logs、#wb_status 就是这样）。
+const cssText = fs.readFileSync(path.join(ROOT, 'frontend/css/style.css'), 'utf-8');
+const htmlIdList = [...html.matchAll(/id="([^"]+)"/g)].map(m => m[1]);
+// 模板插值构造的 id（vars_cmliu 等）在 JS 里以 'vars_' + t 出现，按前缀放行
+const orphanHtmlIds = htmlIdList.filter(id => {
+    if (dynamicPrefixes.some(p => id.startsWith(p))) return false;
+    if (new RegExp('[\'"`]' + id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[\'"`]').test(concatenated)) return false;
+    if (cssText.includes('#' + id)) return false;
+    // `for="auto_update_toggle"` 之类的 label 关联也算被使用
+    if (html.includes('for="' + id + '"')) return false;
+    return true;
+});
+if (orphanHtmlIds.length > 0) {
+    console.log('  ❌ HTML 中以下 id 既未被 JS 引用也未被 CSS 选中（死元素）: ' + orphanHtmlIds.join(', '));
+    errors.push('Orphan HTML ids: ' + orphanHtmlIds.join(', '));
+} else {
+    console.log('  ✅ HTML 全部 id 均有 JS 或 CSS 消费者');
+}
+
+// CSS 里 `[data-theme="dark"] .a, .b` 这种写法的第二段没有主题限定，会污染亮色模式。
+// 历史上 .border-orange-200 就因此在亮色模式下被强制成暗色边框。
+const themeLeaks = [];
+for (const m of cssText.matchAll(/\[data-theme="dark"\][^{}\n]*,\s*(\.[A-Za-z][\w\\:-]*)\s*\{/g)) {
+    themeLeaks.push(m[1]);
+}
+if (themeLeaks.length > 0) {
+    console.log('  ❌ 暗色规则中存在无主题限定的选择器段（会影响亮色模式）: ' + themeLeaks.join(', '));
+    errors.push('Unscoped selector in dark-theme rule: ' + themeLeaks.join(', '));
+} else {
+    console.log('  ✅ 暗色规则的每个选择器段都带 [data-theme="dark"] 限定');
+}
+
+// TS 里未使用的 import / 参数：tsc 的 noUnusedLocals 不在默认 strict 里，
+// 这类残留会掩盖「某个模块其实已经不再依赖另一个模块」的事实。
+{
+    const tscBin = path.join(ROOT, 'node_modules', 'typescript', 'bin', 'tsc');
+    if (fs.existsSync(tscBin)) {
+        const r = require('child_process').spawnSync(
+            process.execPath,
+            [tscBin, '--noEmit', '--noUnusedLocals', '--noUnusedParameters'],
+            { cwd: ROOT, encoding: 'utf-8' }
+        );
+        const out = (r.stdout || '') + (r.stderr || '');
+        const unusedLines = out.split('\n').filter(l => /TS6133|TS6192|TS6196/.test(l));
+        if (unusedLines.length > 0) {
+            console.log('  ❌ TS 存在未使用的 import / 局部变量 / 参数:');
+            unusedLines.slice(0, 20).forEach(l => console.log('       ' + l.trim()));
+            errors.push('Unused TS imports/locals: ' + unusedLines.length);
+        } else {
+            console.log('  ✅ TS 无未使用的 import / 局部变量 / 参数');
+        }
+    } else {
+        warnings.push('typescript 未安装，跳过未使用 import 检查');
+        console.log('  ⚠️  typescript 未安装，跳过未使用 import 检查');
+    }
 }
 
 // ===== SUMMARY =====

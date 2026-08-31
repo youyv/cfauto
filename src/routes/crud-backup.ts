@@ -7,12 +7,11 @@
 
 import { KV_KEYS, TEMPLATES, isAccountVarsKey } from '../config/templates';
 import { json, jsonError, safeJson } from '../lib/cloudflare-api';
-import { getJSON, putJSON } from "../lib/kv-utils";
+import { listAllKeys } from "../lib/kv-utils";
 import { readAccounts, writeAccounts } from "../lib/account-store";
 import { decryptKey, secretFingerprint } from "../lib/crypto-utils";
 import { validateAccountsPayload, MAX_ACCOUNTS } from '../lib/validate';
 import { logger } from '../lib/logger';
-import type { AppEnv } from "../config/env";
 import type { RouteRegistrar } from "./register";
 import type { AccountEntry } from '../lib/types';
 
@@ -148,14 +147,17 @@ ROUTES.set('GET /api/backup', async (_req, env) => {
             logger.warn('backup: KV 值非 JSON，按原始字符串备份', { key: k, error: (e as Error).message });
         }
     }
-    // 账号级变量覆盖（VARS_<type>_ACC_<id>）数量不定，用 list 枚举
+    // 账号级变量覆盖（VARS_<type>_ACC_<id>）数量不定，用 list 枚举。
+    // 必须翻页：kv.list 单次最多返回 1000 个键，只读第一页会让第 1001 个键之后
+    // 悄悄漏出备份 —— 恢复时用户不会得到任何提示。
     try {
-        const listed = await env.CONFIG_KV.list({ prefix: 'VARS_' });
-        for (const { name } of listed.keys) {
+        const { names, complete } = await listAllKeys(env.CONFIG_KV, 'VARS_');
+        for (const name of names) {
             if (!isAccountVarsKey(name)) continue;
             const raw = await env.CONFIG_KV.get(name);
             try { backup[name] = JSON.parse(raw || 'null'); } catch { backup[name] = raw; }
         }
+        if (!complete) backup._warning = '账号级变量键过多，备份可能不完整（已达 list 翻页上限）';
     } catch (e) { logger.warn('backup: 账号级变量枚举失败', { error: (e as Error).message }); }
 
     return new Response(JSON.stringify(backup, null, 2), {

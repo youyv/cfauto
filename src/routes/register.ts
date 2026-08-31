@@ -64,8 +64,8 @@ function registerBusinessRoutes(): void {
         );
     });
 
-    route('GET /api/get_code', (req, env) =>
-        handleGetCode(env, new URL(req.url).searchParams.get('type') || ''));
+    route('GET /api/get_code', (req) =>
+        handleGetCode(new URL(req.url).searchParams.get('type') || ''));
 
     route('POST /api/deploy', async (req, env) => {
         const url = new URL(req.url);

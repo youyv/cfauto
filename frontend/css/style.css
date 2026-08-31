@@ -108,8 +108,7 @@
       }
 
       /* ── 边框 ── */
-      [data-theme="dark"] .border-slate-200, [data-theme="dark"] .border-gray-100,
-      [data-theme="dark"] .border-gray-200 {
+      [data-theme="dark"] .border-slate-200, [data-theme="dark"] .border-gray-100 {
         border-color: var(--border-color) !important;
       }
 
@@ -153,7 +152,10 @@
       [data-theme="dark"] .border-blue-100  { border-color: rgba(30,58,138,0.35) !important; }
       [data-theme="dark"] .border-green-100 { border-color: rgba(20,83,45,0.35) !important; }
       [data-theme="dark"] .border-purple-100 { border-color: rgba(88,28,135,0.3) !important; }
-      [data-theme="dark"] .border-orange-100,.border-orange-200 { border-color: rgba(124,45,18,0.35) !important; }
+      /* 注意逗号：`[data-theme="dark"] .a, .b` 的第二段没有主题限定，会在亮色模式下也生效。
+         此前写作 `[data-theme="dark"] .border-orange-100,.border-orange-200`，
+         导致亮色模式下 5 处 border-orange-200 元素（同步按钮、收藏面板边框）被强制成暗色边框。 */
+      [data-theme="dark"] .border-orange-200 { border-color: rgba(124,45,18,0.35) !important; }
       [data-theme="dark"] .border-indigo-100 { border-color: rgba(49,46,129,0.35) !important; }
 
       /* ── Select & Input 暗黑 ── */

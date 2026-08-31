@@ -1,5 +1,42 @@
 # 版本更新日志
 
+## 未发布
+
+> KV 自动回收 · 死代码清理 · verify 防回归检查
+
+### 🧹 KV 空间治理（本次核心）
+
+此前写入 KV 的键分三类，只有第一类有回收机制：带 TTL 的 `SESSION_*` / `RATE_LIMIT_*` 由 Cloudflare 自动过期；数量固定的配置键不会增长；而**第三类会无界增长或变成永久孤儿，没有任何代码路径会清理它**。
+
+- **孤儿 `VARS_<type>_ACC_<accountId>` 永久残留（新增回收）**: 该键由熔断轮换写入。账号删除后 `writeAccounts` 只覆盖账号表，遗留的覆盖键无人删除；模板下线、从别的实例恢复备份同样会留下脏键。只能人工到 Dashboard 清理。现在两条路径兜住：
+  - **即时**：`writeAccounts` 比对新旧账号表，被移除账号的所有模板覆盖键立即删除（`deleteAccountVarsFor`）
+  - **兜底**：新增 `lib/kv-gc.ts`，cron 每 24 小时（独立的 `lastGc` 节流，不占用 `lastCheck`）用 list 翻页枚举 `VARS_` 前缀，删除「模板类型未知」或「accountId 已不在账号表」的键
+- **部署日志只截条数、不限体积**: `DEPLOY_JOURNAL` 此前 `slice(0, 100)` 只管条数，但单条 `summary` 可达 500 字符、`failed` 数组**完全无上限** —— 一次 200 目标全失败就写进一个巨大数组，100 条这种记录足以把单个 KV 值推到数百 KB，且没有任何按时间过期。现在 `pruneJournal` 三重裁剪（100 条 / 30 天 / 单条 summary 500 字符 + failed 20 项后记 `+N more`），写入侧（`finalizeDeploy`）与 GC 侧都走它
+- **回收的安全闸门**: 账号表读取失败或 JSON 损坏时**放弃本轮回收**而不是拿到空集合 —— 空集合会让所有账号级覆盖被判为孤儿，一次 KV 值损坏就会删光全部熔断状态。为此新增 `readLiveAccountIds`：键不存在 = 可信的空集合，键存在但不可解析 = 返回 null 让调用方退出。回收只删可推导为孤儿的具体键，从不按前缀批量删
+- **cron 拆成两段独立执行**: `handleCronJob` = `runAutoUpdate` + `maybeRunKvGc`。此前把回收写在同一函数尾部时，`if (!config.enabled) return` 之类的提前退出会连带跳过回收 —— 而「关掉了自动更新，仍在手动部署与增删账号」恰恰是最需要回收的场景。现在自动更新关闭、间隔未到、账号为空、流程抛异常，回收都照常执行
+- **`kv.list` 只读第一页的隐藏缺陷**: 真实 KV 单次最多返回 1000 个键，`list_complete: false` 时必须带 cursor 续拉。`GET /api/backup` 枚举账号级变量时只读了第一页，第 1001 个键之后会**静默漏出备份**，恢复时用户得不到任何提示。新增 `listAllKeys` 自动翻页（20 页失控保护），backup 与 GC 都改用它；未列完时备份文件带 `_warning`
+- **KV 用量可见**: `GET /api/diag` 增加 `__kv_usage`（总键数、会话/限流数、账号级覆盖数与其中孤儿数、日志条数与字节数、上次回收时间），工作台「🩺 诊断」渲染成一段可读报告。孤儿数 > 0 只表示还没到回收窗口，不是错误
+
+### 🗑️ 死代码清理
+
+- **后端未使用的 import 与参数**: `crud.ts` 的 `readAccounts` / `AppEnv`、`crud-backup.ts` 的 `getJSON`+`putJSON` 整条声明与 `AppEnv`、`crud-diag.ts` 的 `AppEnv`；`handleGetCode(env, type)` 与 `sendFuseAlert(env, ...)` 的 `env` 参数从未被读（前者拉的是匿名可读的 raw.githubusercontent.com，后者的 webhook URL 来自 config 而非环境变量）
+- **`ACCOUNT_VARS_KEY_RE` 无外部消费者**: 改为模块私有，并提取出真正有用的 `parseAccountVarsKey`（回收逻辑需要拿到 type 与 accountId，而不只是布尔判定）
+- **前端 26 个 `window.xxx = xxx` 导出全部删除**: 所有模块被 `build.js` 拼接进同一个脚本作用域，跨文件直接同名调用即可。全项目没有任何一处读 `window.xxx`（只有 `window.fetch` / `innerWidth` / `matchMedia` 这些平台属性被读），这些「导出」是纯噪声
+- **`state.js` 的 `Object.defineProperties(window, ...)` 兼容别名删除**: 5 个别名（accounts / editingIndex / deletedVars / deployConfigs / currentHistoryType）无任何读取方；其中 `deletedVars` 与 `deployConfigs` 只有 getter，`window.deletedVars = x` 在非严格模式下会**静默失败**，留着只是埋坑
+- **6 个注册了但永远不会被派发的 action**: `openModal` / `previewDiff` / `retryFailedBatch` / `showYxipModal` / `doYxipSearch` / `clearYxipSearch` —— 事件委托只按 `data-act` 属性查表，这些函数实际都是被直接调用或用 `addEventListener` 绑定的，注册它们让「action ↔ data-act」双向检查失去意义
+- **5 个死 HTML 元素/id**: `#logs`（上一版日志区，功能已全部迁到 `#workbench_log`，元素本身还挂在 header 里且永久 hidden）、`#wb_status`（空 span，从未被写入）、`#btn_workbench` / `#layout_container` / `#section_accounts` / `#section_projects` / `#account_list_container`（纯布局 id，JS 与 CSS 都不引用）
+- **失效的 CSS 规则**: `[data-theme="dark"] .border-gray-200` 的目标类名在 HTML/JS 里根本不存在
+
+### 🐛 顺带修复
+
+- **暗色规则污染亮色模式**: `[data-theme="dark"] .border-orange-100,.border-orange-200` —— 逗号后的第二段**没有主题限定**，导致亮色模式下 5 处 `border-orange-200` 元素（三个模板的「🔄 同步」按钮、收藏面板边框）被强制成暗色边框。`.border-orange-100` 同时也是个不存在的类名
+
+### 🧪 测试与校验
+
+- **`test/helpers.ts` 的 mock KV 补齐 list 分页语义**: 此前 `list` 一次性返回全部键且不返回 `list_complete`，任何「只读第一页」的 bug 在测试里都是绿的 —— 而 backup 正是这样漏了键。现在支持 `_listPageSize` + cursor，并记录 `_deletes`
+- **新增 `test/kv-gc.test.ts`（42 个）**: 日志裁剪的四类边界（条数 / 天数 / 时间不可解析 / 体积）、孤儿判定的五种情形、`readLiveAccountIds` 的「不可信必须返回 null」、`listAllKeys` 翻页、账号删除的即时清理与「账号仍在则绝不动」、cron 的 24h 节流与「关闭自动更新仍回收」「账号表损坏则跳过」、`/api/diag` 用量报告、backup 跨页枚举。**测试总数 322 → 364**
+- **`verify.js` 增加 4 项防回归检查**: ① 注册了却无 `data-act` 引用的死 action；② 无消费者的 `window.xxx =` 导出；③ 既未被 JS 引用也未被 CSS 选中的 HTML id；④ 暗色规则中无主题限定的选择器段。另外内嵌调用 `tsc --noUnusedLocals --noUnusedParameters` 拦住未使用的 import / 局部变量 / 参数（这两个开关不在默认 `strict` 里）
+
 ## V12.0.0 (2026-08-26)
 
 > 全量优化：确定性 bug 修复 · 测试改为真实模块 · 并发策略统一 · 前端资源拆分 + CSP 收紧

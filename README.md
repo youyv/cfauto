@@ -24,7 +24,8 @@
 | 🔧 **一键修复 1101** | 自动修复 Worker 1101 错误，保留变量和域名 |
 | 📜 **版本收藏** | 收藏稳定版本，支持一键回滚 |
 | 🌐 **子域名管理** | 在线修改 `*.workers.dev` 子域名 |
-| 🩺 **系统诊断** | 检查 KV 绑定、密钥配置、加密密钥指纹 |
+| 🩺 **系统诊断** | 检查 KV 绑定、密钥配置、加密密钥指纹、KV 占用与孤儿键 |
+| 🧹 **KV 自动回收** | cron 每 24h 裁剪超期部署日志、清理已删账号遗留的变量覆盖键 |
 | 🌌 **星空主题** | 暗黑星空 + 明亮模式，一键切换 |
 | 🔐 **数据加密** | 所有 API Key 经 AES-256-GCM 加密存储 |
 
@@ -36,21 +37,22 @@
 cfauto/
 ├── src/                        # 服务端 (TypeScript → esbuild 打包)
 │   ├── index.ts                #   入口: fetch handler + cron scheduled handler + 静态资源
-│   ├── cron.ts                 #   定时任务: 自动更新 & 熔断轮换
+│   ├── cron.ts                 #   定时任务: 自动更新 & 熔断轮换 & KV 回收
 │   ├── frontend-bundle.ts      #   构建时生成: 内联前端 HTML/CSS/JS (gitignored)
 │   ├── config/
 │   │   ├── env.ts              #   环境变量类型 (AppEnv)
 │   │   ├── templates.ts        #   模板配置 + KV 键名 + 类型派生函数
 │   │   └── login-html.ts       #   登录页 (CSP nonce)
 │   ├── lib/
-│   │   ├── account-store.ts    #   账号存储 (透明加解密 + Worker 列表访问器)
+│   │   ├── account-store.ts    #   账号存储 (透明加解密 + Worker 列表访问器 + 删号即清覆盖键)
 │   │   ├── auto-update.ts      #   部署编排核心 (pendingTargets / 账号级 UUID 轮换)
 │   │   ├── cloudflare-api.ts   #   CF API 封装 + readApiJson 统一错误解析
 │   │   ├── concurrency.ts      #   pooledMap 有界并发（全项目统一并发策略）
 │   │   ├── crypto-utils.ts     #   AES-256-GCM 加密 + 密钥指纹
 │   │   ├── deploy-utils.ts     #   部署工具 (上传/绑定合并/固定 compat date)
 │   │   ├── github.ts           #   GitHub API (拉代码/commits/模板转换)
-│   │   ├── kv-utils.ts         #   KV 读写封装
+│   │   ├── kv-gc.ts            #   KV 回收 (日志裁剪 + 孤儿键清理)
+│   │   ├── kv-utils.ts         #   KV 读写封装 + listAllKeys 翻页枚举
 │   │   ├── logger.ts           #   结构化 JSON 日志
 │   │   ├── stats.ts            #   GraphQL 用量统计
 │   │   ├── types.ts            #   共享类型定义
@@ -82,9 +84,10 @@ cfauto/
 │       ├── workbench.js        #   工作台 / 日志
 │       ├── diagnostics.js      #   系统诊断 / 源码查看
 │       └── starfield.js        #   星空动画 + 应用入口
-├── test/                       # Vitest（323 个测试，全部 import 真实模块）
-│   ├── helpers.ts              #   内存 KV mock / CF 响应构造 / fetch 桩
+├── test/                       # Vitest（364 个测试，全部 import 真实模块）
+│   ├── helpers.ts              #   内存 KV mock (含 list 分页) / CF 响应构造 / fetch 桩
 │   ├── kv-utils.test.ts        #   工具函数 + 路由表
+│   ├── kv-gc.test.ts           #   KV 回收: 日志裁剪 / 孤儿键 / 翻页 / cron 节流
 │   ├── audit-regression.test.ts#   凭证保护 / 白名单 / 校验
 │   ├── reliability.test.ts     #   并发 / 错误路径 / 纯函数
 │   ├── routes.test.ts          #   部署链路 / 熔断作用域 / cron / CRUD
@@ -117,7 +120,7 @@ Request → KV 检查 → 公开路由 (/manifest.json, /api/login, /api/logout)
 **质量校验**（提交前建议跑 `pnpm run check` 或双击 `check.bat`）:
 ```
 build (生成 frontend-bundle.ts) → typecheck (tsc --noEmit)
-  → verify (结构/路由/CSP/反模式) → test (vitest run, 323 个)
+  → verify (结构/路由/CSP/死代码/反模式) → test (vitest run, 364 个)
 ```
 
 > 包管理器用 **pnpm**（仓库只有 `pnpm-lock.yaml`，没有 `package-lock.json`）。
@@ -170,7 +173,7 @@ build.bat → deploy.bat
 ```
 check.bat            # 或 pnpm run check
 ```
-它按 CI 相同顺序执行 build → typecheck → verify → test（323 个测试）。任一步失败就不要部署。
+它按 CI 相同顺序执行 build → typecheck → verify → test（364 个测试）。任一步失败就不要部署。
 
 ---
 
@@ -283,6 +286,21 @@ custom_domain = true
 - 失败目标记入 `pendingTargets`，下一次 cron 只重试这些目标
 - 模板卡片的版本区会显示「⚠️ N 个 Worker 部署失败，待重试」
 
+### 🧹 KV 空间会不会被撑爆
+
+不会，三类键各有归宿：
+
+| 键 | 增长性 | 回收方式 |
+|----|--------|---------|
+| `SESSION_*` / `RATE_LIMIT_*` | 随登录次数 | Cloudflare TTL 自动过期（7 天 / 5 分钟） |
+| `ACCOUNTS_UNIFIED_STORAGE`、`VARS_<type>`、`DEPLOY_CONFIG_<type>`、`FAVORITES_<type>`、`AUTO_UPDATE_CFG_GLOBAL` | 数量固定 | 无需回收（收藏另有 200 条上限） |
+| `DEPLOY_JOURNAL` | 随部署次数 | 100 条 + 30 天双重裁剪，单条 summary ≤ 500 字符、failed ≤ 20 项 |
+| `VARS_<type>_ACC_<accountId>` | 随熔断/账号变动 | 删账号时立即清理；cron 每 24h 兜底扫描孤儿键 |
+
+自动回收**不受自动更新开关影响** —— 关掉自动更新后仍在手动部署与增删账号，那时更需要回收。想查看当前占用，点工作台的「🩺 诊断」，最后一段「KV 占用」会列出总键数、孤儿键数、日志体积与上次回收时间。孤儿数 > 0 只是说明还没到 24h 回收窗口。
+
+> 回收有一道安全闸门：账号表读不出来或 JSON 损坏时**直接跳过本轮**。否则空账号集合会让所有账号级覆盖被判为孤儿，一次 KV 值损坏就会删光全部熔断状态。
+
 ---
 
 ## ❓ 常见问题
@@ -332,10 +350,10 @@ custom_domain = true
 ### 🛠️ 构建与工具
 - **esbuild** — TypeScript/JS 打包为单文件 ESM 输出
 - **Node.js** — 构建脚本、内联前端资源、可复现的依赖读取
-- **Vitest** — 323 个单元与集成测试，全部 import 真实模块（内存 KV mock + fetch 桩）
+- **Vitest** — 364 个单元与集成测试，全部 import 真实模块（内存 KV mock + fetch 桩）
 - **TypeScript** — 类型安全、模板字面量索引签名消除类型断言
 - **GitHub Actions** — build → typecheck → verify → test 全链路 CI
-- **自定义静态校验** — `verify.js` 检查结构、路由覆盖、CSP、以及裸 `res.json()` / 裸 `fetch` 等反模式
+- **自定义静态校验** — `verify.js` 检查结构、路由覆盖、CSP、死代码（死 action / 冗余 window 导出 / 孤儿 HTML id / 未使用 import）、以及裸 `res.json()` / 裸 `fetch` 等反模式
 
 ---
 

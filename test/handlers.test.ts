@@ -601,13 +601,13 @@ describe('handleFix1101', () => {
 // ============================================================
 describe('check handlers', () => {
     it('handleGetCode 未知模板 → 400', async () => {
-        expect((await handleGetCode(mockEnv(mockKV()), 'evil')).status).toBe(400);
+        expect((await handleGetCode('evil')).status).toBe(400);
     });
 
     it('handleGetCode 上游 404 → 502 且带原因', async () => {
         const stub = stubFetch([{ match: 'raw.githubusercontent.com', respond: () => htmlErr(404) }]);
         try {
-            const res = await handleGetCode(mockEnv(mockKV()), 'cmliu');
+            const res = await handleGetCode('cmliu');
             expect(res.status).toBe(502);
             expect((await res.json() as any).msg).toContain('404');
         } finally { stub.restore(); }

@@ -11,6 +11,9 @@ export interface MockKV extends KVNamespace {
     _store: Map<string, { value: string; ttl?: number }>;
     _puts: number;
     _gets: number;
+    _deletes: string[];
+    /** 单次 list 返回的键数上限，模拟真实 KV 的 1000 条分页（测试里调小以便覆盖翻页） */
+    _listPageSize: number;
 }
 
 export function mockKV(initial: Record<string, unknown> = {}): MockKV {
@@ -22,6 +25,8 @@ export function mockKV(initial: Record<string, unknown> = {}): MockKV {
         _store: store,
         _puts: 0,
         _gets: 0,
+        _deletes: [],
+        _listPageSize: 1000,
         async get(key: string) {
             kv._gets++;
             return store.has(key) ? store.get(key)!.value : null;
@@ -30,10 +35,24 @@ export function mockKV(initial: Record<string, unknown> = {}): MockKV {
             kv._puts++;
             store.set(key, { value, ttl: opts?.expirationTtl });
         },
-        async delete(key: string) { store.delete(key); },
-        async list(opts?: { prefix?: string }) {
+        async delete(key: string) { kv._deletes.push(key); store.delete(key); },
+        /**
+         * 语义对齐真实 KV：按前缀过滤 + 分页（`list_complete` / `cursor`）。
+         * 此前这里一次性返回全部键且不带 list_complete，任何「只读第一页」的 bug
+         * 在测试里都是绿的 —— backup 与 KV 回收都依赖完整枚举。
+         */
+        async list(opts?: { prefix?: string; cursor?: string }) {
             const prefix = opts?.prefix || '';
-            return { keys: [...store.keys()].filter(k => k.startsWith(prefix)).map(name => ({ name })) };
+            const all = [...store.keys()].filter(k => k.startsWith(prefix)).sort();
+            const start = opts?.cursor ? parseInt(opts.cursor, 10) || 0 : 0;
+            const page = all.slice(start, start + kv._listPageSize);
+            const end = start + page.length;
+            const complete = end >= all.length;
+            return {
+                keys: page.map(name => ({ name })),
+                list_complete: complete,
+                ...(complete ? {} : { cursor: String(end) })
+            };
         }
     };
     return kv;

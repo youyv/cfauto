@@ -7,6 +7,12 @@
  * 初始化时的**值快照**，后续 `accounts = d.accounts` 重新绑定局部变量不会更新 window.accounts，
  * 任何按 window.accounts 写的代码都拿到永远为空的初始数组。改为单一 state 对象后，
  * 所有读写都经过同一份引用，导出即真实状态。
+ *
+ * 曾经还有一层 `Object.defineProperties(window, {...})` 兼容别名（window.accounts /
+ * editingIndex / deletedVars / deployConfigs / currentHistoryType）。全部模块拼接后共享
+ * 同一个脚本作用域，直接写 `state.xxx` 即可，那些别名没有任何读取方；其中 deletedVars 与
+ * deployConfigs 只有 getter，`window.deletedVars = x` 在非严格模式下会**静默失败** ——
+ * 留着只是给未来埋坑，已删除。
  */
 const state = {
     accounts: [],
@@ -16,27 +22,6 @@ const state = {
     currentHistoryType: null,
     favData: []
 };
-
-/** 兼容旧写法的取值别名（读写都落到 state 上） */
-Object.defineProperties(window, {
-    accounts: {
-        get: () => state.accounts,
-        set: (v) => { state.accounts = Array.isArray(v) ? v : []; },
-        configurable: true
-    },
-    editingIndex: {
-        get: () => state.editingIndex,
-        set: (v) => { state.editingIndex = v; },
-        configurable: true
-    },
-    deletedVars: { get: () => state.deletedVars, configurable: true },
-    deployConfigs: { get: () => state.deployConfigs, configurable: true },
-    currentHistoryType: {
-        get: () => state.currentHistoryType,
-        set: (v) => { state.currentHistoryType = v; },
-        configurable: true
-    }
-});
 
 /** 初始化每个模板的 deletedVars 槽位（模板列表由服务端注入的 TEMPLATES 决定） */
 function resetDeletedVars() {
@@ -109,9 +94,3 @@ function applyAutoConfigToUi(ac) {
         el.checked = !!ac.enabled && ac[flag] !== false;
     });
 }
-
-// @exports
-window.state = state;
-window.init = init;
-window.applyAutoConfigToUi = applyAutoConfigToUi;
-window.resetDeletedVars = resetDeletedVars;

@@ -9,13 +9,12 @@
 import { KV_KEYS, TEMPLATES } from '../config/templates';
 import { json, jsonError, safeJson } from '../lib/cloudflare-api';
 import { getJSON, putJSON } from "../lib/kv-utils";
-import { readAccounts, readAccountsMasked, writeAccounts } from "../lib/account-store";
+import { readAccountsMasked, writeAccounts } from "../lib/account-store";
 import {
     requireTemplateType, normalizeVariables, normalizeAutoConfig,
     validateAccountsPayload
 } from '../lib/validate';
 import { logger } from '../lib/logger';
-import type { AppEnv } from "../config/env";
 import type { RouteRegistrar } from "./register";
 import type { AccountEntry, FavoriteItem } from '../lib/types';
 import { registerBackupRoutes } from './crud-backup';

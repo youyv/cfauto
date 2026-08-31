@@ -139,18 +139,16 @@ async function logout() {
     location.reload();
 }
 
-// @exports
-window.$ = $;
-window.registerActions = registerActions;
-window.apiFetch = apiFetch;
-window.logout = logout;
-window.closeModal = closeModal;
-window.openModal = openModal;
-
+// 所有前端模块被 build.js 拼接进同一个脚本作用域，跨文件直接同名调用即可。
+// 此前每个文件尾部都有一段 `window.xxx = xxx` 的「导出」，但全项目没有任何一处读
+// `window.xxx`（只有 window.fetch / innerWidth / matchMedia 这些平台属性被读），
+// 纯属冗余，已全部删除。verify.js 会拦住这种写法回归。
+//
+// openModal 也不再注册为 action：HTML 里没有引用它的 data-act 元素，
+// 各处都是直接调用 openModal('xxx_modal')。
 registerActions({
     logout: logout,
     closeModal: closeModal,
-    openModal: openModal,
     clearWorkbenchLog: clearWorkbenchLog,
     regenBatchUuid: regenBatchUuid
 });

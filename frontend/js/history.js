@@ -198,9 +198,6 @@ async function toggleFavorite(type, item, isRemove) {
     }
 }
 
-// @exports
-window.refreshHistory = refreshHistory;
-
 registerActions({
     openVersionHistory: openVersionHistory,
     refreshHistory: refreshHistory,

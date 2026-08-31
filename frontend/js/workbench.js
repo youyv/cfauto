@@ -46,10 +46,6 @@ function wbLog(msg, colorClass) {
     document.addEventListener('mouseup', () => { isDragging = false; });
 })();
 
-// @exports
-window.openWorkbench = openWorkbench;
-window.wbLog = wbLog;
-
 registerActions({
     openWorkbench: openWorkbench,
     closeWorkbench: closeWorkbench

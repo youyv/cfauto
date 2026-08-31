@@ -8,6 +8,7 @@ import { cf, getAuthHeaders, fetchWithTimeout, readApiResult } from './cloudflar
 import { fetchGithubCode, applyTemplateTransform, getGithubUrls, fetchGithubCommits } from './github';
 import { uploadWorker, parseApiError, mergeVariableBindings } from './deploy-utils';
 import { getJSON, putJSON } from './kv-utils';
+import { pruneJournal, JOURNAL_SUMMARY_MAX } from './kv-gc';
 import { readAccounts, getWorkerNames, hasAnyWorker } from './account-store';
 import { pooledMap } from './concurrency';
 import { logger } from './logger';
@@ -171,12 +172,16 @@ export async function finalizeDeploy(
         const journalEntry: JournalEntry = {
             time: nowIso, type, sha: deployedSha,
             accounts: logs.filter(l => l.success).length, total: logs.length,
-            summary: logs.map(l => l.name + ': ' + (l.success ? 'OK' : l.msg)).join('; ').substring(0, 500)
+            summary: logs.map(l => l.name + ': ' + (l.success ? 'OK' : l.msg)).join('; ').substring(0, JOURNAL_SUMMARY_MAX)
         };
         if (customCodeHash) journalEntry.customSha = customCodeHash;
         if (failedLogs.length > 0) journalEntry.failed = failedLogs.map(l => l.name);
         existing.unshift(journalEntry);
-        await putJSON(env.CONFIG_KV, KV_KEYS.DEPLOY_JOURNAL, existing.slice(0, 100));
+        // 写入侧就按「条数 + 保留天数 + 单条体积」裁剪，不再只截条数：
+        // failed 数组此前无上限，一次 200 个目标全失败就会写进一个巨大的数组，
+        // 100 条这种记录足以把单个 KV 值推到数百 KB。cron 的 GC 只是兜底。
+        const { kept } = pruneJournal(existing, Date.now());
+        await putJSON(env.CONFIG_KV, KV_KEYS.DEPLOY_JOURNAL, kept);
     } catch (e) { logger.warn("deploy journal write failed", { error: (e as Error).message }); }
 
     // 只有全部成功才推进 currentSha / deployTime；否则保留旧值并记录 pending

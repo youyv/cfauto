@@ -12,7 +12,11 @@ export interface KVNamespace {
     get(key: string, options?: any): Promise<string | null>;
     put(key: string, value: string, options?: any): Promise<void>;
     delete(key: string): Promise<void>;
-    list(options?: any): Promise<{ keys: Array<{ name: string }> }>;
+    /**
+     * 列举键。真实 KV 单次最多返回 1000 个键，未列完时 `list_complete` 为 false
+     * 且给出 `cursor` —— 只读第一页会漏掉后面的键，回收逻辑必须翻页（见 listAllKeys）。
+     */
+    list(options?: any): Promise<{ keys: Array<{ name: string }>; list_complete?: boolean; cursor?: string }>;
 }
 /** 账号凭证 */
 export interface AccountCredentials {

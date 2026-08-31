@@ -357,15 +357,12 @@ async function doYxipDeploy() {
     }
 }
 
-// @exports
-window.buildYxipList = buildYxipList;
-
+// showYxipModal / doYxipSearch / clearYxipSearch 不注册为 action：
+// 入口是 openYxipGuarded（HTML 上唯一的 data-act），搜索框与清除按钮由
+// renderYxipRegions 动态创建并直接 addEventListener。
 registerActions({
     openYxipGuarded: openYxipGuarded,
-    showYxipModal: showYxipModal,
     toggleYxipAccountSelect: toggleYxipAccountSelect,
-    doYxipSearch: doYxipSearch,
-    clearYxipSearch: clearYxipSearch,
     yxipSelectAll: yxipSelectAll,
     yxipSelectNone: yxipSelectNone,
     doYxipDeploy: doYxipDeploy

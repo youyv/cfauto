@@ -1,5 +1,5 @@
 /**
- * 定时任务 — 自动检查更新 + 熔断轮换
+ * 定时任务 — 自动检查更新 + 熔断轮换 + KV 回收
  */
 
 import { KV_KEYS, autoUpdateTypes, fuseRotatableTypes, autoFlagKey } from './config/templates';
@@ -7,6 +7,7 @@ import { getJSON, putJSON } from './lib/kv-utils';
 import { readAccounts } from './lib/account-store';
 import { fetchInternalStats } from './lib/stats';
 import { checkAndDeployUpdate, rotateUUIDAndDeploy } from './lib/auto-update';
+import { runKvGc, readLiveAccountIds, GC_INTERVAL_MS } from './lib/kv-gc';
 import { logger } from './lib/logger';
 import { fetchWithTimeout } from './lib/cloudflare-api';
 import type { AutoUpdateConfig } from './lib/types';
@@ -16,6 +17,42 @@ import type { AppEnv } from "./config/env";
 function isTypeEnabled(config: AutoUpdateConfig, type: string): boolean {
     const flag = (config as unknown as Record<string, unknown>)[autoFlagKey(type)];
     return flag !== false;
+}
+
+/** 是否到了执行 KV 回收的时间。纯函数，导出供测试覆盖 */
+export function shouldRunGc(lastGc: number | undefined, now: number, intervalMs = GC_INTERVAL_MS): boolean {
+    return now - (lastGc || 0) >= intervalMs;
+}
+
+/**
+ * KV 回收 —— 与自动更新完全解耦，**即使 enabled 为 false 也执行**。
+ *
+ * 理由：孤儿键和超长日志的产生与「是否开启自动更新」无关（手动部署、删账号、
+ * 恢复备份都会留下垃圾），关掉自动更新反而更需要有人来收拾。节流靠独立的
+ * `lastGc` 字段（24h），不占用 `lastCheck` 的语义。
+ *
+ * 账号表不可信时**跳过本轮**（readLiveAccountIds 返回 null）：空账号集合会让
+ * collectOrphanKeys 把所有账号级覆盖判为孤儿，那是不可接受的破坏性后果。
+ */
+async function maybeRunKvGc(env: AppEnv): Promise<void> {
+    try {
+        const cfg = await getJSON<AutoUpdateConfig | null>(env.CONFIG_KV, KV_KEYS.GLOBAL_CONFIG, null);
+        if (!shouldRunGc(cfg?.lastGc, Date.now())) return;
+        const accountIds = await readLiveAccountIds(env.CONFIG_KV);
+        if (accountIds === null) {
+            logger.warn('cron: 账号表不可信，跳过本轮 KV 回收', { module: 'cron' });
+            return;
+        }
+        const result = await runKvGc(env, accountIds);
+        // 无论是否有清理动作都推进 lastGc，避免每 5 分钟重复 list 一遍 KV
+        const latest = await getJSON<AutoUpdateConfig | null>(env.CONFIG_KV, KV_KEYS.GLOBAL_CONFIG, null);
+        await putJSON(env.CONFIG_KV, KV_KEYS.GLOBAL_CONFIG, { ...(latest || cfg || {}), lastGc: Date.now() });
+        if (!result.listComplete) {
+            logger.warn('cron: KV 回收未列完全部键，下轮继续', { module: 'cron' });
+        }
+    } catch (e) {
+        logger.error('cron: KV 回收失败', e as Error, { module: 'cron' });
+    }
 }
 
 /** 熔断判定 — 纯函数，导出供测试覆盖边界（0 阈值、缺 stats、limit 兜底） */
@@ -30,7 +67,20 @@ export function isFuseTriggered(
     return (stat.total / limit) * 100 >= threshold;
 }
 
+/**
+ * cron 入口。
+ *
+ * 拆成「自动更新（runAutoUpdate）」+「KV 回收（maybeRunKvGc）」两段，两段互不影响：
+ * 更新流程里任何 early return / 异常都不会让回收被跳过。此前把回收写在同一个函数尾部
+ * 时，`if (!config.enabled) return` 之类的提前退出会连带跳过回收 —— 而那恰恰是最需要
+ * 回收的场景（关掉了自动更新，仍在手动部署与增删账号）。
+ */
 export async function handleCronJob(env: AppEnv) {
+    await runAutoUpdate(env);
+    await maybeRunKvGc(env);
+}
+
+async function runAutoUpdate(env: AppEnv) {
     const GLOBAL_CONFIG_KEY = KV_KEYS.GLOBAL_CONFIG;
     let savedConfig: AutoUpdateConfig | null = null;
     try {
@@ -75,7 +125,7 @@ export async function handleCronJob(env: AppEnv) {
                         await rotateUUIDAndDeploy(env, ft, [acc.accountId]);
                     }
                     fusedAccounts.push(acc.alias);
-                    await sendFuseAlert(env, acc.alias, stat!.total, stat!.max || 100000, fuseThreshold, config);
+                    await sendFuseAlert(acc.alias, stat!.total, stat!.max || 100000, fuseThreshold, config);
                 } catch (e) {
                     // 单账号熔断失败不中断其余账号
                     logger.error('cron: fuse check failed for ' + acc.alias, e as Error, { module: 'cron' });
@@ -123,7 +173,8 @@ function maskUrl(url: string): string {
     } catch { return 'invalid-url'; }
 }
 
-async function sendFuseAlert(env: AppEnv, alias: string, total: number, limit: number, threshold: number, config: AutoUpdateConfig) {
+/** 发送熔断告警 webhook（不需要 env：webhook URL 来自 config，非环境变量） */
+async function sendFuseAlert(alias: string, total: number, limit: number, threshold: number, config: AutoUpdateConfig) {
     try {
         const webhookUrl = config.fuseWebhook;
         if (!webhookUrl) return;

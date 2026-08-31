@@ -335,12 +335,9 @@ function retryFailedBatch() {
     _lastFailedBatch = null;
 }
 
-// @exports
-window.deploy = deploy;
-window.openBatchDeployModal = openBatchDeployModal;
-window.toggleBatchInputs = toggleBatchInputs;
-window.previewDeploy = previewDeploy;
-
+// retryFailedBatch 不注册为 action：它只由 doBatchDeploy 的失败确认弹窗直接调用，
+// HTML 里没有对应的 data-act 元素。注册一个永远不会被派发的动作只会让 verify.js
+// 的「action ↔ data-act」双向检查失去意义。
 registerActions({
     deploy: deploy,
     fix1101: fix1101,
@@ -349,6 +346,5 @@ registerActions({
     doBatchDeploy: doBatchDeploy,
     toggleBatchInputs: toggleBatchInputs,
     toggleEchToken: toggleEchToken,
-    showDeployJournal: showDeployJournal,
-    retryFailedBatch: retryFailedBatch
+    showDeployJournal: showDeployJournal
 });

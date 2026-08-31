@@ -11,6 +11,7 @@
 import { KV_KEYS } from '../config/templates';
 import { decryptKey, encryptKey, VERSION_PREFIX } from './crypto-utils';
 import { getJSON, putJSON } from './kv-utils';
+import { deleteAccountVarsFor } from './kv-gc';
 import { logger } from './logger';
 import type { AccountEntry } from './types';
 import type { AppEnv } from '../config/env';
@@ -48,7 +49,13 @@ function maskKey(key: string): string {
     return key.substring(0, 6) + '...' + key.substring(key.length - 4);
 }
 
-/** 写入账号列表（自动加密 globalKey；空值/掩码值保留旧密文，防止覆盖真实凭证） */
+/**
+ * 写入账号列表（自动加密 globalKey；空值/掩码值保留旧密文，防止覆盖真实凭证）。
+ *
+ * 同时清理**被本次写入移除的账号**遗留的账号级变量覆盖键 `VARS_<type>_ACC_<id>`：
+ * 那些键由熔断轮换写入，此前没有任何代码路径会删除它们，账号删掉后会永久占用 KV。
+ * 清理失败不影响账号保存本身（cron 的 KV 回收会兜底）。
+ */
 export async function writeAccounts(env: AppEnv, accounts: AccountEntry[]): Promise<void> {
     // 读取现有密文列表，用于保留未修改（空/掩码）的 key
     const existing = await getJSON<AccountEntry[]>(env.CONFIG_KV, KV_KEYS.ACCOUNTS, []);
@@ -66,6 +73,18 @@ export async function writeAccounts(env: AppEnv, accounts: AccountEntry[]): Prom
         }
     }));
     await putJSON(env.CONFIG_KV, KV_KEYS.ACCOUNTS, cloned);
+
+    // 账号被移除 → 立即回收其账号级变量覆盖
+    const nextIds = new Set(cloned.map(a => a.accountId));
+    const removedIds = existing.map(a => a.accountId).filter(id => id && !nextIds.has(id));
+    if (removedIds.length > 0) {
+        try {
+            const deleted = await deleteAccountVarsFor(env.CONFIG_KV, removedIds);
+            logger.audit('accountVars cleaned for removed accounts', { accounts: removedIds.length, keys: deleted });
+        } catch (e) {
+            logger.warn('writeAccounts: 账号级变量清理失败（cron 回收会兜底）', { error: (e as Error).message });
+        }
+    }
 }
 
 /** 判断是否为前端脱敏格式（前6...后4 或 ***），此类值不得作为新 key 加密入库 */
