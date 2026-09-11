@@ -8,7 +8,7 @@ import { jsonError } from './lib/cloudflare-api';
 import { getRoute } from './routes/register';
 import { handleCronJob } from './cron';
 import { TEMPLATES, ECH_PROXIES, MANIFEST } from './config/templates';
-import { FRONTEND_HTML, FRONTEND_CSS, FRONTEND_JS, FRONTEND_VERSION, FRONTEND_SWEETALERT2 } from './frontend-bundle';
+import { FRONTEND_HTML, FRONTEND_CSS, FRONTEND_JS, FRONTEND_VERSION, FRONTEND_ASSET_VERSION, FRONTEND_SWEETALERT2 } from './frontend-bundle';
 import { logger } from './lib/logger';
 import type { AppEnv } from "./config/env";
 
@@ -210,7 +210,9 @@ function serveAsset(pathname: string): Response | null {
 let _htmlCache: string | null = null;
 function mainHtml() {
     if (_htmlCache !== null) return _htmlCache;
-    const v = encodeURIComponent(FRONTEND_VERSION);
+    // 资源 URL 用内容寻址的 assetVersion 而不是展示用的版本号：
+    // 静态资源是 `immutable, max-age=1y`，URL 不变浏览器就永远不取新的（见 build.js 的注释）。
+    const v = encodeURIComponent(FRONTEND_ASSET_VERSION);
     // SweetAlert2 构建时未内联成功则回退 CDN（CSP 里已放行 jsdelivr 作为该情形的兜底）
     const swScript = FRONTEND_SWEETALERT2
         ? '<script src="/vendor/sweetalert2.js?v=' + v + '" defer></script>'
