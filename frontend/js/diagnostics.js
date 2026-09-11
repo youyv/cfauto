@@ -25,6 +25,7 @@ async function runDiagnostics() {
             wbLog('  ' + k + ': ' + v, cls);
         });
         renderKvUsage(d.__kv_usage);
+        renderDeployDrift(d.__deploy_drift);
         wbLog('✅ 诊断完成', 'text-green-400');
     } catch (e) {
         console.error('[runDiagnostics]', e);
@@ -54,6 +55,30 @@ function renderKvUsage(u) {
     wbLog('  部署日志: ' + u.journalEntries + ' 条 / ' + kb.toFixed(1) + ' KB（保留 ' + u.journalRetentionDays + ' 天）',
         kb > 512 ? 'text-orange-400' : 'text-slate-400');
     wbLog('  上次自动回收: ' + u.lastGc, 'text-slate-400');
+}
+
+/**
+ * 部署实况 —— 账本（KV 里的 currentSha/deployTime）与 Cloudflare 上脚本真实修改时间的对照。
+ *
+ * 「面板显示已更新、实际没更新」此前完全不可见：日志里只有一片 OK。这里把两类失真直接
+ * 摆出来 —— drifted 是账本记录了部署时间、但脚本比那个时间还旧（写入没落地）；missing
+ * 是账本里有、Cloudflare 上却找不到。
+ */
+function renderDeployDrift(dr) {
+    if (!dr || typeof dr !== 'object') return;
+    wbLog('─── 部署实况 ───', 'text-slate-500');
+    if (dr.error) { wbLog('  检测失败: ' + dr.error, 'text-red-400'); return; }
+    const drifted = dr.drifted || [];
+    const missing = dr.missing || [];
+    const unreadable = dr.unreadable || [];
+    const clean = drifted.length === 0 && missing.length === 0;
+    wbLog('  受管目标: ' + (dr.checked || 0) + ' 个' + (clean ? '（账本与实况一致）' : ''),
+        clean ? 'text-green-300' : 'text-orange-400');
+    drifted.forEach(function (l) { wbLog('  ⚠️ 未生效: ' + l, 'text-orange-400'); });
+    missing.forEach(function (l) { wbLog('  ⚠️ 云端不存在: ' + l, 'text-orange-400'); });
+    unreadable.forEach(function (u) { wbLog('  ⚠️ 无法核对: ' + u, 'text-orange-400'); });
+    if (drifted.length > 0) wbLog('    ↳ 这些 Worker 的脚本比账本记录的部署时间还旧，说明那次写入没有真正落地', 'text-slate-500');
+    if (missing.length > 0) wbLog('    ↳ 账本里还记着它们，但 Cloudflare 上已经没有这个脚本了', 'text-slate-500');
 }
 
 /** 查看上游模板源码摘要（行数 / 大小 / 前若干行） */

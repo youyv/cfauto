@@ -5,7 +5,7 @@ import { coreDeployLogic, finalizeDeploy, rotateUUIDAndDeploy, mergeVarLists } f
 import { handleManualDeploy } from '../src/routes/deploy';
 import { writeAccounts } from '../src/lib/account-store';
 import { KV_KEYS } from '../src/config/templates';
-import { mockKV, mockEnv, readKV, jsonReq, cfOk, cfErr, htmlErr, stubFetch, type MockKV } from './helpers';
+import { mockKV, mockEnv, readKV, jsonReq, cfOk, cfErr, htmlErr, cfScript, scriptEndpoint, stubFetch, type MockKV } from './helpers';
 import type { AppEnv } from '../src/config/env';
 import type { AccountEntry, DeployConfig, DeployLogEntry, JournalEntry, AutoUpdateConfig } from '../src/lib/types';
 
@@ -21,7 +21,10 @@ async function seedAccounts(env: AppEnv, accounts: AccountEntry[]) {
 }
 
 /** GitHub 与 CF 的常用 stub 路由 */
-function githubRoutes(sha = 'sha-remote', code = 'const CF_FALLBACK_IPS = [];') {
+/** 上游桩代码 —— 部署链路的回读校验会拿它和 CF 返回的脚本内容比对 */
+const STUB_CODE = 'const CF_FALLBACK_IPS = [];';
+
+function githubRoutes(sha = 'sha-remote', code = STUB_CODE) {
     return [
         { match: 'raw.githubusercontent.com', respond: () => new Response(code, { status: 200 }) },
         {
@@ -45,7 +48,7 @@ describe('coreDeployLogic — 部分失败语义', () => {
         const stub = stubFetch([
             ...githubRoutes(),
             { match: '/bindings', respond: () => cfOk([]) },
-            { match: '/workers/scripts/', respond: () => cfOk({ id: 'w' }) }
+            scriptEndpoint(STUB_CODE)
         ]);
         try {
             const logs = await coreDeployLogic(env, { type: 'cmliu', variables: [] });
@@ -64,8 +67,10 @@ describe('coreDeployLogic — 部分失败语义', () => {
             ...githubRoutes(),
             { match: '/bindings', respond: () => cfOk([]) },
             {
-                match: '/workers/scripts/',
-                respond: (call) => call.url.includes('bad-worker') ? cfErr(500, 'upload failed') : cfOk({ id: 'w' })
+                match: /\/workers\/scripts\/[^/?]+$/,
+                respond: (call) => call.url.includes('bad-worker')
+                    ? cfErr(500, 'upload failed')
+                    : (call.method === 'GET' ? cfScript(STUB_CODE) : cfOk({ id: 'w' }))
             }
         ]);
         try {
@@ -88,7 +93,14 @@ describe('coreDeployLogic — 部分失败语义', () => {
         const stub = stubFetch([
             ...githubRoutes(),
             { match: '/bindings', respond: () => htmlErr(500) },
-            { match: '/workers/scripts/', respond: () => { uploadCalled = true; return cfOk({}); } }
+            {
+                match: /\/workers\/scripts\/[^/?]+$/,
+                respond: (c) => {
+                    if (c.method === 'GET') return cfScript(STUB_CODE);
+                    uploadCalled = true;
+                    return cfOk({});
+                }
+            }
         ]);
         try {
             const logs = await coreDeployLogic(env, { type: 'cmliu', variables: [{ key: 'UUID', value: 'x' }] });
@@ -105,7 +117,7 @@ describe('coreDeployLogic — 部分失败语义', () => {
         const stub = stubFetch([
             ...githubRoutes(),
             { match: '/bindings', respond: () => cfOk([]) },
-            { match: '/workers/scripts/', respond: () => cfOk({}) }
+            scriptEndpoint(STUB_CODE)
         ]);
         try {
             const logs = await coreDeployLogic(env, {
@@ -126,7 +138,7 @@ describe('coreDeployLogic — 部分失败语义', () => {
         const stub = stubFetch([
             ...githubRoutes(),
             { match: '/bindings', respond: () => cfOk([]) },
-            { match: '/workers/scripts/', respond: () => cfOk({}) }
+            scriptEndpoint(STUB_CODE)
         ]);
         try {
             const logs = await coreDeployLogic(env, { type: 'cmliu', variables: [], targetAccountIds: [AID_B] });
@@ -205,7 +217,7 @@ describe('rotateUUIDAndDeploy — 熔断作用域', () => {
         const stub = stubFetch([
             ...githubRoutes(),
             { match: '/bindings', respond: () => cfOk([]) },
-            { match: '/workers/scripts/', respond: () => cfOk({}) }
+            scriptEndpoint(STUB_CODE)
         ]);
         try {
             await rotateUUIDAndDeploy(env, 'cmliu', [AID_A]);
@@ -228,7 +240,7 @@ describe('rotateUUIDAndDeploy — 熔断作用域', () => {
         const stub = stubFetch([
             ...githubRoutes(),
             { match: '/bindings', respond: () => cfOk([]) },
-            { match: '/workers/scripts/', respond: () => cfOk({}) }
+            scriptEndpoint(STUB_CODE)
         ]);
         try {
             await rotateUUIDAndDeploy(env, 'cmliu', [AID_A]);
@@ -278,7 +290,7 @@ describe('rotateUUIDAndDeploy — 熔断作用域', () => {
         const stub = stubFetch([
             ...githubRoutes(),
             { match: '/bindings', respond: () => cfOk([]) },
-            { match: '/workers/scripts/', respond: () => cfOk({}) }
+            scriptEndpoint(STUB_CODE)
         ]);
         try {
             // cron 路径（默认 accountOverrides: 'apply'）
@@ -299,7 +311,7 @@ describe('rotateUUIDAndDeploy — 熔断作用域', () => {
         const stub = stubFetch([
             ...githubRoutes(),
             { match: '/bindings', respond: () => cfOk([]) },
-            { match: '/workers/scripts/', respond: () => cfOk({}) }
+            scriptEndpoint(STUB_CODE)
         ]);
         try {
             await handleManualDeploy(env, { type: 'cmliu', variables: [{ key: 'UUID', value: 'manual' }] });
@@ -353,7 +365,7 @@ describe('handleCronJob', () => {
             { match: '/graphql', respond: () => statsResponse(10) },
             ...githubRoutes(),
             { match: '/bindings', respond: () => cfOk([]) },
-            { match: '/workers/scripts/', respond: () => cfOk({}) },
+            scriptEndpoint(STUB_CODE),
             { match: '/subdomain', respond: () => cfOk({}) }
         ]);
         try {
@@ -372,7 +384,7 @@ describe('handleCronJob', () => {
             { match: '/graphql', respond: () => statsResponse(10) },
             ...githubRoutes(),
             { match: '/bindings', respond: () => cfOk([]) },
-            { match: '/workers/scripts/', respond: () => cfOk({}) },
+            scriptEndpoint(STUB_CODE),
             { match: '/subdomain', respond: () => cfOk({}) }
         ]);
         try {
@@ -389,7 +401,7 @@ describe('handleCronJob', () => {
             { match: '/graphql', respond: () => statsResponse(100) },   // 100/100 = 100% ≥ 50%
             ...githubRoutes(),
             { match: '/bindings', respond: () => cfOk([]) },
-            { match: '/workers/scripts/', respond: () => cfOk({}) },
+            scriptEndpoint(STUB_CODE),
             { match: '/subdomain', respond: () => cfOk({}) }
         ]);
         try {

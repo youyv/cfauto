@@ -6,7 +6,7 @@ import { handleFix1101 } from '../src/routes/fix1101';
 import { handleCheckUpdate, handleGetCode } from '../src/routes/check';
 import { writeAccounts, readAccounts, getWorkerNames } from '../src/lib/account-store';
 import { KV_KEYS } from '../src/config/templates';
-import { mockKV, mockEnv, readKV, cfOk, cfErr, htmlErr, stubFetch } from './helpers';
+import { mockKV, mockEnv, readKV, cfOk, cfErr, htmlErr, cfScript, scriptEndpoint, stubFetch } from './helpers';
 import type { AppEnv } from '../src/config/env';
 import type { AccountEntry, DeployConfig } from '../src/lib/types';
 
@@ -17,7 +17,10 @@ function acct(over: Partial<AccountEntry> = {}): AccountEntry {
     return { alias: 'acc-a', accountId: AID_A, email: 'a@x.com', globalKey: 'KEY_A', ...over };
 }
 
-function githubRoutes(sha = 'sha-remote', code = 'const CF_FALLBACK_IPS = [];\nconst token = \'\';') {
+/** 上游桩代码 —— 部署链路的回读校验会拿它和 CF 返回的脚本内容比对 */
+const STUB_CODE = 'const CF_FALLBACK_IPS = [];\nconst token = \'\';';
+
+function githubRoutes(sha = 'sha-remote', code = STUB_CODE) {
     return [
         { match: 'raw.githubusercontent.com', respond: () => new Response(code, { status: 200 }) },
         {
@@ -85,7 +88,7 @@ describe('handleBatchDeploy', () => {
             { match: '/storage/kv/namespaces', respond: (c) => c.method === 'POST' ? cfOk({ id: 'ns-new' }) : cfOk([]) },
             { match: '/workers/scripts/new-proxy/subdomain', respond: () => cfOk({}) },
             { match: '/workers/subdomain', respond: () => cfOk({ subdomain: 'mysub' }) },
-            { match: '/workers/scripts/', respond: () => cfOk({ id: 'new-proxy' }) }
+            scriptEndpoint(STUB_CODE)
         ]);
         try {
             const logs: any = await (await handleBatchDeploy(env, base)).json();
@@ -108,7 +111,7 @@ describe('handleBatchDeploy', () => {
                 return cfOk([{ title: 'my-kv', id: 'ns-existing' }]);
             } },
             { match: '/subdomain', respond: () => cfOk({ subdomain: 's' }) },
-            { match: '/workers/scripts/', respond: () => cfOk({}) }
+            scriptEndpoint(STUB_CODE)
         ]);
         try {
             const logs: any = await (await handleBatchDeploy(env, base)).json();
@@ -144,7 +147,12 @@ describe('handleBatchDeploy', () => {
             ...githubRoutes(),
             { match: '/storage/kv/namespaces', respond: () => cfOk([{ title: 'my-kv', id: 'ns1' }]) },
             { match: '/subdomain', respond: () => cfOk({ subdomain: 's' }) },
-            { match: '/workers/scripts/', respond: (c) => c.url.includes(AID_B) ? cfErr(500, 'nope') : cfOk({}) }
+            {
+                match: /\/workers\/scripts\/[^/?]+$/,
+                respond: (c) => c.url.includes(AID_B)
+                    ? cfErr(500, 'nope')
+                    : (c.method === 'GET' ? cfScript(STUB_CODE) : cfOk({}))
+            }
         ]);
         try {
             const logs: any = await (await handleBatchDeploy(env, { ...base, targetAccounts: ['acc-a', 'acc-b'] })).json();
@@ -163,7 +171,7 @@ describe('handleBatchDeploy', () => {
             ...githubRoutes(),
             { match: '/storage/kv/namespaces', respond: () => cfOk([{ title: 'my-kv', id: 'ns1' }]) },
             { match: '/subdomain', respond: () => cfOk({ subdomain: 's' }) },
-            { match: '/workers/scripts/', respond: () => cfOk({}) }
+            scriptEndpoint(STUB_CODE)
         ]);
         try {
             const logs: any = await (await handleBatchDeploy(env, { ...base, customDomainPrefix: 'api' })).json();
@@ -179,7 +187,7 @@ describe('handleBatchDeploy', () => {
             ...githubRoutes(),
             { match: '/storage/kv/namespaces', respond: () => cfOk([{ title: 'my-kv', id: 'ns1' }]) },
             { match: '/workers/scripts/new-proxy/subdomain', respond: () => cfOk({}) },
-            { match: '/workers/scripts/', respond: () => cfOk({}) }
+            scriptEndpoint(STUB_CODE)
         ]);
         try {
             const logs: any = await (await handleBatchDeploy(env, { ...base, disableWorkersDev: true })).json();
@@ -561,7 +569,7 @@ describe('handleFix1101', () => {
             { match: '/workers/subdomain', respond: () => cfOk({ subdomain: 's' }) },
             { match: '/workers/scripts/w1', respond: (c) => {
                 if (c.method === 'PUT') uploadAttempts++;
-                return cfOk({});
+                return c.method === 'GET' ? cfScript(STUB_CODE) : cfOk({});
             } }
         ]);
         try {
@@ -587,7 +595,7 @@ describe('handleFix1101', () => {
             { match: '/bindings', respond: () => cfOk([{ name: 'TOKEN', type: 'secret_text' }]) },
             { match: '/workers/domains', respond: () => cfOk([]) },
             { match: '/workers/subdomain', respond: () => cfOk({ subdomain: 's' }) },
-            { match: '/workers/scripts/w1', respond: () => cfOk({}) }
+            { match: '/workers/scripts/w1', respond: (c) => c.method === 'GET' ? cfScript(STUB_CODE) : cfOk({}) }
         ]);
         try {
             const logs: any = await (await handleFix1101(env, 'cmliu')).json();

@@ -6,7 +6,7 @@ import { KV_KEYS, TEMPLATES } from '../config/templates';
 import type { TemplateType } from '../config/templates';
 import { cf, getAuthHeaders, fetchWithTimeout, readApiResult } from './cloudflare-api';
 import { fetchGithubCode, applyTemplateTransform, getGithubUrls, fetchGithubCommits } from './github';
-import { uploadWorker, parseApiError, mergeVariableBindings } from './deploy-utils';
+import { uploadWorker, mergeVariableBindings, verifyWorkerScript } from './deploy-utils';
 import { getJSON, putJSON } from './kv-utils';
 import { pruneJournal, JOURNAL_SUMMARY_MAX } from './kv-gc';
 import { readAccounts, getWorkerNames, hasAnyWorker } from './account-store';
@@ -106,10 +106,21 @@ async function deploySingleWorker(
         const currentBindings = variables
             ? mergeVariableBindings(rawBindings, variables, deletedVariables)
             : rawBindings;
-        const { ok, res: updateRes } = await uploadWorker(acc, wName, scriptContent, currentBindings);
+        const { ok, error: uploadError } = await uploadWorker(acc, wName, scriptContent, currentBindings);
         if (ok) {
             logItem.success = true;
             const msgs = ['✅ Ver: ' + (deployedSha ? deployedSha.substring(0, 7) : 'Unknown')];
+            // 上传响应成功 ≠ 脚本真的变了 —— 回读一次内容再决定成败。
+            // 不一致时按失败处理：账本不会前进，cron 下一轮会把该目标当作落后继续重试。
+            const verdict = await verifyWorkerScript(acc.accountId, wName, jsonHeaders, scriptContent);
+            if (verdict === 'mismatch') {
+                logItem.success = false;
+                logItem.verify = 'mismatch';
+                logItem.msg = '❌ 上传后回读校验不一致：Cloudflare 上的脚本内容与本次上传的不同（本次写入可能未生效），已按失败处理并留在重试队列';
+                return logItem;
+            }
+            logItem.verify = verdict === 'verified' ? 'verified' : 'unverified';
+            if (verdict === 'unverified') msgs.push('⚠️ 回读校验不可用');
             if (type === 'ech') {
                 try {
                     await fetchWithTimeout(cf.workerSubdomain(acc.accountId, wName), {
@@ -121,7 +132,7 @@ async function deploySingleWorker(
             }
             logItem.msg = msgs.join(' | ');
         } else {
-            logItem.msg = await parseApiError(updateRes);
+            logItem.msg = '❌ ' + (uploadError || '上传失败');
         }
     } catch (err: any) { logItem.msg = '❌ ' + err.message; }
     return logItem;
@@ -146,16 +157,23 @@ async function fetchCommitDate(env: AppEnv, type: TemplateType): Promise<string 
 /**
  * [提取] 部署后写入日志和配置
  *
- * 关键语义：`currentSha` 只在**本轮全部目标都成功**时前进。此前只要有一个成功就写新 SHA，
- * 会让 cron 判定「已是最新」，剩下的失败目标永远停在旧版本且无告警。失败目标记入
- * `pendingTargets`，checkAndDeployUpdate 会据此继续重试。
+ * 关键语义（两条都必须满足才推进 `currentSha`）：
+ *  1. **全量作用域**（`scope === 'full'`）：本轮覆盖了该模板的全部受管目标。
+ *     熔断轮换、一键修复、批量部署、失败重试都只覆盖子集 —— 它们若推进账本，其余 Worker
+ *     会被判成「已是最新」而永远不再更新，且没有任何告警。这正是线上出现过的那次故障。
+ *  2. **全部目标成功**：任何失败都记入 `pendingTargets`，checkAndDeployUpdate 据此重试。
+ *
+ * 子集作用域下账本原样保留，只允许从 pending 里移除本轮真正成功的目标。
  */
 export async function finalizeDeploy(
     env: AppEnv, type: TemplateType, isLatestMode: boolean,
-    deployedSha: string | null, logs: DeployLogEntry[], customCodeHash: string
+    deployedSha: string | null, logs: DeployLogEntry[], customCodeHash: string,
+    scope: 'full' | 'partial' = 'full'
 ): Promise<void> {
     const failedLogs = logs.filter(l => !l.success);
     const allSucceeded = failedLogs.length === 0 && logs.length > 0;
+    // 账本只在「全量 + 全部成功」时前进
+    const advances = allSucceeded && scope === 'full';
     const mode = isLatestMode ? 'latest' : 'fixed';
     const nowIso = new Date().toISOString();
 
@@ -164,7 +182,7 @@ export async function finalizeDeploy(
     const [existing, prev, commitDate] = await Promise.all([
         getJSON<JournalEntry[]>(env.CONFIG_KV, KV_KEYS.DEPLOY_JOURNAL, []),
         getJSON<DeployConfig>(env.CONFIG_KV, KV_KEYS.deployConfig(type), { mode: 'latest' }),
-        allSucceeded ? fetchCommitDate(env, type) : Promise.resolve(null),
+        advances ? fetchCommitDate(env, type) : Promise.resolve(null),
     ]);
 
     // 写 journal
@@ -184,8 +202,8 @@ export async function finalizeDeploy(
         await putJSON(env.CONFIG_KV, KV_KEYS.DEPLOY_JOURNAL, kept);
     } catch (e) { logger.warn("deploy journal write failed", { error: (e as Error).message }); }
 
-    // 只有全部成功才推进 currentSha / deployTime；否则保留旧值并记录 pending
-    const dp: DeployConfig = allSucceeded
+    // 其余情形一律保留旧账本：全量失败记 pending，子集则连 pending 也只做增量更新
+    const dp: DeployConfig = advances
         ? {
             mode,
             currentSha: deployedSha || 'unknown',
@@ -195,22 +213,37 @@ export async function finalizeDeploy(
             pendingSha: null,
             commitDate: undefined
         }
-        : {
-            ...prev,
-            mode,
-            lastAttempt: nowIso,
-            // 目标 SHA 变了就重建 pending 集合，否则与既有 pending 求并集（本轮成功的移出）
-            pendingSha: deployedSha,
-            pendingTargets: mergePendingTargets(prev, deployedSha, logs)
-        };
+        : scope === 'full'
+            ? {
+                ...prev,
+                mode,
+                lastAttempt: nowIso,
+                // 目标 SHA 变了就重建 pending 集合，否则与既有 pending 求并集（本轮成功的移出）
+                pendingSha: deployedSha,
+                pendingTargets: mergePendingTargets(prev, deployedSha, logs)
+            }
+            : {
+                ...prev,
+                mode,
+                lastAttempt: nowIso,
+                // pendingSha 指向"账本当前认为已部署的版本"，让重试队列能被
+                // resolveUpdatePlan 的 retry-pending 分支真正消费掉
+                pendingSha: prev.pendingSha || prev.currentSha || null,
+                pendingTargets: mergeSubsetPending(prev, logs)
+            };
 
-    if (allSucceeded) {
+    if (advances) {
         dp.commitDate = commitDate || undefined;
         logger.audit('deploy completed', { type, sha: deployedSha, targets: logs.length });
-    } else {
+    } else if (failedLogs.length > 0) {
         logger.warn('deploy partially failed — currentSha not advanced', {
             module: 'auto-update', type, sha: deployedSha,
             failed: failedLogs.length, total: logs.length
+        });
+    } else {
+        // 子集部署全成功：这是正常路径（熔断轮换/重试），但账本必须原地不动
+        logger.info('partial-scope deploy finished — ledger untouched', {
+            module: 'auto-update', type, sha: deployedSha, targets: logs.length
         });
     }
 
@@ -235,6 +268,24 @@ export function mergePendingTargets(
         else next.add(l.targetKey);
     }
     return Array.from(next);
+}
+
+/**
+ * 子集部署的 pending 增量合并 —— 只做两件事：移除本轮真正成功的目标、加入本轮失败的
+ * 目标。**不重建整个集合**：本轮没碰到的目标状态未知，必须原样保留，否则一次熔断轮换
+ * 就会把其它待重试目标从队列里抹掉。
+ */
+export function mergeSubsetPending(prev: DeployConfig, logs: DeployLogEntry[]): string[] {
+    const succeeded = new Set<string>();
+    const failed: string[] = [];
+    for (const l of logs) {
+        if (!l.targetKey) continue;
+        if (l.success) succeeded.add(l.targetKey);
+        else if (!failed.includes(l.targetKey)) failed.push(l.targetKey);
+    }
+    const kept = (prev.pendingTargets || []).filter(k => !succeeded.has(k));
+    for (const k of failed) if (!kept.includes(k)) kept.push(k);
+    return kept;
 }
 
 /** 核心部署逻辑 — 编排器 */
@@ -280,7 +331,17 @@ export async function coreDeployLogic(env: AppEnv, opts: DeployOptions): Promise
             )
         );
 
-        await finalizeDeploy(env, type, isLatestMode, deployedSha, logs, customCodeHash);
+        // 作用域：只有「不限账号 + 不限目标」的调用覆盖了该模板全部受管 Worker，
+        // 才允许推进版本账本（见 finalizeDeploy 的注释）。
+        const scope: 'full' | 'partial' =
+            (keyFilter || (targetAccountIds && targetAccountIds.length > 0)) ? 'partial' : 'full';
+        if (scope === 'partial') {
+            logger.info('coreDeployLogic: 子集部署，版本账本保持不动', {
+                module: 'auto-update', type, targets: targets.length
+            });
+        }
+
+        await finalizeDeploy(env, type, isLatestMode, deployedSha, logs, customCodeHash, scope);
         return logs;
     } catch (e: any) { return [{ name: "系统错误", success: false, msg: e.message }]; }
 }

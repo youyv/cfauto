@@ -11,6 +11,13 @@ export interface DeployLogEntry {
     msg: string;
     /** `<accountId>::<workerName>`，供 pendingTargets 精确重试；汇总类日志（如"提示"）可缺省 */
     targetKey?: string;
+    /**
+     * 上传后回读校验结论：
+     *  - 'verified'   回读内容与本次上传一致，确认真的生效了
+     *  - 'unverified' 回读失败/不可判定（网络抖动等），不据此判失败，但账本不认它是"已确认"
+     *  - 'mismatch'   回读内容不一致 → 该目标已被记为失败
+     */
+    verify?: 'verified' | 'unverified' | 'mismatch';
 }
 
 // ===== 变量条目 =====

@@ -5,7 +5,7 @@
 import { TEMPLATES, BINDING } from '../config/templates';
 import type { TemplateType } from '../config/templates';
 import { cf, getAuthHeaders, json, fetchWithTimeout, readApiResult } from '../lib/cloudflare-api';
-import { uploadWorker, parseApiError, mergeVariableBindings } from '../lib/deploy-utils';
+import { uploadWorker, mergeVariableBindings, verifyWorkerScript } from '../lib/deploy-utils';
 import { readAccounts, writeAccounts, addWorkerName } from "../lib/account-store";
 import { pooledMapSettled } from '../lib/concurrency';
 import { validateRequired, requireTemplateType, isNonEmptyString, WORKER_NAME_RE } from "../lib/validate";
@@ -168,15 +168,24 @@ async function deployToSingleAccount(
         }
 
         const bindings = buildBatchBindings(template, nsId, enableKV, savedVars, config);
-        const { ok, res: deployRes } = await uploadWorker(acc, workerName, scriptContent, bindings);
+        const { ok, error: uploadError } = await uploadWorker(acc, workerName, scriptContent, bindings);
 
         if (ok) {
+            // 回读校验：上传响应成功不代表脚本真的变了（见 deploy-utils.verifyWorkerScript）
+            const verdict = await verifyWorkerScript(acc.accountId, workerName, jsonHeaders, scriptContent);
+            if (verdict === 'mismatch') {
+                log.verify = 'mismatch';
+                log.msg = '❌ 上传后回读校验不一致：Cloudflare 上的脚本内容与本次上传的不同（本次写入可能未生效）';
+                return { log, updated };
+            }
+            log.verify = verdict === 'verified' ? 'verified' : 'unverified';
             log.success = true;
             const msgs = await configureDomains(acc, workerName, jsonHeaders, customDomainPrefix, disableWorkersDev);
+            if (verdict === 'unverified') msgs.push('⚠️ 回读校验不可用');
             log.msg = msgs.join(" | ");
             updated = addWorkerName(acc, template, workerName);
         } else {
-            log.msg = await parseApiError(deployRes);
+            log.msg = '❌ ' + (uploadError || '上传失败');
         }
     } catch (e: any) { log.msg = '\u274C ' + e.message; }
     return { log, updated };
@@ -256,7 +265,9 @@ export async function handleBatchDeploy(env: AppEnv, reqData: BatchDeployRequest
         await writeAccounts(env, finalAccounts);
     }
 
-    await finalizeDeploy(env, template, isLatestMode, deployedSha, logs, '');
+    // 批量部署只覆盖「本次新建的那一个 Worker 名」，属于子集作用域 → 不推进版本账本，
+    // 由 cron 的版本检查在下一轮按全量补齐其余 Worker。
+    await finalizeDeploy(env, template, isLatestMode, deployedSha, logs, '', 'partial');
 
     return json(logs);
 }

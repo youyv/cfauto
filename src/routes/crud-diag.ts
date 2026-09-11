@@ -5,8 +5,8 @@
  * 与写操作混在一起时难以一眼判断某个路由是否会改数据。
  */
 
-import { KV_KEYS, isAccountVarsKey } from '../config/templates';
-import { json, cf, getAuthHeaders, fetchWithTimeout } from '../lib/cloudflare-api';
+import { KV_KEYS, TEMPLATES, isAccountVarsKey } from '../config/templates';
+import { json, cf, getAuthHeaders, fetchWithTimeout, readApiResult } from '../lib/cloudflare-api';
 import { readAccounts, getWorkerNames } from "../lib/account-store";
 import { secretFingerprint } from "../lib/crypto-utils";
 import { getJSON, listAllKeys } from "../lib/kv-utils";
@@ -15,7 +15,7 @@ import { pooledMap } from "../lib/concurrency";
 import { requireTemplateType } from '../lib/validate';
 import { logger } from '../lib/logger';
 import type { AppEnv } from "../config/env";
-import type { AutoUpdateConfig } from '../lib/types';
+import type { AutoUpdateConfig, DeployConfig } from '../lib/types';
 import type { RouteRegistrar } from "./register";
 
 /** 直接透传 KV 原始 JSON 字符串的响应（避免 parse→stringify 往返） */
@@ -96,9 +96,98 @@ ROUTES.set('GET /api/diag', async (_req, env) => {
     results['__encryption_fingerprint'] = await secretFingerprint(env).catch(() => '(unavailable)');
     // KV 占用概览 + 孤儿键数量 —— 让「KV 会不会撑爆」可以被看见而不是靠猜
     results['__kv_usage'] = await kvUsageReport(env).catch((e: unknown) => ({ error: String(e) }));
+    // 部署实况漂移 —— 让「面板说已更新、实际没更新」这类账本失真可以被看见
+    results['__deploy_drift'] = await deployDriftReport(env).catch((e: unknown) => ({ error: String(e) }));
     results['success'] = true;
     return new Response(JSON.stringify(results, null, 2), { headers: { 'Content-Type': 'application/json', 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY' } });
 });
+
+/**
+ * 漂移判定容差：CF 的时间戳精度与"上传 → 元数据可见"之间存在秒级延迟，
+ * 留 2 分钟余量，避免刚部署完就被自己的诊断判成漂移。
+ */
+const DRIFT_TOLERANCE_MS = 120_000;
+
+/**
+ * 部署实况漂移检测 —— 把版本账本和 Cloudflare 上脚本的真实修改时间对照。
+ *
+ * 账本的 `deployTime` 记的是「我们以为部署成功」的时刻，`modified_on` 是脚本实际最后被改
+ * 动的时刻。若后者比前者还早（超出容差），说明那次写入根本没落地 —— 正是线上出现过的
+ * 「面板显示已更新、Worker 实际停在旧代码且永不重试」。
+ *
+ * 只读：不改任何 KV，也不碰 Worker。每个涉及的账号只发一次列表请求。
+ */
+async function deployDriftReport(env: AppEnv) {
+    const accounts = await readAccounts(env);
+
+    // 账本里的部署时间（按模板）
+    const deployTimeByType = new Map<string, number>();
+    for (const t of Object.keys(TEMPLATES)) {
+        const cfg = await getJSON<DeployConfig>(env.CONFIG_KV, KV_KEYS.deployConfig(t), { mode: 'latest' });
+        const at = cfg.deployTime ? Date.parse(cfg.deployTime) : NaN;
+        if (Number.isFinite(at)) deployTimeByType.set(t, at);
+    }
+
+    // 按账号归并受管 Worker，避免每个模板各查一次列表
+    const perAccount = new Map<string, Array<{ type: string; names: string[] }>>();
+    for (const t of Object.keys(TEMPLATES)) {
+        for (const a of accounts) {
+            if (!deployTimeByType.has(t)) continue;
+            const names = getWorkerNames(a, t);
+            if (names.length === 0) continue;
+            const list = perAccount.get(a.accountId) || [];
+            list.push({ type: t, names });
+            perAccount.set(a.accountId, list);
+        }
+    }
+    if (perAccount.size === 0) {
+        return { checked: 0, drifted: [], missing: [], unreadable: [], note: '暂无可比对的部署记录（先部署一次再看）' };
+    }
+
+    const accountById = new Map(accounts.map(a => [a.accountId, a]));
+    const reports = await pooledMap(Array.from(perAccount.entries()), async ([accountId, items]) => {
+        const acc = accountById.get(accountId);
+        const drifted: string[] = [];
+        const missing: string[] = [];
+        if (!acc || !acc.globalKey) {
+            return { drifted, missing, unreadable: acc ? acc.alias + '（密钥缺失或解密失败）' : accountId };
+        }
+        try {
+            const headers = getAuthHeaders(acc.email, acc.globalKey);
+            const res = await fetchWithTimeout(cf.workerScripts(accountId), { headers });
+            const list = await readApiResult<Array<{ id: string; modified_on?: string }>>(res, '读取 Worker 列表') || [];
+            const modifiedById = new Map(list.map(w => [w.id, w.modified_on ? Date.parse(w.modified_on) : NaN]));
+            for (const item of items) {
+                const at = deployTimeByType.get(item.type);
+                if (at === undefined) continue;
+                for (const name of item.names) {
+                    const label = item.type + ' ' + acc.alias + ' -> [' + name + ']';
+                    if (!modifiedById.has(name)) { missing.push(label); continue; }
+                    const modified = modifiedById.get(name)!;
+                    if (Number.isFinite(modified) && modified < at - DRIFT_TOLERANCE_MS) drifted.push(label);
+                }
+            }
+            return { drifted, missing, unreadable: '' };
+        } catch (e) {
+            logger.warn('deployDriftReport: 账号脚本列表读取失败', { module: 'crud-diag', accountId, error: (e as Error).message });
+            return { drifted, missing, unreadable: acc.alias + '（列表读取失败）' };
+        }
+    });
+
+    const drifted = reports.flatMap(r => r.drifted);
+    const missing = reports.flatMap(r => r.missing);
+    const unreadable = reports.map(r => r.unreadable).filter(Boolean);
+    const checked = Array.from(perAccount.values()).reduce((n, items) => n + items.reduce((m, i) => m + i.names.length, 0), 0);
+    const cap = (arr: string[]) => (arr.length > 20 ? [...arr.slice(0, 20), '+' + (arr.length - 20) + ' more'] : arr);
+
+    return {
+        checked,
+        drifted: cap(drifted),
+        missing: cap(missing),
+        unreadable,
+        note: 'drifted = 账本说已部署，但脚本修改时间早于那次部署（写入未生效）；missing = 账本里有但 Cloudflare 上找不到'
+    };
+}
 
 /**
  * KV 占用概览：键数量、按类别分布、最大的几个值、孤儿键数量、上次回收时间。

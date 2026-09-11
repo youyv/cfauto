@@ -18,12 +18,50 @@ export function getCompatibilityDate(): string {
     return MANAGED_WORKER_COMPATIBILITY_DATE;
 }
 
+/**
+ * 上传结果。
+ *
+ * `ok` 只有在「HTTP 2xx **且**响应体 success !== false」时才为 true —— 见
+ * `readUploadVerdict` 的注释，只看 HTTP 状态码是本项目出现过的静默假成功来源。
+ */
+export interface UploadResult {
+    ok: boolean;
+    res: Response;
+    /** 失败原因（已从上游响应体解析出 errors[0].message）；ok 为 true 时缺省 */
+    error?: string;
+}
+
+/**
+ * 判定 CF 上传响应的真实结果。
+ *
+ * Cloudflare API v4 把裁决放在 JSON body 的 `success` / `errors` 里，HTTP 200 不等于成功。
+ * 此前这里只有 `ok: res.ok`，一次「200 + success:false」会被记成部署成功、写进部署日志、
+ * 并把版本账本推进到新 SHA，于是面板显示「已是最新」而 Worker 实际停在旧代码上，且因为
+ * 账本已认为最新，cron 永远不会重试 —— 必须按失败处理才会进入重试队列。
+ */
+async function readUploadVerdict(res: Response): Promise<{ ok: boolean; error?: string }> {
+    let body: any = null;
+    let raw = '';
+    try { raw = await res.text(); } catch (e) { logger.warn('uploadWorker: 响应体读取失败', { status: res.status, error: (e as Error).message }); }
+    if (raw) { try { body = JSON.parse(raw); } catch { body = null; } }
+
+    if (!res.ok) {
+        const upstream = body?.errors?.[0]?.message || body?.message;
+        return { ok: false, error: upstream ? upstream + ' (HTTP ' + res.status + ')' : 'HTTP ' + res.status };
+    }
+    if (body && body.success === false) {
+        const upstream = body.errors?.[0]?.message || '上游未给出原因';
+        return { ok: false, error: upstream + ' (HTTP ' + res.status + '，响应体 success:false)' };
+    }
+    return { ok: true };
+}
+
 /** 上传 Worker 脚本到 Cloudflare */
 export async function uploadWorker(
     cred: AccountCredentials,
     workerName: string, scriptContent: string,
     bindings: Array<Record<string, unknown>>
-): Promise<{ ok: boolean; res: Response }> {
+): Promise<UploadResult> {
     const metadata = {
         main_module: "index.js",
         bindings,
@@ -37,7 +75,49 @@ export async function uploadWorker(
     const res = await fetchWithTimeout(cf.workerScript(cred.accountId, workerName), {
         method: "PUT", headers, body: formData
     }, 60000);
-    return { ok: res.ok, res };
+    const verdict = await readUploadVerdict(res);
+    return { ok: verdict.ok, res, error: verdict.error };
+}
+
+/** 归一化脚本文本：忽略 BOM、行尾与尾部空白差异，避免把格式差异误判成内容不一致 */
+function normalizeScript(s: string): string {
+    return s.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\s+$/, '');
+}
+
+/** 回读校验结论：verified = 内容确认一致；mismatch = 内容不一致（未真正生效）；unverified = 无法判定 */
+export type VerifyVerdict = 'verified' | 'mismatch' | 'unverified';
+
+/**
+ * 上传后回读脚本内容，确认这次写入真的落在 Cloudflare 上。
+ *
+ * 为什么不能只信上传响应：熔断/自动更新都出现过「响应成功但脚本没变」的情形，此时账本
+ * 一旦前进就再也不会重试。这里独立发一次 GET 下载脚本，与本次上传的内容比对。
+ *
+ * 判定不可用（GET 失败、响应为空）时返回 `unverified` 而不是 mismatch —— 网络抖动不该
+ * 把一次成功的部署判成失败；只有**确实读到内容且对不上**才是 mismatch。
+ */
+export async function verifyWorkerScript(
+    accountId: string, workerName: string,
+    headers: Record<string, string>, expectedContent: string
+): Promise<VerifyVerdict> {
+    try {
+        const res = await fetchWithTimeout(cf.workerScript(accountId, workerName), { headers });
+        if (!res.ok) {
+            logger.warn('verifyWorkerScript: 回读失败', { module: 'deploy-utils', accountId, workerName, status: res.status });
+            return 'unverified';
+        }
+        const readback = await res.text();
+        if (!readback) return 'unverified';
+        const expected = normalizeScript(expectedContent);
+        const actual = normalizeScript(readback);
+        if (actual === expected) return 'verified';
+        // 部分形态下 CF 会以 multipart 回包（含元数据段），脚本文本仍完整包含在其中
+        if (actual.includes(expected)) return 'verified';
+        return 'mismatch';
+    } catch (e) {
+        logger.warn('verifyWorkerScript: 回读异常', { module: 'deploy-utils', accountId, workerName, error: (e as Error).message });
+        return 'unverified';
+    }
 }
 
 /** 解析 Cloudflare API 错误消息 */

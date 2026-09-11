@@ -9,13 +9,13 @@ import { KV_KEYS } from '../config/templates';
 import type { TemplateType } from '../config/templates';
 import { cf, getAuthHeaders, json, fetchWithTimeout, readApiResult } from '../lib/cloudflare-api';
 import { fetchGithubCode, applyTemplateTransform } from '../lib/github';
-import { uploadWorker, parseApiError, readWorkerBindings } from '../lib/deploy-utils';
+import { uploadWorker, readWorkerBindings, verifyWorkerScript } from '../lib/deploy-utils';
 import { getJSON, putJSON } from "../lib/kv-utils";
 import { readAccounts, getWorkerNames } from "../lib/account-store";
-import { deployTargetKey } from '../lib/auto-update';
+import { deployTargetKey, mergeSubsetPending } from '../lib/auto-update';
 import { logger } from '../lib/logger';
 import type { AppEnv } from "../config/env";
-import type { DeployLogEntry, VariableEntry } from '../lib/types';
+import type { DeployConfig, DeployLogEntry, VariableEntry } from '../lib/types';
 
 /** 重建重试配置：先试一次，失败才退避（2s → 4s → 8s） */
 const REBUILD_MAX_ATTEMPTS = 4;
@@ -164,14 +164,26 @@ export async function handleFix1101(env: AppEnv, type: TemplateType) {
                 await new Promise(r => setTimeout(r, POST_DELETE_DELAY_MS));
                 // 先试一次，失败才退避重试（此前把 sleep 放在上传之前，即使首次即可成功也白等 2s）
                 let ok = false;
-                let uploadRes = new Response('', { status: 500 });
+                let lastError: string | undefined;
                 for (let attempt = 0; attempt < REBUILD_MAX_ATTEMPTS; attempt++) {
                     if (attempt > 0) {
                         await new Promise(r => setTimeout(r, REBUILD_BASE_DELAY_MS * Math.pow(2, attempt - 1)));
                     }
                     const result = await uploadWorker(acc, wName, deployCode, restoredBindings);
-                    uploadRes = result.res;
+                    lastError = result.error;
                     if (result.ok) { ok = true; break; }
+                }
+
+                // 回读校验：上传成功 ≠ 脚本真的换了。校验不一致时按重建失败处理，
+                // 这样下面的账本写入不会把它算作"已恢复"。
+                if (ok) {
+                    const verdict = await verifyWorkerScript(acc.accountId, wName, headers, deployCode);
+                    if (verdict === 'mismatch') {
+                        ok = false;
+                        steps.push('❌ 上传后回读校验不一致（重建可能未生效）');
+                    } else {
+                        steps.push(verdict === 'verified' ? '🔎 回读校验通过' : '⚠️ 回读校验不可用');
+                    }
                 }
 
                 if (ok) {
@@ -198,7 +210,7 @@ export async function handleFix1101(env: AppEnv, type: TemplateType) {
                         }
                     }
                 } else {
-                    steps.push(await parseApiError(uploadRes));
+                    if (lastError) steps.push('❌ ' + lastError);
                     steps.push('⚠️ Worker 已删除但重建失败，请重试或手动恢复');
                 }
             } catch (err: any) {
@@ -231,9 +243,12 @@ export async function handleFix1101(env: AppEnv, type: TemplateType) {
         }
     }
 
-    // 只有真正重建成功过才更新部署配置（子域名轮换那条 success:true 不算重建成功）
-    const rebuiltOk = logs.some(l => l.success && l.msg.includes('重建成功'));
-    if (rebuiltOk) {
+    // 版本账本只在「全部受管目标都重建成功」时推进。
+    // 此前是「任意一个成功就写 currentSha = 上游最新」——只修复成功的那个账号会被记成全量
+    // 已更新，其余仍停在旧代码的 Worker 从此被判成"已是最新"而不再更新。
+    const realTargets = logs.filter(l => l.targetKey);
+    const allRebuilt = realTargets.length > 0 && realTargets.every(l => l.success);
+    if (allRebuilt) {
         await putJSON(env.CONFIG_KV, KV_KEYS.deployConfig(type), {
             mode: 'latest',
             currentSha: latestSha || 'unknown',
@@ -241,6 +256,16 @@ export async function handleFix1101(env: AppEnv, type: TemplateType) {
             lastAttempt: new Date().toISOString(),
             pendingTargets: [],
             pendingSha: null
+        });
+    } else if (realTargets.length > 0) {
+        // 部分失败：账本原地不动，把失败目标挂进重试队列交给 cron
+        const nowIso = new Date().toISOString();
+        const prev = await getJSON<DeployConfig>(env.CONFIG_KV, KV_KEYS.deployConfig(type), { mode: 'latest' });
+        await putJSON(env.CONFIG_KV, KV_KEYS.deployConfig(type), {
+            ...prev,
+            lastAttempt: nowIso,
+            pendingSha: prev.pendingSha || prev.currentSha || null,
+            pendingTargets: mergeSubsetPending(prev, logs)
         });
     }
 

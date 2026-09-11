@@ -91,6 +91,35 @@ export function cfOk(result: unknown, init: ResponseInit = {}): Response {
     });
 }
 
+/**
+ * 构造一个「脚本下载」响应。
+ *
+ * CF 的 `GET /accounts/{aid}/workers/scripts/{name}` 返回的是**脚本文本本身**而不是 JSON，
+ * 部署链路上传后会回读这段内容做校验 —— 用 cfOk({}) 充当它会得到"内容不一致"。
+ */
+export function cfScript(text: string): Response {
+    return new Response(text, { status: 200, headers: { 'Content-Type': 'application/javascript+module' } });
+}
+
+/**
+ * 部署链路里 CF 脚本端点的标准桩：GET（回读校验）返回脚本文本，PUT/DELETE（上传/删除）返回成功。
+ * 只匹配 /workers/scripts/{name} 本身，不会误伤 /bindings、/subdomain 等子路径。
+ */
+export function scriptEndpoint(code: string) {
+    return {
+        match: /\/workers\/scripts\/[^/?]+$/,
+        respond: (c: FetchCall) => (c.method === 'GET' ? cfScript(code) : cfOk({ id: 'w' }))
+    };
+}
+
+/**
+ * 构造任意 CF 响应体 —— 用于「HTTP 200 但响应体 success:false」这类边角。
+ * CF API v4 把真正的裁决放在 body 里，只看状态码会把这种响应当成成功。
+ */
+export function cfRaw(body: unknown, status = 200): Response {
+    return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+}
+
 /** 构造一个 CF API 风格的失败响应 */
 export function cfErr(status: number, message: string, code = 1000): Response {
     return new Response(JSON.stringify({ success: false, errors: [{ code, message }], result: null }), {
