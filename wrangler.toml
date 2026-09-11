@@ -34,7 +34,8 @@ compatibility_date = "2026-07-16"
 # 密钥在 CF 后台 Setting → Variables 手动设置一次即可
 # wrangler.toml 不写 [vars]，日常 deploy 不会覆盖后台已设的值
 # 密钥用 wrangler secret 管理，不写明文，日常 deploy 不会覆盖
-# 设置方法：npx wrangler secret put ACCESS_CODE / GITHUB_TOKEN
+# 设置方法：双击 setup-secrets.bat（推荐，会自动带上 -c wrangler.local.toml）
+#          或手动执行 node_modules\.bin\wrangler secret put ACCESS_CODE
 
 # ==========================================
 #              路由 & 触发器
@@ -52,10 +53,13 @@ compatibility_date = "2026-07-16"
 # ==========================================
 #              构建命令
 # ==========================================
-# 本地上传时先执行 pnpm run build 打包，无需手动 build.bat
-# 如果只用 deploy.bat (不走 wrangler 构建)，删除此段即可
+# 本地上传时先打包，无需手动 build.bat。
+# 这里刻意用 `node build.js` 而不是 `pnpm run build`：pnpm 在跑脚本前会做一次依赖状态
+# 检查，一旦 node_modules 与 package.json 记录的包管理器版本不一致，它会要求删除并重装
+# node_modules，而非交互环境下会以 ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY 直接失败，
+# 连带把整次部署拖垮。build.js 本身只依赖 node + node_modules，不需要经过包管理器。
 [build]
-command = "pnpm run build"
+command = "node build.js"
 
 # ==========================================
 #              日志观测
