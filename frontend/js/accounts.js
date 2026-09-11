@@ -341,7 +341,11 @@ async function deleteFromEdit() {
 
 async function loadStats() {
     const b = $('btn_stats');
-    if (b) b.disabled = true;
+    if (!b) return;
+    const originalText = b.textContent;
+    const loadingText = '🔄 刷新中...';
+    b.disabled = true;
+    b.textContent = loadingText;
     try {
         const d = await apiFetch('/api/stats');
         if (!Array.isArray(d)) throw new Error('返回格式异常');
@@ -368,7 +372,8 @@ async function loadStats() {
     } catch (e) {
         Swal.fire('用量查询失败', e.message, 'error');
     } finally {
-        if (b) b.disabled = false;
+        b.disabled = false;
+        b.textContent = originalText;
     }
 }
 
