@@ -1,8 +1,8 @@
-# 🚀 CF Auto — Cloudflare Worker 智能部署中控 (V12.0.0)
+# 🚀 CF Auto — Cloudflare Worker 智能部署中控 (V12.0.1)
 
 > 全部代码由 Claude Code 完成，自行修改延伸功能。
 
-> **版本状态**: V12.0.0 Stable — 全量优化（确定性 bug 修复 · 测试改为真实模块 · 并发统一 · 前端资源拆分 + CSP 收紧）
+> **版本状态**: V12.0.1 Stable — 部署可信度（上传响应体校验 · 回读校验 · 版本账本作用域 · 实况漂移检测）+ KV 自动回收
 > **详细变更**: 见 [CHANGELOG.md](CHANGELOG.md)
 
 ---
@@ -84,7 +84,7 @@ cfauto/
 │       ├── workbench.js        #   工作台 / 日志
 │       ├── diagnostics.js      #   系统诊断 / 源码查看
 │       └── starfield.js        #   星空动画 + 应用入口
-├── test/                       # Vitest（364 个测试，全部 import 真实模块）
+├── test/                       # Vitest（377 个测试，全部 import 真实模块）
 │   ├── helpers.ts              #   内存 KV mock (含 list 分页) / CF 响应构造 / fetch 桩
 │   ├── kv-utils.test.ts        #   工具函数 + 路由表
 │   ├── kv-gc.test.ts           #   KV 回收: 日志裁剪 / 孤儿键 / 翻页 / cron 节流
@@ -92,6 +92,7 @@ cfauto/
 │   ├── reliability.test.ts     #   并发 / 错误路径 / 纯函数
 │   ├── routes.test.ts          #   部署链路 / 熔断作用域 / cron / CRUD
 │   ├── handlers.test.ts        #   批量部署 / zones / yxip / fix1101
+│   ├── deploy-integrity.test.ts#   部署可信度: 上传判定 / 回读校验 / 账本作用域 / 漂移检测
 │   ├── auth-security.test.ts   #   会话 / CSRF / 限流 / CSP
 │   └── smoke.js                #   部署后端到端冒烟
 ├── .github/workflows/ci.yml    # CI: build → typecheck → verify → test
@@ -120,11 +121,17 @@ Request → KV 检查 → 公开路由 (/manifest.json, /api/login, /api/logout)
 **质量校验**（提交前建议跑 `pnpm run check` 或双击 `check.bat`）:
 ```
 build (生成 frontend-bundle.ts) → typecheck (tsc --noEmit)
-  → verify (结构/路由/CSP/死代码/反模式) → test (vitest run, 364 个)
+  → verify (结构/路由/CSP/死代码/反模式) → test (vitest run, 377 个)
 ```
 
 > 包管理器用 **pnpm**（仓库只有 `pnpm-lock.yaml`，没有 `package-lock.json`）。
 > `install.bat` 在检测不到 pnpm 时会用 corepack 自动启用；CI 同样走 pnpm。
+>
+> 但**只有「安装依赖」这一步需要 pnpm**。`build.bat` / `check.bat` / `deploy.bat` 一律直接调用
+> `node` 和 `node_modules\.bin` 下的命令垫片 —— 换一台机器、换成 npm/yarn、或本地 pnpm 版本与
+> `package.json` 声明不一致，都不会影响构建、校验和部署。（pnpm 在跑脚本前会做依赖状态检查，
+> 版本对不上时会要求删除并重装 `node_modules`，非交互环境下会直接以
+> `ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY` 失败 —— 部署钩子与校验链因此刻意绕开它。）
 
 ---
 
@@ -168,12 +175,15 @@ build.bat → deploy.bat
 ```
 两步完成，KV/路由/触发器不受影响；密钥永不覆盖。
 
+> `deploy.bat` 里 wrangler 会先执行配置中的 `[build]` 钩子（`node build.js`）重新打包，
+> 所以 `build.bat` 其实是可选的——但它能让构建错误在部署之前就暴露出来，建议保留这一步。
+
 改过代码后建议先跑一次完整校验：
 
 ```
 check.bat            # 或 pnpm run check
 ```
-它按 CI 相同顺序执行 build → typecheck → verify → test（364 个测试）。任一步失败就不要部署。
+它按 CI 相同顺序执行 build → typecheck → verify → test（377 个测试）。任一步失败就不要部署。
 
 ---
 
@@ -350,7 +360,7 @@ custom_domain = true
 ### 🛠️ 构建与工具
 - **esbuild** — TypeScript/JS 打包为单文件 ESM 输出
 - **Node.js** — 构建脚本、内联前端资源、可复现的依赖读取
-- **Vitest** — 364 个单元与集成测试，全部 import 真实模块（内存 KV mock + fetch 桩）
+- **Vitest** — 377 个单元与集成测试，全部 import 真实模块（内存 KV mock + fetch 桩）
 - **TypeScript** — 类型安全、模板字面量索引签名消除类型断言
 - **GitHub Actions** — build → typecheck → verify → test 全链路 CI
 - **自定义静态校验** — `verify.js` 检查结构、路由覆盖、CSP、死代码（死 action / 冗余 window 导出 / 孤儿 HTML id / 未使用 import）、以及裸 `res.json()` / 裸 `fetch` 等反模式

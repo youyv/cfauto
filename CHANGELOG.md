@@ -1,10 +1,24 @@
 # 版本更新日志
 
-## 未发布
+## V12.0.1 (2026-09-11)
 
-> KV 自动回收 · 死代码清理 · verify 防回归检查
+> 部署可信度 · KV 自动回收 · 死代码清理 · verify 防回归检查
 
-### 🧹 KV 空间治理（本次核心）
+### 🛡️ 部署可信度（本次核心）
+
+线上症状：面板版本区显示 `Latest`，但 Worker 实际仍停在数周前的代码上，自动更新也永远不再重试。根因是**版本账本（KV 里的 `currentSha`）可以在一批部署并没有真正生效时被推进**，一旦推进，cron 就永久判定「已是最新」。
+
+- **上传只看 HTTP 状态码 → 静默假成功**: `uploadWorker` 此前返回 `{ ok: res.ok }`，从不读响应体。CF API v4 把裁决放在 body 的 `success` / `errors` 里，一次「HTTP 200 + `success:false`」会被记成部署成功、写进部署日志、并把 `currentSha` 推进到新 SHA —— 面板从此显示「已是最新」。现在解析响应体，`success:false` 按失败处理并带出 `errors[0].message`
+- **上传后回读校验**: 新增 `verifyWorkerScript`，上传后独立 GET 一次脚本内容与本次上传比对（忽略 BOM / 行尾 / 尾部空白差异）。内容对不上 → 该目标判失败并留在重试队列；回读不可用（网络抖动、无权限）→ 标 `unverified`，**不**把一次成功部署误判成失败
+- **版本账本只在「全量 + 全成功」时推进**: `finalizeDeploy` 增加 `scope` 参数。熔断轮换、一键修复 1101、批量部署、pending 重试都只覆盖目标子集，而账号删除等场景下 `currentSha` 是**模板级单值**：子集部署推进它，等于宣称所有 Worker 都已更新，其余停在旧代码的 Worker 从此不再更新且无告警。现在子集部署一律不动账本，新增 `mergeSubsetPending` 只做增量（移除本轮成功的、加入本轮失败的，本轮没碰到的原样保留）
+- **一键修复 1101 的账本写入收紧**: 此前「任意一个 Worker 重建成功」就写 `currentSha = 上游最新`；现在要求全部受管目标都重建成功，部分失败时改为把失败目标挂进重试队列交给 cron
+- **新增实况漂移检测**: `GET /api/diag` 增加 `__deploy_drift` —— 把每个受管 Worker 在 Cloudflare 上的 `modified_on` 与账本里的 `deployTime` 对照，报出 `drifted`（账本说已部署、脚本却更旧，即写入没落地）与 `missing`（账本里有、CF 上找不到）。只读，每个账号一次列表请求，带 2 分钟容差
+- **新增 `test/deploy-integrity.test.ts`（13 个）**: 覆盖 `200 + success:false`、回读一致 / 不一致 / 不可用、子集作用域不推进账本、pending 增量合并不丢项、漂移检测两个方向。**测试总数 364 → 377**
+- **部署钩子不再经过包管理器**: wrangler 的 `[build] command` 从 `pnpm run build` 改为 `node build.js`。pnpm 在跑脚本前会做依赖状态检查，一旦 `node_modules` 与 `package.json` 声明的包管理器版本不一致，它会要求**删除并重装 node_modules**，而非交互环境下直接以 `ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY` 失败 —— 表现为"部署失败"且没有任何上传动作。`build.js` 只依赖 node 与 node_modules，去掉这一层后部署不再受包管理器状态影响
+- **本地脚本不再依赖包管理器与包内路径**: `check.bat` / `deploy.bat` 原先调用 `pnpm exec` 和 `node node_modules\wrangler\wrangler-dist\cli.js` 这类**包内部文件路径** —— 换 npm/yarn、或上游调整包结构就会失效。现在统一走 `node_modules\.bin` 下的命令垫片（由安装它的包管理器生成、指向包自己声明的 bin 入口），并在依赖缺失时给出「请先运行 install.bat」的明确提示；`build.js` 也把 esbuild 缺失的原始堆栈换成了同样的指引
+- **静态资源 URL 内容寻址**: 新增 `FRONTEND_ASSET_VERSION = V<版本>.<内容指纹>`，`/app.js`、`/app.css`、`/vendor/sweetalert2.js` 的 `?v=` 改用它。此前 `?v=` 只来自版本号，而资源是 `max-age=1y, immutable` —— 改了代码却忘记升版本，浏览器会把旧脚本一直用下去，服务端明明已更新、界面上却看不到任何变化
+
+### 🧹 KV 空间治理
 
 此前写入 KV 的键分三类，只有第一类有回收机制：带 TTL 的 `SESSION_*` / `RATE_LIMIT_*` 由 Cloudflare 自动过期；数量固定的配置键不会增长；而**第三类会无界增长或变成永久孤儿，没有任何代码路径会清理它**。
 
@@ -630,4 +644,3 @@
 
 * 熔断/自动更新动态化，compatibility_date 动态化。
 * 前后端数据消除重复，由后端动态注入。
-
