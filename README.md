@@ -275,6 +275,11 @@ node_modules\.bin\wrangler.cmd login
 > 未配置 `deploy.local.bat` 且 OAuth 已过期时，wrangler 会回退到交互登录；
 > `deploy.bat` 会在启动时提示 `[INFO] CLOUDFLARE_API_TOKEN not set`。
 
+> **网络抖动怎么办**：直连 `api.cloudflare.com` 偶发 `Unable to resolve` 或 `timed out` 时，
+> `deploy.bat` 会自动重试最多 3 次；若检测到本机代理监听 `127.0.0.1:7890`（Clash / Mihomo 默认端口），
+> 会自动改走代理并打印一行说明。也可在 `deploy.local.bat` 里显式写 `set HTTPS_PROXY=http://127.0.0.1:7890`
+> 与 `set NODE_USE_ENV_PROXY=1` 强制走代理。
+
 ---
 
 ## 🔑 账号凭证获取

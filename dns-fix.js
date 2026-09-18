@@ -153,7 +153,11 @@ if (allUnusable(originalServers)) {
 // 做法：只在原生 lookup **失败**时介入，用独立的 dns.Resolver 实例（各自持有自己的服务器，
 // 不改动全局 c-ares 状态、无并发竞争）向公共 DNS 重查一次，成功就返回结果，失败则原样抛出。
 // 原生解析正常时这条路径完全不会被触发，因此对正常网络没有影响。
-const FALLBACK_DNS = ['1.1.1.1', '8.8.8.8', '223.5.5.5'];
+const FALLBACK_TOTAL_BUDGET_MS = 1500;
+const FALLBACK_PER_TRY_MS = 600;
+// 可用 DNS_FIX_FALLBACK_DNS 覆盖（测试受限网络时用）
+const FALLBACK_DNS = (process.env.DNS_FIX_FALLBACK_DNS || '1.1.1.1,8.8.8.8,223.5.5.5')
+    .split(',').map((s) => s.trim()).filter(Boolean);
 const FALLBACK_LOOKUP_CODES = ['ENOTFOUND', 'EAI_AGAIN', 'EAI_FAIL', 'ETIMEOUT', 'ESERVFAIL', 'EREFUSED'];
 
 let fallbackResolvers = null;
@@ -176,25 +180,60 @@ function isLookupFailure(err) {
     return !!(err && err.code && FALLBACK_LOOKUP_CODES.indexOf(err.code) !== -1);
 }
 
-/** 依次尝试各公共 DNS，返回 [{address, family}] 或 null */
+/**
+ * 依次尝试各公共 DNS，返回 [{address, family}] 或 null。
+ *
+ * **必须带硬上限**：c-ares 默认会对每台服务器重试到 5 秒以上，串行试三台就是十几秒，
+ * 而 wrangler 的 API 超时只有 10 秒 —— 那样「DNS 解析失败」会从快速报错退化成整体超时，
+ * 比不做兜底更糟（实测就是这样：deploy 从 Unable to resolve 变成 timed out）。
+ * 因此每次尝试 600ms、总预算 1500ms，超时立即返回 null，让原生错误快速冒泡。
+ */
 function resolveViaFallback(hostname, family, cb) {
+    const list = getFallbackResolvers();
+    if (list.length === 0) return cb(null);
     const wantV4 = family !== 6;
     const wantV6 = family !== 4;
-    const list = getFallbackResolvers();
+    let done = false;
+    let deadline = null;
+    function finish(results) {
+        if (done) return;
+        done = true;
+        if (deadline) clearTimeout(deadline);
+        cb(results);
+    }
+    deadline = setTimeout(function () { finish(null); }, FALLBACK_TOTAL_BUDGET_MS);
+
     let i = 0;
     function next() {
-        if (i >= list.length) return cb(null);
+        if (done) return;
+        if (i >= list.length) return finish(null);
         const entry = list[i++];
-        const jobs = [];
-        if (wantV4) jobs.push(new Promise((resolve) => entry.r.resolve4(hostname, (e, a) => resolve((!e && a && a.length) ? a.map((x) => ({ address: x, family: 4 })) : null))));
-        if (wantV6) jobs.push(new Promise((resolve) => entry.r.resolve6(hostname, (e, a) => resolve((!e && a && a.length) ? a.map((x) => ({ address: x, family: 6 })) : null))));
-        Promise.all(jobs).then((groups) => {
-            const flat = [];
-            for (const g of groups) if (g) for (const item of g) flat.push(item);
-            if (flat.length === 0) return next();
-            log('native lookup failed for ' + hostname + ', resolved via fallback DNS ' + entry.srv);
-            cb(flat);
-        }).catch(() => next());
+        let pending = 0;
+        let found = null;
+        function tryOne(fn, fam) {
+            pending++;
+            let settled = false;
+            const timer = setTimeout(function () {
+                if (settled) return;
+                settled = true;
+                pending--;
+                if (pending === 0 && !found) next();
+            }, FALLBACK_PER_TRY_MS);
+            fn.call(entry.r, hostname, function (e, a) {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timer);
+                pending--;
+                if (!e && a && a.length && !found) {
+                    found = a.map(function (x) { return { address: x, family: fam }; });
+                    log('native lookup failed for ' + hostname + ', resolved via fallback DNS ' + entry.srv);
+                    return finish(found);
+                }
+                if (pending === 0 && !found) next();
+            });
+        }
+        if (wantV4) tryOne(entry.r.resolve4, 4);
+        if (wantV6) tryOne(entry.r.resolve6, 6);
     }
     next();
 }

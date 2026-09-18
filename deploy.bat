@@ -1,7 +1,8 @@
 @echo off
-REM === Unset proxy (Cloudflare direct connect) ===
+REM === Proxy: direct by default; auto-switch below if a local proxy is listening ===
 set HTTP_PROXY=
 set HTTPS_PROXY=
+set NODE_USE_ENV_PROXY=
 REM === DNS fix: Node.js DNS (127.0.0.1 broken) -> use gateway DNS ===
 set NODE_OPTIONS=--require %~dp0dns-fix.js
 
@@ -26,6 +27,20 @@ REM whose localhost callback cannot resolve on every machine.
 if exist deploy.local.bat call deploy.local.bat
 if not defined CLOUDFLARE_API_TOKEN echo [INFO] CLOUDFLARE_API_TOKEN not set - wrangler may ask you to log in via OAuth.
 
+REM === Optional local proxy ===
+REM Direct connections to api.cloudflare.com flap on some networks (ENOTFOUND or
+REM UND_ERR_CONNECT_TIMEOUT), while a local proxy tends to stay stable. If one is
+REM listening on 127.0.0.1:7890 (Clash / Mihomo / sing-box default port), route
+REM wrangler through it. deploy.local.bat can override by setting these itself.
+if not defined HTTPS_PROXY (
+    netstat -an | findstr /C:"127.0.0.1:7890 " >nul 2>&1
+    if not errorlevel 1 (
+        echo [INFO] local proxy found on 127.0.0.1:7890 - routing deploy through it.
+        set HTTPS_PROXY=http://127.0.0.1:7890
+        set NODE_USE_ENV_PROXY=1
+    )
+)
+
 if not exist node_modules\.bin\wrangler.cmd (
     echo [FAIL] node_modules\.bin\wrangler.cmd not found. Run install.bat first.
     pause
@@ -33,10 +48,44 @@ if not exist node_modules\.bin\wrangler.cmd (
 )
 
 if exist wrangler.local.toml (
-    call node_modules\.bin\wrangler.cmd deploy -c wrangler.local.toml
+    set DEPLOY_ARGS=-c wrangler.local.toml
 ) else (
     echo [WARN] wrangler.local.toml not found - falling back to wrangler.toml.
     echo        That file is a TEMPLATE: set "name" ^(and the KV binding^) before deploying.
-    call node_modules\.bin\wrangler.cmd deploy
+    set DEPLOY_ARGS=
 )
+
+REM === Retry on transient network / DNS failures ===
+REM This network reaches Cloudflare only intermittently: DNS resolution via the router
+REM resolver and connections to api.cloudflare.com both flap for a few seconds at a time.
+REM A single failed run usually succeeds on the next try, so retry before giving up.
+set MAX_ATTEMPTS=3
+set ATTEMPT=0
+
+:deploy_retry
+set /a ATTEMPT+=1
+if %ATTEMPT% gtr 1 echo [RETRY] deploy attempt %ATTEMPT% of %MAX_ATTEMPTS% ...
+call node_modules\.bin\wrangler.cmd deploy %DEPLOY_ARGS%
+if %errorlevel% equ 0 goto deploy_done
+if %ATTEMPT% geq %MAX_ATTEMPTS% goto deploy_failed
+echo.
+echo [WARN] attempt %ATTEMPT% failed - looks like a transient network/DNS hiccup.
+echo        retrying in 5s...
+ping -n 6 127.0.0.1 >nul 2>&1
+goto deploy_retry
+
+:deploy_failed
+echo.
+echo [FAIL] deploy failed after %MAX_ATTEMPTS% attempts.
+echo        If the message is "Unable to resolve" or "timed out", the network/DNS path to
+echo        Cloudflare is flaky. Try again later, or route through your local proxy by
+echo        adding these two lines to deploy.local.bat:
+echo            set NODE_USE_ENV_PROXY=1
+echo            set HTTPS_PROXY=http://127.0.0.1:7890
+echo        If the message mentions authentication, re-check CLOUDFLARE_API_TOKEN.
 pause
+exit /b 1
+
+:deploy_done
+pause
+exit /b 0

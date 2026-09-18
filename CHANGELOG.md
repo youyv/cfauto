@@ -84,6 +84,21 @@
 - 兼容 `{ all: true }`、数值 `family`、以及回调式三种调用形式；
   `DNS_FIX_FORCE_FALLBACK=1` 可强制走兜底，便于验证。
 
+### 🌐 部署网络：有界 DNS 兜底 + 自动重试 + 代理自动探测
+
+本机到 Cloudflare 的链路会间歇性抖动，表现为 `Unable to resolve ...`（ENOTFOUND）、
+`The request ... timed out`（undici `UND_ERR_CONNECT_TIMEOUT`）、以及 OAuth 回调 localhost 解析失败。
+
+- **修正 DNS 兜底的时长**：上一版新增的 `dns.lookup` 兜底没有超时上限，而 c-ares 默认每台服务器
+  重试 5 秒以上 —— 一次 DNS 抖动会被拖到十几秒，把「快速报错」变成 wrangler 的整体超时
+  （实测症状从 `Unable to resolve` 变成 `timed out`，比不做兜底更糟）。现在每次尝试 600ms、
+  总预算 1500ms，超时立即返回原错误。可用 `DNS_FIX_FORCE_FALLBACK=1` 与 `DNS_FIX_FALLBACK_DNS=...` 验证。
+- **deploy.bat 自动重试**：网络抖动通常几秒后自愈，失败即重试（最多 3 次、间隔 5s）；全部失败时
+  给出可操作提示（稍后重试 / 走代理 / 检查 token），而不是只丢一句 ERROR。
+- **deploy.bat 自动探测本机代理**：直连抖动而本机代理稳定时，若 `127.0.0.1:7890` 在监听
+  （Clash / Mihomo / sing-box 默认端口）就自动经代理部署并打印说明；未监听则保持直连。
+  `deploy.local.bat` 仍可用 `HTTPS_PROXY` / `NODE_USE_ENV_PROXY` 覆盖。
+
 ### 🧪 测试
 
 - 新增 `pickScriptPath` / `resolveGithubTarget`（缓存、探测失败回落、探测成功采用真实路径）6 个用例
