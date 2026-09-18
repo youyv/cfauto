@@ -250,11 +250,15 @@ custom_domain = true
    > 用了自定义域名路由时，如果配置里写的是 `zone_name`，还需要额外加一条 `Zone · Zone · Read`
    > （wrangler 要按域名查 `zone_id`）。**改成直接写 `zone_id` 就不需要这条权限**：
    > 在 CF 后台进入该域名 → Overview → 右侧栏 Zone ID 复制即可，权限更小。
-2. 复制 `deploy.local.example.bat` 为 `deploy.local.bat`（已在 `.gitignore` 中），填入：
+2. 写入 `deploy.local.bat`（已在 `.gitignore` 中），二选一：
 
-   ```bat
-   set CLOUDFLARE_API_TOKEN=你的token
-   ```
+   - **推荐**：双击 `setup-deploy-token.bat`，按提示粘贴 Token —— 令牌只留在本机，
+     不经过聊天/工单/截图等任何其它渠道
+   - 或复制 `deploy.local.example.bat` 为 `deploy.local.bat` 手工填写：
+
+     ```bat
+     set CLOUDFLARE_API_TOKEN=你的token
+     ```
 
 3. 之后双击 `deploy.bat` / `setup-secrets.bat` 会自动加载该文件，全程无需登录。
 
