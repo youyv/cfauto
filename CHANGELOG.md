@@ -1,5 +1,96 @@
 # 版本更新日志
 
+## V12.1.0 (2026-09-18)
+
+> 对齐源项目能力 · API Token 双轨鉴权 · 动态分支嗅探 · 运维诊断 · 标签页布局
+
+### 🔑 凭证体系：新增 API Token 双轨鉴权
+
+源项目 V10.11.0（Issue #14）支持 API Token，本分支在重构中丢了这项能力，README 甚至写着「必须使用 Global API Key」。本次按本分支的服务端凭据模型重新实现 —— **不照抄源项目把凭据放在请求体里的做法**。
+
+- `AccountEntry` 新增 `apiToken`（与 `globalKey` 一样 AES-256-GCM 加密存储、读取时脱敏）与 `authMode`（`token` / `key`）
+- `getAuthHeaders` 支持 `Authorization: Bearer <token>`，并兼容旧的 `getAuthHeaders(email, key, upload)` 字符串调用
+- 所有 CF 调用点统一改为传账号对象：zones / yxip / deploy / fix1101 / stats / verify_credentials / 漂移检测 / cron 部署
+- 各处的 `!acc.globalKey` 守卫改为 `hasAccountCredentials(acc)`（两种凭据任一即可）
+- 前端账号表单新增鉴权方式单选与 API Token 输入框；写入时按 `authMode` 清空另一侧凭据，避免切换类型后旧凭据仍被优先使用
+
+### 📅 部署兼容日期按模板区分
+
+- 新增 `TEMPLATES[].compatibilityDate`：cmliu `2024-04-05`、joey `2024-02-20`、ech `2024-04-05`（源自源项目对 Issue #10 的修复）
+- 此前三个模板共用一个 `2026-07-16`，会把未经验证的 workerd 行为变更带进各上游框架；`uploadWorker` 现按模板取日期，未声明的模板回落到原常量
+- 模板卡片显示「兼容日期」，部署前可直接确认
+
+### 🌿 上游分支 / 脚本路径动态嗅探
+
+- 新增 `resolveGithubTarget`：先读 15 分钟 KV 缓存，未命中再用 GitHub API 探测默认分支与文件树里的真实脚本路径，并回写缓存
+- 任何一步失败都回落到 `TEMPLATES` 配置值，**不会因为探测失败而中断部署**
+- `pickScriptPath` 为纯函数（配置路径 → `filePattern` 结尾 → `filePattern` 包含），已覆盖单测
+- 解决上游改默认分支（main ↔ master）或重命名脚本后，拉取静默拿到 404 HTML 并当作代码上传的问题
+- 缓存键 `GH_INFO_CACHE_<type>` 使用 KV `expirationTtl`，不含用户数据，无需备份或回收
+
+### 🐛 运维诊断与一键报障
+
+- 工作台新增日志环形缓冲 `recentWbLogs`，并捕获 `unhandledrejection` / `error`，事故后仍能取到上下文
+- 新增 `copyToClipboard` / `fallbackCopy`（clipboard API 不可用时回落到 textarea + execCommand）
+- 新增「📋 复制诊断」：把 `/api/diag`（含 KV 占用、部署漂移）与最近日志组装成 Markdown
+- 新增「🐛 报障」：预填 GitHub Issue 或只复制报告。**报告会先脱敏**（邮箱 / 32 位 Account ID / UUID / Bearer 令牌）—— 源项目是原文粘贴的，这里做了收紧
+
+### 🗂️ 布局与信息密度
+
+- 右侧三个项目卡片改为**标签页**切换（`switchProjectTab`），消除纵向堆叠与嵌套滚动
+- 卡片新增「🔗 开源仓库 / 后台路径 / 订阅路径 / 兼容日期」提示；元数据来自 `TEMPLATES` 并经 bootstrap 注入，不在 HTML 里硬编码
+- 历史版本时间改为相对时间（`timeAgo`，悬浮显示绝对时间）
+
+### 🌐 ProxyIP 节点库合并
+
+- 并入源项目独有的地区与第三方节点：`SE / FI / PL / CH / LV / CA`，以及 `kr.william.us.ci`、`tw.william.us.ci`、`proxy.mia.xx.kg`
+- 保留本分支已有的 Aliyun / Oracle 变体与 TW / AU 地区
+
+### 🐛 修复 deploy.bat 双击闪退
+
+- 根因：deploy.bat 的 `else (...)` 块内有一条 echo 写了未转义的括号
+  （`set "name" (and the KV binding) before deploying.`）。cmd 在**解析阶段**就把该括号当成块的
+  结束，随后把 `before deploying.` 当作命令执行并中止整个脚本 —— 报
+  `before was unexpected at this time.`，且连结尾的 `pause` 都没执行到，所以窗口一闪而过。
+  该行由 e8b4a51（V12.0.1 的「去 pnpm 化」提交）引入。
+- 修复：按 install.bat 已有的约定转义为 `^(and the KV binding^)`。已实测 deploy / build / check /
+  install / setup-secrets 五个脚本均可解析并正常走到 `pause`。
+- 顺带确认：与 CRLF/LF 行尾无关（两种行尾下同样报错，转义后都正常）。
+- 防回归：`verify.js` 新增第 9 节「Batch script sanity」—— 扫描 `*.bat`，块内 echo 出现未转义
+  括号即报错（引号内的括号与 `^(` 转义不误报）。批处理无法被 vitest 覆盖，只能静态守。
+
+### 🔑 部署认证：不再依赖交互式 OAuth
+
+- 症状：`deploy.bat` 的 build 钩子跑完后，wrangler 因 OAuth token 过期回退到交互登录，
+  而回调地址 `http://localhost:8976/oauth/callback` 在缺少 `127.0.0.1 localhost` 的机器上
+  报 `getaddrinfo ENOTFOUND localhost`，部署中止。
+- 新增 `deploy.local.example.bat` 模板：复制为 `deploy.local.bat`（已加入 `.gitignore`）后填入
+  `set CLOUDFLARE_API_TOKEN=...`；`deploy.bat` 与 `setup-secrets.bat` 启动时自动加载，全程非交互。
+- 未配置时脚本会明确提示 `[INFO] CLOUDFLARE_API_TOKEN not set`，而不是让人以为脚本又坏了。
+- README 新增「6️⃣ 配置部署凭据」，列出 Token 所需权限，并说明 OAuth 的 localhost 前提。
+
+### 🌐 dns-fix：补上 dns.lookup 兜底
+
+修复部署时偶发 `Unable to resolve Cloudflare's API hostname`。
+
+- 根因：wrangler 走 undici → net → `dns.lookup`（操作系统的 getaddrinfo），而
+  `dns.setServers()` **只影响 c-ares（`dns.resolve*`）**，对 `dns.lookup` 完全无效。
+  原脚本既只在「所有 DNS 都明显不可用」时才介入（本机 `192.168.5.1` 看着"正常"，从不触发），
+  介入手段又是 `setServers` —— 对 wrangler 用的那条路没有作用。路由器 DNS 一抖，部署即失败。
+- 新增 `dns.lookup` 兜底：仅在原生解析**失败**（ENOTFOUND / EAI_AGAIN / …）时，用独立的
+  `dns.Resolver` 实例（各自持有服务器，不改全局 c-ares 状态、无并发竞争）依次尝试
+  `1.1.1.1` / `8.8.8.8` / `223.5.5.5`，成功即返回，全部失败则原样抛出原错误。
+  正常解析路径不产生任何额外开销。
+- 兼容 `{ all: true }`、数值 `family`、以及回调式三种调用形式；
+  `DNS_FIX_FORCE_FALLBACK=1` 可强制走兜底，便于验证。
+
+### 🧪 测试
+
+- 新增 `pickScriptPath` / `resolveGithubTarget`（缓存、探测失败回落、探测成功采用真实路径）6 个用例
+- 调整 `handleGetCode` 与 history 的断言以匹配新的探测请求
+
+**测试总数 377 → 383**
+
 ## V12.0.1 (2026-09-11)
 
 > 部署可信度 · KV 自动回收 · 死代码清理 · verify 防回归检查

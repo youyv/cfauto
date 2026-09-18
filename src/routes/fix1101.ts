@@ -11,7 +11,7 @@ import { cf, getAuthHeaders, json, fetchWithTimeout, readApiResult } from '../li
 import { fetchGithubCode, applyTemplateTransform } from '../lib/github';
 import { uploadWorker, readWorkerBindings, verifyWorkerScript } from '../lib/deploy-utils';
 import { getJSON, putJSON } from "../lib/kv-utils";
-import { readAccounts, getWorkerNames } from "../lib/account-store";
+import { readAccounts, getWorkerNames, hasAccountCredentials } from "../lib/account-store";
 import { deployTargetKey, mergeSubsetPending } from '../lib/auto-update';
 import { logger } from '../lib/logger';
 import type { AppEnv } from "../config/env";
@@ -99,12 +99,12 @@ export async function handleFix1101(env: AppEnv, type: TemplateType) {
             logs.push({ name: acc.alias, success: false, msg: "⏭️ 无此类 Worker，跳过" });
             continue;
         }
-        if (!acc.globalKey) {
-            logs.push({ name: acc.alias, success: false, msg: "❌ 密钥缺失或解密失败，请重新填写 Global API Key" });
+        if (!hasAccountCredentials(acc)) {
+            logs.push({ name: acc.alias, success: false, msg: "❌ 未配置凭据或解密失败，请重新填写 Global API Key / API Token" });
             continue;
         }
 
-        const headers = getAuthHeaders(acc.email, acc.globalKey);
+        const headers = getAuthHeaders(acc);
 
         for (const wName of targetWorkers) {
             const logItem: DeployLogEntry = {
@@ -169,7 +169,7 @@ export async function handleFix1101(env: AppEnv, type: TemplateType) {
                     if (attempt > 0) {
                         await new Promise(r => setTimeout(r, REBUILD_BASE_DELAY_MS * Math.pow(2, attempt - 1)));
                     }
-                    const result = await uploadWorker(acc, wName, deployCode, restoredBindings);
+                    const result = await uploadWorker(acc, wName, deployCode, restoredBindings, type);
                     lastError = result.error;
                     if (result.ok) { ok = true; break; }
                 }

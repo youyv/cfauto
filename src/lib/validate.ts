@@ -118,6 +118,12 @@ export function validateAccountsPayload(input: unknown): { ok: true; value: Arra
         if (!ACCOUNT_ID_RE.test(accountId)) {
             return { ok: false, response: jsonError('Account ID 格式错误（应为 32 位十六进制字符）: ' + alias, 400, 'VALIDATION_ERROR') };
         }
+        if (a.apiToken !== undefined && a.apiToken !== null && typeof a.apiToken !== 'string') {
+            return { ok: false, response: jsonError('格式错误：' + alias + ' 的 apiToken 必须是字符串', 400, 'VALIDATION_ERROR') };
+        }
+        if (a.authMode !== undefined && a.authMode !== null && a.authMode !== 'token' && a.authMode !== 'key') {
+            return { ok: false, response: jsonError('格式错误：' + alias + ' 的 authMode 只能是 token 或 key', 400, 'VALIDATION_ERROR') };
+        }
         if (aliases.has(alias)) {
             return { ok: false, response: jsonError('备注(alias)重复: ' + alias + '。alias 用于唯一标识账号，请改为不同名称', 400, 'VALIDATION_ERROR') };
         }

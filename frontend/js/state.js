@@ -60,6 +60,7 @@ async function init() {
 
         renderTable();
         renderProxySelector();
+        applyProjectTabs();
     } catch (e) {
         console.error('[init] /api/init_data failed, fallback to individual requests:', e);
         if (typeof Swal !== 'undefined') {
@@ -76,6 +77,37 @@ async function init() {
     loadStats();
     // 所有模板都做版本检查 —— ech 同样需要跟随上游更新（此前被 uuidField 条件排除）
     Object.keys(TEMPLATES).forEach(t => { checkDeployConfig(t); checkUpdate(t); });
+}
+
+function switchProjectTab(tab) {
+    document.querySelectorAll('[data-tab-panel]').forEach(function (p) {
+        p.classList.toggle('hidden', p.getAttribute('data-tab-panel') !== tab);
+    });
+    document.querySelectorAll('[data-tab-btn]').forEach(function (b) {
+        b.classList.toggle('tab-active', b.getAttribute('data-tab-btn') === tab);
+    });
+}
+
+/** 渲染每个模板卡片的仓库直链 / 访问路径 / 兼容日期（元数据来自服务端注入的 TEMPLATES） */
+function renderTemplateHints() {
+    document.querySelectorAll('[data-hints]').forEach(function (el) {
+        const t = el.getAttribute('data-hints');
+        const conf = TEMPLATES[t];
+        if (!conf) return;
+        const parts = [];
+        if (conf.repoUrl) parts.push('<a href="' + safeHtml(conf.repoUrl) + '" target="_blank" rel="noreferrer" class="text-blue-500 hover:underline">🔗 开源仓库</a>');
+        if (conf.adminPath) parts.push('<span>后台路径 <b class="font-mono">' + safeHtml(conf.adminPath) + '</b></span>');
+        if (conf.subPath) parts.push('<span>订阅路径 <b class="font-mono">' + safeHtml(conf.subPath) + '</b></span>');
+        if (conf.compatibilityDate) parts.push('<span>兼容日期 <b class="font-mono">' + safeHtml(conf.compatibilityDate) + '</b></span>');
+        el.innerHTML = parts.join('<span class="mx-1 opacity-40">·</span>');
+    });
+}
+
+/** 初始化标签页（默认选中第一个模板）并渲染元数据提示 */
+function applyProjectTabs() {
+    renderTemplateHints();
+    const first = Object.keys(TEMPLATES)[0];
+    if (first) switchProjectTab(first);
 }
 
 /** 把自动更新配置回填到 Header 控件（init 与 loadGlobalConfig 共用） */

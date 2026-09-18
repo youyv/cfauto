@@ -20,18 +20,31 @@ import type { AppEnv } from '../config/env';
 export async function readAccounts(env: AppEnv): Promise<AccountEntry[]> {
     const accounts = await getJSON<AccountEntry[]>(env.CONFIG_KV, KV_KEYS.ACCOUNTS, []);
     await Promise.all(accounts.map(async (a) => {
-        if (a.globalKey) {
-            const decrypted = await decryptKey(env, a.globalKey);
-            // 解密失败（密钥变更）时返回空字符串，避免密文被当作 API Key 使用
-            if (decrypted === a.globalKey && a.globalKey.startsWith(VERSION_PREFIX)) {
-                logger.warn('readAccounts: decryptKey returned raw ciphertext, clearing', { alias: a.alias });
-                a.globalKey = '';
-            } else {
-                a.globalKey = decrypted;
-            }
-        }
+        a.globalKey = await decryptAccountSecret(env, a.globalKey, a.alias);
+        a.apiToken = await decryptAccountSecret(env, a.apiToken, a.alias);
     }));
     return accounts;
+}
+
+/**
+ * 解密一个账号密文字段。
+ *
+ * 解密失败（密钥变更）时返回空字符串，避免密文被当作凭据使用；
+ * 无 `v1:` 前缀的存量明文原样保留。
+ */
+async function decryptAccountSecret(env: AppEnv, value: string | undefined, alias: string): Promise<string> {
+    if (!value) return '';
+    const decrypted = await decryptKey(env, value);
+    if (decrypted === value && value.startsWith(VERSION_PREFIX)) {
+        logger.warn('readAccounts: decryptKey returned raw ciphertext, clearing', { alias });
+        return '';
+    }
+    return decrypted;
+}
+
+/** 账号是否配置了任一可用凭据（Global API Key 或 API Token） */
+export function hasAccountCredentials(a: Pick<AccountEntry, 'globalKey' | 'apiToken'>): boolean {
+    return !!(a.globalKey || a.apiToken);
 }
 
 /** 读取账号列表（脱敏 globalKey，安全返回给前端） */
@@ -39,7 +52,8 @@ export async function readAccountsMasked(env: AppEnv): Promise<AccountEntry[]> {
     const accounts = await readAccounts(env);
     return accounts.map(a => ({
         ...a,
-        globalKey: maskKey(a.globalKey)
+        globalKey: maskKey(a.globalKey),
+        apiToken: maskKey(a.apiToken || '')
     }));
 }
 
@@ -62,15 +76,14 @@ export async function writeAccounts(env: AppEnv, accounts: AccountEntry[]): Prom
     // 克隆数组避免原地修改调用者持有的引用
     const cloned = accounts.map(a => ({ ...a }));
     await Promise.all(cloned.map(async (a) => {
-        // 空 key 或掩码值（前端未修改 key）→ 保留 KV 中该账号的旧密文，绝不覆盖真实凭证
-        if (a.globalKey && !isMaskedKey(a.globalKey)) {
-            a.globalKey = await encryptKey(env, a.globalKey);
-        } else {
-            // 匹配旧密文：优先 accountId；编辑时若 accountId 被修改，用 alias+email 兜底，防止 key 丢失
-            const old = existing.find(e => e.accountId === a.accountId)
-                     || existing.find(e => e.alias === a.alias && e.email === a.email);
-            a.globalKey = (old && old.globalKey) || '';
-        }
+        // 匹配旧密文：优先 accountId；编辑时若 accountId 被修改，用 alias+email 兜底，防止凭据丢失
+        const old = existing.find(e => e.accountId === a.accountId)
+                 || existing.find(e => e.alias === a.alias && e.email === a.email);
+        a.globalKey = await resolveSecretForWrite(env, a.globalKey, old?.globalKey);
+        a.apiToken = await resolveSecretForWrite(env, a.apiToken, old?.apiToken);
+        // 显式选择的鉴权方式决定保留哪一侧：否则切换类型后旧凭据仍会被优先使用
+        if (a.authMode === 'token') a.globalKey = '';
+        else if (a.authMode === 'key') a.apiToken = '';
     }));
     await putJSON(env.CONFIG_KV, KV_KEYS.ACCOUNTS, cloned);
 
@@ -85,6 +98,16 @@ export async function writeAccounts(env: AppEnv, accounts: AccountEntry[]): Prom
             logger.warn('writeAccounts: 账号级变量清理失败（cron 回收会兜底）', { error: (e as Error).message });
         }
     }
+}
+
+/**
+ * 决定写回 KV 的密文：
+ *  - 新明文（非空且非掩码）→ 加密后写入
+ *  - 空值或掩码值（前端未修改）→ 保留旧密文，绝不覆盖真实凭据
+ */
+async function resolveSecretForWrite(env: AppEnv, incoming: string | undefined, existingCipher: string | undefined): Promise<string> {
+    if (incoming && !isMaskedKey(incoming)) return await encryptKey(env, incoming);
+    return existingCipher || '';
 }
 
 /** 判断是否为前端脱敏格式（前6...后4 或 ***），此类值不得作为新 key 加密入库 */

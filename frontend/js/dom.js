@@ -133,6 +133,52 @@ async function apiFetch(url, init) {
     return data;
 }
 
+// ===== 时间 =====
+/** 相对时间：把 ISO 时间串转成「3 分钟前」这类可读文本；解析失败时原样返回 */
+function timeAgo(input) {
+    if (!input) return '';
+    const t = new Date(input).getTime();
+    if (!Number.isFinite(t)) return String(input);
+    const sec = Math.floor((Date.now() - t) / 1000);
+    if (sec < 0) return new Date(t).toLocaleString();
+    if (sec < 60) return '刚刚';
+    if (sec < 3600) return Math.floor(sec / 60) + ' 分钟前';
+    if (sec < 86400) return Math.floor(sec / 3600) + ' 小时前';
+    if (sec < 2592000) return Math.floor(sec / 86400) + ' 天前';
+    return new Date(t).toLocaleDateString();
+}
+
+// ===== 剪贴板 =====
+// 诊断报告、订阅链接这类文本需要「一键复制」；clipboard API 在 http 或旧浏览器不可用，
+// 因此保留 textarea + execCommand 的回落路径。
+function fallbackCopy(text, successMsg) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    document.body.removeChild(ta);
+    if (typeof Swal !== 'undefined') {
+        if (ok) Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: successMsg, showConfirmButton: false, timer: 2000 });
+        else Swal.fire('复制失败', '请手动选择文本复制', 'error');
+    }
+    return ok;
+}
+
+function copyToClipboard(text, successMsg = '已复制到剪贴板') {
+    if (navigator.clipboard && window.isSecureContext) {
+        return navigator.clipboard.writeText(text).then(function () {
+            if (typeof Swal !== 'undefined') Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: successMsg, showConfirmButton: false, timer: 2000 });
+            return true;
+        }).catch(function () { return fallbackCopy(text, successMsg); });
+    }
+    return Promise.resolve(fallbackCopy(text, successMsg));
+}
+
 // 登出：删除服务端会话 + 清 cookie + 回登录页
 async function logout() {
     try { await fetch('/api/logout', { method: 'POST' }); } catch (e) { console.error('[logout]', e); }

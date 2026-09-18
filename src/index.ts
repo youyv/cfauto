@@ -164,13 +164,20 @@ function bootstrapScript(): string {
                 defaultVars: v.defaultVars,
                 uuidField: v.uuidField,
                 name: v.name,
-                kvBindingName: v.kvBindingName
+                kvBindingName: v.kvBindingName,
+                // UI 元数据：仓库直链、访问路径与兼容日期，供卡片提示渲染
+                repoUrl: v.repoUrl,
+                adminPath: v.adminPath,
+                subPath: v.subPath,
+                compatibilityDate: v.compatibilityDate
             }])
         )
     );
     _bootstrapCache =
         'window.TEMPLATES=' + templates + ';' +
         'window.ECH_PROXIES=' + JSON.stringify(ECH_PROXIES) + ';' +
+        // 版本号供「诊断报告」使用；由服务端注入，不经过前端静态资源
+        'window.APP_VERSION=' + JSON.stringify(FRONTEND_VERSION) + ';' +
         'var TEMPLATES=window.TEMPLATES,ECH_PROXIES=window.ECH_PROXIES;\n';
     return _bootstrapCache;
 }

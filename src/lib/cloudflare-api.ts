@@ -36,9 +36,32 @@ export async function fetchWithTimeout(url: string, init?: RequestInit, timeoutM
     }
 }
 
-/** 获取 CF API 认证头，upload=true 时不含 Content-Type（由 FormData 自动设置） */
-export function getAuthHeaders(email: string, key: string, upload = false) {
-    const base = { "X-Auth-Email": email, "X-Auth-Key": key };
+/** 可用于认证的账号凭据（Global API Key 与 API Token 任选其一） */
+export interface AuthCredential {
+    email?: string;
+    globalKey?: string;
+    apiToken?: string;
+    /** 账号显式选择的鉴权方式；缺省时「有 Token 用 Token，否则用 Key」 */
+    authMode?: string;
+}
+
+/**
+ * 获取 CF API 认证头，upload=true 时不含 Content-Type（由 FormData 自动设置）。
+ *
+ * 支持两种凭据，**优先 API Token**：
+ *  - API Token       → `Authorization: Bearer <token>`（细粒度权限，无需邮箱）
+ *  - Global API Key  → `X-Auth-Email` + `X-Auth-Key`
+ * 同时兼容旧的字符串调用形式 `getAuthHeaders(email, key, upload)`。
+ */
+export function getAuthHeaders(emailOrCred: string | AuthCredential, key?: string, upload = false): Record<string, string> {
+    const cred: AuthCredential = typeof emailOrCred === 'object' ? emailOrCred : { email: emailOrCred, globalKey: key };
+    const token = (cred.apiToken || '').trim();
+    // authMode === 'key' 时强制走 Global API Key，避免残留的 Token 抢先生效
+    const useToken = cred.authMode !== 'key' && !!token;
+    const base: Record<string, string> = useToken
+        ? { "Authorization": "Bearer " + token }
+        : { "X-Auth-Email": cred.email || '', "X-Auth-Key": cred.globalKey || '' };
+    // upload 场景不设 Content-Type，交给 FormData 自动带 boundary
     return upload ? base : { ...base, "Content-Type": "application/json" };
 }
 

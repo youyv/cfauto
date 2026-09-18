@@ -426,6 +426,38 @@ if (themeLeaks.length > 0) {
     }
 }
 
+// ===== 9. Batch script sanity =====
+console.log('\n=== 9. Batch script sanity ===');
+// .bat 的 if(...) 块内 echo 里未转义的括号，会让 cmd 在解析阶段提前闭合该块，
+// 其后内容被当成命令执行并中止整个脚本 —— deploy.bat 曾因此双击即闪退
+// （报 "before was unexpected at this time."，连结尾的 pause 都没执行到）。
+// 块内要输出字面括号必须写成 ^( ^)。批处理无法被 vitest 覆盖，只能在这里静态防回归。
+{
+    const batFiles = fs.readdirSync(ROOT).filter(f => f.toLowerCase().endsWith(".bat"));
+    const batProblems = [];
+    for (const f of batFiles) {
+        const lines = fs.readFileSync(path.join(ROOT, f), "utf-8").split("\n");
+        let depth = 0;
+        lines.forEach((line, i) => {
+            const t = line.trim();
+            if (/^(rem\b|::)/i.test(t)) return;
+            const unquoted = line.replace(/"[^"]*"/g, "");
+            if (depth > 0 && /^@?echo\b/i.test(t) && /(?<!\^)[()]/.test(unquoted)) {
+                batProblems.push(f + ":" + (i + 1) + "  " + t.slice(0, 80));
+            }
+            if (/^(if|for)\b.*\(\s*$/.test(t) || t === "(") depth++;
+            else if (/^\)\s*$/.test(t)) depth = Math.max(0, depth - 1);
+        });
+    }
+    if (batProblems.length > 0) {
+        console.log("  ❌ .bat 块内 echo 含未转义括号（cmd 会在解析阶段中止整个脚本）:");
+        batProblems.forEach(l => console.log("       " + l));
+        errors.push("Unescaped parentheses inside batch blocks: " + batProblems.length);
+    } else {
+        console.log("  ✅ " + batFiles.length + " 个 .bat 的块结构与括号转义无解析陷阱");
+    }
+}
+
 // ===== SUMMARY =====
 console.log('\n' + '='.repeat(60));
 console.log('VERIFICATION SUMMARY');

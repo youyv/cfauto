@@ -260,3 +260,16 @@
       }
       [data-theme="dark"] .swal2-title { color: var(--text-primary) !important; }
       [data-theme="dark"] .swal2-html-container { color: var(--text-secondary) !important; }
+
+      /* ── 项目切换标签页 ── */
+      .project-tab-btn {
+        color: var(--text-muted);
+        border-bottom: 2px solid transparent;
+        transition: color 0.15s, border-color 0.15s, background-color 0.15s;
+      }
+      .project-tab-btn:hover { color: var(--text-secondary); }
+      .project-tab-btn.tab-active {
+        color: var(--text-primary);
+        border-bottom-color: var(--accent-blue);
+        background: var(--glass-3);
+      }

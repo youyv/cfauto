@@ -43,8 +43,11 @@ compatibility_date = "2026-07-16"
 # 自定义域名路由 (有自定义域名时取消注释)
 # [[routes]]
 # pattern = "改成你的域名"
-# zone_name = "改成你的zone名"
 # custom_domain = true
+# 用 zone_id 而不是 zone_name：wrangler 会直接使用该 ID，不再查 /zones?name=...，
+# 这样部署用的 API Token 无需额外的 Zone:Zone:Read 权限。
+# zone_id = "在 CF 后台域名 Overview 右侧栏可查看"
+# zone_name = "改成你的zone名"   # 若填 zone_name，则 token 还需 Zone:Zone:Read
 
 # Cron 定时触发器 (自动更新 & 熔断, 需要时取消注释)
 # [triggers]

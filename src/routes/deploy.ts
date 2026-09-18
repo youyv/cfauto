@@ -6,7 +6,7 @@ import { TEMPLATES, BINDING } from '../config/templates';
 import type { TemplateType } from '../config/templates';
 import { cf, getAuthHeaders, json, fetchWithTimeout, readApiResult } from '../lib/cloudflare-api';
 import { uploadWorker, mergeVariableBindings, verifyWorkerScript } from '../lib/deploy-utils';
-import { readAccounts, writeAccounts, addWorkerName } from "../lib/account-store";
+import { readAccounts, writeAccounts, addWorkerName, hasAccountCredentials } from "../lib/account-store";
 import { pooledMapSettled } from '../lib/concurrency';
 import { validateRequired, requireTemplateType, isNonEmptyString, WORKER_NAME_RE } from "../lib/validate";
 import type { AppEnv } from "../config/env";
@@ -160,7 +160,7 @@ async function deployToSingleAccount(
     };
     let updated = false;
     try {
-        const jsonHeaders = getAuthHeaders(acc.email, acc.globalKey);
+        const jsonHeaders = getAuthHeaders(acc);
 
         let nsId = "";
         if (enableKV) {
@@ -168,7 +168,7 @@ async function deployToSingleAccount(
         }
 
         const bindings = buildBatchBindings(template, nsId, enableKV, savedVars, config);
-        const { ok, error: uploadError } = await uploadWorker(acc, workerName, scriptContent, bindings);
+        const { ok, error: uploadError } = await uploadWorker(acc, workerName, scriptContent, bindings, template);
 
         if (ok) {
             // 回读校验：上传响应成功不代表脚本真的变了（见 deploy-utils.verifyWorkerScript）
@@ -215,13 +215,13 @@ export async function handleBatchDeploy(env: AppEnv, reqData: BatchDeployRequest
 
     const trimmedName = workerName.trim();
     const allAccounts = await readAccounts(env);
-    const accountsToDeploy = allAccounts.filter((a) => targetAccounts.includes(a.alias) && a.globalKey);
+    const accountsToDeploy = allAccounts.filter((a) => targetAccounts.includes(a.alias) && hasAccountCredentials(a));
     if (accountsToDeploy.length === 0) {
-        const missingKey = allAccounts.filter((a) => targetAccounts.includes(a.alias) && !a.globalKey);
+        const missingKey = allAccounts.filter((a) => targetAccounts.includes(a.alias) && !hasAccountCredentials(a));
         return json([{
             name: "错误", success: false,
             msg: missingKey.length > 0
-                ? '所选账号密钥缺失或解密失败：' + missingKey.map(a => a.alias).join(', ')
+                ? '所选账号未配置凭据或解密失败：' + missingKey.map(a => a.alias).join(', ')
                 : "未选择有效账号"
         }]);
     }

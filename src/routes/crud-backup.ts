@@ -91,35 +91,38 @@ ROUTES.set('POST /api/accounts/import', async (req, env) => {
         }
         // 仅解密来自 import 的条目（export 数据已加密），避免对已解密的存量条目重复解密
         // 仅解密带 v1: 前缀的已加密值，跳过已解密的存量明文（避免无效 atob + warn）
-        const decryptFailed: string[] = [];
+        const decryptFailed = new Set<string>();
         await Promise.all(importedIdx.map(async (i) => {
-            const raw = merged[i].globalKey;
-            if (raw && /^v\d+:/.test(raw)) {
+            // globalKey 与 apiToken 都是加密存储的密文，逐个字段处理
+            for (const field of ['globalKey', 'apiToken'] as const) {
+                const raw = merged[i][field];
+                if (!raw || !/^v\d+:/.test(raw)) continue;
                 const dec = await decryptKey(env, raw);
                 if (dec === raw) {
                     // 解密失败（密钥不匹配/数据损坏）→ 置空并提示，防止 writeAccounts 再次加密导致双重加密
-                    merged[i].globalKey = '';
-                    decryptFailed.push(merged[i].alias || merged[i].accountId);
+                    merged[i][field] = '';
+                    decryptFailed.add(merged[i].alias || merged[i].accountId);
                 } else {
-                    merged[i].globalKey = dec;
+                    merged[i][field] = dec;
                 }
             }
         }));
+        const decryptFailedList = Array.from(decryptFailed);
         // 复用统一校验（唯一性 / accountId 格式 / workers_* 结构）
         const validated = validateAccountsPayload(merged);
         if (!validated.ok) return validated.response;
         await writeAccounts(env, merged);
-        logger.audit('accounts imported', { added, skipped, total: merged.length, decryptFailed: decryptFailed.length });
+        logger.audit('accounts imported', { added, skipped, total: merged.length, decryptFailed: decryptFailedList.length });
         const warnings: string[] = [];
         if (fingerprintMismatch) {
             warnings.push('导出文件来自不同的加密密钥（指纹 ' + importedFingerprint + ' ≠ 本实例 ' + localFingerprint + '），密文无法解密');
         }
-        if (decryptFailed.length > 0) {
-            warnings.push('以下账号密钥解密失败，已清空需重新输入: ' + decryptFailed.join(', '));
+        if (decryptFailedList.length > 0) {
+            warnings.push('以下账号密钥解密失败，已清空需重新输入: ' + decryptFailedList.join(', '));
         }
         return json({
             success: true, added,
-            skipped: skipped + decryptFailed.length,
+            skipped: skipped + decryptFailedList.length,
             total: merged.length,
             ...(warnings.length > 0 ? { warning: warnings.join('；') } : {})
         });

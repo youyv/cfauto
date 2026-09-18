@@ -105,12 +105,19 @@ function renderTable() {
         // 别名（密钥缺失时加提示）
         const tdAlias = document.createElement('td'); tdAlias.className = 'font-medium';
         tdAlias.textContent = a.alias;
-        if (!a.globalKey) {
+        if (!a.globalKey && !a.apiToken) {
             const warn = document.createElement('span');
             warn.className = 'text-red-500 ml-1 cursor-help';
-            warn.title = 'API Key 缺失或解密失败，请编辑账号重新填写';
+            warn.title = '未配置凭据（Global API Key 或 API Token），或解密失败，请编辑账号重新填写';
             warn.textContent = '🔑';
             tdAlias.appendChild(warn);
+        } else {
+            // 标出该账号实际使用的凭据类型，便于排查「改了密码/令牌后失效」
+            const mode = document.createElement('span');
+            mode.className = 'text-gray-400 ml-1 text-[10px] cursor-help';
+            mode.title = (a.apiToken && a.authMode !== 'key') ? '使用 API Token 认证' : '使用 Global API Key 认证';
+            mode.textContent = (a.apiToken && a.authMode !== 'key') ? '🎫' : '🔐';
+            tdAlias.appendChild(mode);
         }
         tr.appendChild(tdAlias);
 
@@ -205,15 +212,23 @@ async function saveAccount() {
     const accountId = ($('in_id').value || '').trim();
     const email = ($('in_email').value || '').trim();
     const gkey = ($('in_gkey').value || '').trim();
+    const apiToken = ($('in_api_token').value || '').trim();
+    const useToken = currentAuthMode() === 'token';
     const dailyLimit = parseInt($('in_daily_limit').value, 10) || 0;
 
     // 必填校验（与后端保持一致，避免 400 后无提示）
     if (!alias) return Swal.fire('提示', '请填写备注 (Alias)', 'warning');
     if (!accountId) return Swal.fire('提示', '请填写 Account ID', 'warning');
     if (!ACCOUNT_ID_RE.test(accountId)) return Swal.fire('提示', 'Account ID 应为 32 位十六进制字符', 'warning');
-    if (!email) return Swal.fire('提示', '请填写 Login Email', 'warning');
-    // 新增账号必须提供 key；编辑时留空 = 不修改（后端保留旧密文）
-    if (state.editingIndex < 0 && !gkey) return Swal.fire('提示', '新增账号必须填写 Global API Key', 'warning');
+    if (!useToken && !email) return Swal.fire('提示', '使用 Global API Key 时必须填写 Login Email', 'warning');
+    // 所选鉴权方式必须有凭据：新增必填；编辑时留空表示沿用该账号已有的同类凭据
+    const existingAcc = state.editingIndex >= 0 ? state.accounts[state.editingIndex] : undefined;
+    if (useToken && !apiToken && !(existingAcc && existingAcc.apiToken)) {
+        return Swal.fire('提示', '请填写 Cloudflare API Token', 'warning');
+    }
+    if (!useToken && !gkey && !(existingAcc && existingAcc.globalKey)) {
+        return Swal.fire('提示', '请填写 Global API Key', 'warning');
+    }
 
     // alias / accountId 唯一性前置校验：后端会拒，但本地先提示体验更好
     const conflict = state.accounts.find((a, i) => i !== state.editingIndex && (a.alias === alias || a.accountId === accountId));
@@ -226,6 +241,8 @@ async function saveAccount() {
     const o = {
         alias, accountId, email,
         globalKey: gkey,
+        apiToken: apiToken,
+        authMode: useToken ? 'token' : 'key',
         defaultZoneName: $('in_zone_name').value,
         defaultZoneId: $('in_zone_id').value,
         dailyLimit,
@@ -237,9 +254,14 @@ async function saveAccount() {
         o['workers_' + t] = ($('in_workers_' + t).value || '').split(/,|，/).map(s => s.trim()).filter(s => s);
     });
 
+    // 编辑时该侧留空 = 沿用已有凭据（后端保留旧密文）；authMode 会让后端清空另一侧
+    if (state.editingIndex >= 0) {
+        if (!gkey) delete o.globalKey;
+        if (!apiToken) delete o.apiToken;
+    }
+
     const backup = JSON.parse(JSON.stringify(state.accounts));   // 失败可回滚
     if (state.editingIndex >= 0) {
-        if (!o.globalKey) delete o.globalKey;
         state.accounts[state.editingIndex] = o;
     } else {
         state.accounts.push(o);
@@ -271,9 +293,12 @@ function editAccount(i) {
     $('in_alias').value = a.alias;
     $('in_id').value = a.accountId;
     $('in_email').value = a.email || "";
-    // 安全: 不回填脱敏 key，留空表示不修改（后端保留旧密文）
+    // 安全: 不回填脱敏凭据，留空表示不修改（后端保留旧密文）
     $('in_gkey').value = "";
-    $('in_gkey').placeholder = "留空=不修改";
+    $('in_gkey').placeholder = a.globalKey ? "留空=不修改" : "Global API Key";
+    $('in_api_token').value = "";
+    $('in_api_token').placeholder = a.apiToken ? "留空=不修改" : "Cloudflare API Token（需 Workers 与 KV 读写权限）";
+    setAuthMode(a.authMode || (a.apiToken ? 'token' : 'key'));
     $('in_daily_limit').value = a.dailyLimit || "";
     $('in_zone_name').value = a.defaultZoneName || "";
     $('in_zone_id').value = a.defaultZoneId || "";
@@ -322,12 +347,37 @@ async function delAccount(i) {
 
 function resetFormForAdd() {
     state.editingIndex = -1;
-    document.querySelectorAll('#account_form input').forEach(i => i.value = '');
+    // 排除 radio：给 radio 赋空字符串会把 value 清掉，鉴权方式就再也读不出来了
+    document.querySelectorAll('#account_form input:not([type="radio"])').forEach(i => i.value = '');
     $('in_gkey').placeholder = 'Global API Key';
+    $('in_api_token').placeholder = 'Cloudflare API Token（需 Workers 与 KV 读写权限）';
+    setAuthMode('token');
     $('in_zone_select').innerHTML = '<option value="">(请先填写API信息后点击读取)</option>';
     const delBtn = $('btn_del_edit');
     if (delBtn) delBtn.classList.add('hidden');
     $('account_form').classList.remove('hidden');
+}
+
+/** 当前表单选择的鉴权方式 */
+function currentAuthMode() {
+    const el = document.querySelector('input[name="auth_mode"]:checked');
+    return el ? el.value : 'token';
+}
+
+/** 切换鉴权方式对应的输入区显隐（由 data-act-change 触发） */
+function toggleAuthFields() {
+    const isToken = currentAuthMode() === 'token';
+    const t = $('field_auth_token');
+    const k = $('field_auth_key');
+    if (t) t.classList.toggle('hidden', !isToken);
+    if (k) k.classList.toggle('hidden', isToken);
+}
+
+/** 以编程方式设置鉴权方式（单选按钮 + 字段显隐） */
+function setAuthMode(mode) {
+    const el = document.querySelector('input[name="auth_mode"][value="' + (mode === 'key' ? 'key' : 'token') + '"]');
+    if (el) el.checked = true;
+    toggleAuthFields();
 }
 function cancelEdit() {
     $('account_form').classList.add('hidden');
@@ -378,13 +428,10 @@ async function loadStats() {
 }
 
 async function fetchZonesForAccount() {
-    const email = $('in_email').value;
-    const key = $('in_gkey').value;
     const id = ($('in_id').value || '').trim();
     const select = $('in_zone_select');
 
-    // key 仅在校验时需要；编辑模式 key 留空=不修改，后端用 KV 中的服务端凭据读取，故允许
-    if (!email || (!key && state.editingIndex < 0)) return Swal.fire('提示', '请先填写 Email, API Key', 'warning');
+    // 读取使用服务端 KV 中存储的凭据，表单里的 email/token/key 均不参与，故只校验 Account ID
     if (!ACCOUNT_ID_RE.test(id)) return Swal.fire('提示', '请先填写合法的 Account ID（32 位十六进制）', 'warning');
     if (state.editingIndex < 0) {
         return Swal.fire('提示', '新账号请先「💾 保存账号」，之后再读取域名列表（读取使用服务端存储的凭据）', 'info');
@@ -544,6 +591,8 @@ registerActions({
     deleteFromEdit: deleteFromEdit,
     fetchZonesForAccount: fetchZonesForAccount,
     updateZoneInfo: updateZoneInfo,
+    toggleAuthFields: toggleAuthFields,
+    switchProjectTab: switchProjectTab,
     verifyAllCredentials: verifyAllCredentials,
     selectAllAccounts: selectAllAccounts,
     deselectAllAccounts: deselectAllAccounts,

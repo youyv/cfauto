@@ -75,7 +75,7 @@ function toggleYxipAccountSelect() {
 
     state.accounts.forEach(a => {
         const targetWorkers = a[targetArrName] || [];
-        const unusable = targetWorkers.length === 0 || !a.globalKey;
+        const unusable = targetWorkers.length === 0 || (!a.globalKey && !a.apiToken);
 
         const label = document.createElement('label');
         label.className = 'flex items-center gap-2 p-2 border rounded cursor-pointer transition-colors ' + bgHoverCls + (unusable ? ' opacity-50 grayscale' : '');
@@ -96,9 +96,9 @@ function toggleYxipAccountSelect() {
         if (targetWorkers.length === 0) {
             badge.className = 'text-[10px] text-gray-400 ml-auto mx-1';
             badge.textContent = '无 ' + targetNameStr + ' 项目';
-        } else if (!a.globalKey) {
+        } else if (!a.globalKey && !a.apiToken) {
             badge.className = 'text-[10px] text-red-500 ml-auto mx-1';
-            badge.textContent = '密钥缺失';
+            badge.textContent = '凭据缺失';
         } else {
             badge.className = badgeBgCls + ' px-1.5 py-0.5 rounded text-[10px] ml-auto';
             badge.textContent = targetWorkers.length + ' 个项目';

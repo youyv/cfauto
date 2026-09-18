@@ -75,6 +75,17 @@ export interface AccountEntry {
     accountId: string;
     email: string;
     globalKey: string;
+    /**
+     * 可选：Cloudflare API Token（`Authorization: Bearer`）。
+     * 与 globalKey 二选一即可；两者都存在时优先用 Token（权限更小、可单独吊销）。
+     * 与 globalKey 一样加密存储，前端拿到的始终是掩码值。
+     */
+    apiToken?: string;
+    /**
+     * 账号显式选择的鉴权方式。写入时会把另一侧凭据清空，避免切换类型后旧凭据
+     * 仍在 `getAuthHeaders` 里抢先生效。缺省（历史数据）表示「有 Token 用 Token，否则用 Key」。
+     */
+    authMode?: 'token' | 'key';
     dailyLimit?: number;
     defaultZoneName?: string;
     defaultZoneId?: string;

@@ -6,7 +6,7 @@
  */
 
 import { KV_KEYS, TEMPLATES } from '../config/templates';
-import { readAccounts, writeAccounts, findAccount, removeWorkerName, hasAnyWorker } from '../lib/account-store';
+import { readAccounts, writeAccounts, findAccount, removeWorkerName, hasAnyWorker, hasAccountCredentials } from '../lib/account-store';
 import { cf, getAuthHeaders, jsonError, json, fetchWithTimeout, readApiJson, readApiResult } from '../lib/cloudflare-api';
 import { readWorkerBindings, deleteKvNamespaces } from '../lib/deploy-utils';
 import { putJSON } from "../lib/kv-utils";
@@ -20,8 +20,8 @@ async function resolveCredentials(env: AppEnv, accountId: string) {
     }
     const acc = await findAccount(env, accountId);
     if (!acc) throw new Response(JSON.stringify({ success: false, msg: '账号未在服务端配置' }), { status: 404, headers: { 'Content-Type': 'application/json' } });
-    if (!acc.globalKey) throw new Response(JSON.stringify({ success: false, msg: '该账号密钥缺失或解密失败，请重新填写 Global API Key' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
-    return { accountId: acc.accountId, email: acc.email, globalKey: acc.globalKey, headers: getAuthHeaders(acc.email, acc.globalKey) };
+    if (!hasAccountCredentials(acc)) throw new Response(JSON.stringify({ success: false, msg: '该账号未配置凭据（Global API Key 或 API Token），或密钥解密失败，请重新填写' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    return { accountId: acc.accountId, email: acc.email, globalKey: acc.globalKey, apiToken: acc.apiToken, headers: getAuthHeaders(acc) };
 }
 
 /** 统一处理 handler 异常：保留主动抛出的 Response，其余记录日志后返回可读错误 */

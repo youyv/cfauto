@@ -1,8 +1,8 @@
-# 🚀 CF Auto — Cloudflare Worker 智能部署中控 (V12.0.1)
+# 🚀 CF Auto — Cloudflare Worker 智能部署中控 (V12.1.0)
 
 > 全部代码由 Claude Code 完成，自行修改延伸功能。
 
-> **版本状态**: V12.0.1 Stable — 部署可信度（上传响应体校验 · 回读校验 · 版本账本作用域 · 实况漂移检测）+ KV 自动回收
+> **版本状态**: V12.1.0 Stable — API Token 双轨鉴权 · 上游分支/脚本动态嗅探 · 模板级兼容日期 · 运维诊断与一键报障 + 部署可信度与 KV 自动回收
 > **详细变更**: 见 [CHANGELOG.md](CHANGELOG.md)
 
 ---
@@ -28,6 +28,11 @@
 | 🧹 **KV 自动回收** | cron 每 24h 裁剪超期部署日志、清理已删账号遗留的变量覆盖键 |
 | 🌌 **星空主题** | 暗黑星空 + 明亮模式，一键切换 |
 | 🔐 **数据加密** | 所有 API Key 经 AES-256-GCM 加密存储 |
+| 🔑 **双轨鉴权** | 每个账号可用 API Token 或 Global API Key，切换鉴权类型自动清理另一侧凭据 |
+| 🌿 **上游自愈** | 动态探测上游默认分支与脚本路径（15 分钟缓存），改名/换分支不再拉错 |
+| 📅 **模板级兼容日期** | 每个模板使用各自验证过的 `compatibility_date`，不共用一个日期 |
+| 🐛 **故障报障** | 一键复制已脱敏诊断报告，或预填 GitHub Issue |
+| 🗂️ **项目标签页** | 右侧三个项目按标签页切换，并显示仓库直链与访问路径 |
 
 ---
 
@@ -84,7 +89,7 @@ cfauto/
 │       ├── workbench.js        #   工作台 / 日志
 │       ├── diagnostics.js      #   系统诊断 / 源码查看
 │       └── starfield.js        #   星空动画 + 应用入口
-├── test/                       # Vitest（377 个测试，全部 import 真实模块）
+├── test/                       # Vitest（383 个测试，全部 import 真实模块）
 │   ├── helpers.ts              #   内存 KV mock (含 list 分页) / CF 响应构造 / fetch 桩
 │   ├── kv-utils.test.ts        #   工具函数 + 路由表
 │   ├── kv-gc.test.ts           #   KV 回收: 日志裁剪 / 孤儿键 / 翻页 / cron 节流
@@ -166,7 +171,8 @@ build (生成 frontend-bundle.ts) → typecheck (tsc --noEmit)
 | **2** | 修改 `wrangler.toml` | ① `name` 改成 Worker 名 ② 首次部署取消 `[[kv_namespaces]]` 注释，填入 KV ID ③ 需要时取消 `routes` / `triggers` 注释 |
 | **3** | 双击 `build.bat` | 拼接前端 + esbuild 打包 → `dist/worker.js` |
 | **4** | 双击 `setup-secrets.bat` | 设置面板密码和 GitHub Token (加密存储到 CF) |
-| **5** | 双击 `deploy.bat` | 推送到 Cloudflare |
+| **5** | 配置部署凭据 | 复制 `deploy.local.example.bat` → `deploy.local.bat` 并填入 API Token（详见「6️⃣ 配置部署凭据」） |
+| **6** | 双击 `deploy.bat` | 推送到 Cloudflare |
 
 ### 🔄 日常更新
 
@@ -183,7 +189,7 @@ build.bat → deploy.bat
 ```
 check.bat            # 或 pnpm run check
 ```
-它按 CI 相同顺序执行 build → typecheck → verify → test（377 个测试）。任一步失败就不要部署。
+它按 CI 相同顺序执行 build → typecheck → verify → test（383 个测试）。任一步失败就不要部署。
 
 ---
 
@@ -231,6 +237,40 @@ zone_name = "你的 zone 名"
 custom_domain = true
 ```
 
+### 6️⃣ 配置部署凭据（wrangler 认证）
+
+`deploy.bat` 通过 wrangler 推送到 Cloudflare，wrangler 需要一个**部署凭据**：
+
+**方式一：API Token（推荐，非交互）**
+
+1. 打开 https://dash.cloudflare.com/profile/api-tokens → **Create Token**，直接选预设模板
+   **`Edit Cloudflare Workers`** 即可（含 `Workers Scripts / KV Storage / Routes: Edit`、
+   `Account Settings: Read`、`User Details / Memberships: Read`）。
+
+   > 用了自定义域名路由时，如果配置里写的是 `zone_name`，还需要额外加一条 `Zone · Zone · Read`
+   > （wrangler 要按域名查 `zone_id`）。**改成直接写 `zone_id` 就不需要这条权限**：
+   > 在 CF 后台进入该域名 → Overview → 右侧栏 Zone ID 复制即可，权限更小。
+2. 复制 `deploy.local.example.bat` 为 `deploy.local.bat`（已在 `.gitignore` 中），填入：
+
+   ```bat
+   set CLOUDFLARE_API_TOKEN=你的token
+   ```
+
+3. 之后双击 `deploy.bat` / `setup-secrets.bat` 会自动加载该文件，全程无需登录。
+
+**方式二：OAuth 登录（交互）**
+
+```
+node_modules\.bin\wrangler.cmd login
+```
+
+> ⚠️ OAuth 用 `http://localhost:8976/oauth/callback` 接收回调。若本机 `localhost` 无法解析
+> （报 `getaddrinfo ENOTFOUND localhost`），登录必然失败 —— 请改用方式一。该现象通常是
+> `hosts` 文件缺少 `127.0.0.1 localhost` 一行，补上需要管理员权限。
+>
+> 未配置 `deploy.local.bat` 且 OAuth 已过期时，wrangler 会回退到交互登录；
+> `deploy.bat` 会在启动时提示 `[INFO] CLOUDFLARE_API_TOKEN not set`。
+
 ---
 
 ## 🔑 账号凭证获取
@@ -239,14 +279,24 @@ custom_domain = true
 
 登录 Cloudflare Dashboard 后，浏览器地址栏中 `dash.cloudflare.com/` 后面的 32 位字符即是。
 
-### Global API Key (必须，不可用 API Token 替代)
+### Cloudflare 凭据（两种任选其一）
+
+在账号表单里切换「鉴权凭据类型」即可，切换后另一侧旧凭据会被自动清空，不会出现「界面选了 A、实际仍在用 B」。
+
+**方式一：API Token（推荐）**
+
+1. 右上角头像 → **My Profile** → **API Tokens** → **Create Token**
+2. 权限至少需要 **Workers Scripts: Edit** 与 **Workers KV Storage: Edit**；查询用量还需 **Account Analytics: Read**
+3. 复制 token 填入账号表单的「API Token」栏（无需填写邮箱）
+
+**方式二：Global API Key**
 
 1. 右上角头像 → **My Profile**
 2. 左侧 **API Tokens**
 3. 页面下方 **API Keys** → **Global API Key** → **View**
-4. 输入密码 + hCaptcha 验证后复制
+4. 输入密码 + hCaptcha 验证后复制，连同登录邮箱一起填入
 
-> ⚠️ Global API Key 拥有最高权限，本中控将其 AES-256-GCM 加密后存储在 KV 中。
+> ⚠️ Global API Key 拥有账号最高权限；API Token 权限可细分、可单独吊销，日常更推荐。两者都会经 AES-256-GCM 加密后存储在 KV 中。
 
 ### GitHub Token (推荐)
 
@@ -320,9 +370,9 @@ custom_domain = true
 | 页面显示 "KV Not Bound" | KV 未绑定 | Settings → 添加 `CONFIG_KV` KV 绑定 |
 | 检查更新报错 | GitHub API 限流 | 配置 `GITHUB_TOKEN` 环境变量 |
 | 修改子域名后不可用 | DNS 传播延迟 | 等待数分钟至数小时 |
-| 不能用 API Token | 权限不足 | 必须使用 Global API Key |
+| API Token 操作报权限错误 | Token 权限不足 | 给 Token 加上 Workers Scripts / KV Storage 的 Edit 权限（用量统计另需 Account Analytics Read） |
 | 部署后变量没有出现 | KV 缓存旧数据 | 刷新面板或手动点「+ 变量」添加 |
-| 账号列表 alias 后有 🔑 标记 | API Key 缺失或解密失败 | 编辑该账号重新填写 Global API Key |
+| 账号列表 alias 后有 🔑 标记 | 凭据缺失或解密失败 | 编辑该账号重新填写 Global API Key 或 API Token |
 | 改了 ACCESS_CODE 后所有 Key 失效 | 加密密钥由 ACCESS_CODE 派生 | 提前设置 `ENCRYPTION_SECRET`；已失效的只能重新填写。工作台「🩺 诊断」可查看是否已启用 |
 | 导入的账号 Key 全部为空 | 导出文件来自不同的加密密钥 | 导入时会比对密钥指纹并给出警告，需重新填写 Key |
 | 变量输入框清空后部署仍是旧值 | 空值 = 沿用上游默认，不代表删除 | 点变量行右侧的「×」显式删除 |
@@ -360,7 +410,7 @@ custom_domain = true
 ### 🛠️ 构建与工具
 - **esbuild** — TypeScript/JS 打包为单文件 ESM 输出
 - **Node.js** — 构建脚本、内联前端资源、可复现的依赖读取
-- **Vitest** — 377 个单元与集成测试，全部 import 真实模块（内存 KV mock + fetch 桩）
+- **Vitest** — 383 个单元与集成测试，全部 import 真实模块（内存 KV mock + fetch 桩）
 - **TypeScript** — 类型安全、模板字面量索引签名消除类型断言
 - **GitHub Actions** — build → typecheck → verify → test 全链路 CI
 - **自定义静态校验** — `verify.js` 检查结构、路由覆盖、CSP、死代码（死 action / 冗余 window 导出 / 孤儿 HTML id / 未使用 import）、以及裸 `res.json()` / 裸 `fetch` 等反模式

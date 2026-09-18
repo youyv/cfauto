@@ -7,6 +7,20 @@ export const TEMPLATES: Record<string, {
     ghRepo: string;
     ghBranch: string;
     ghPath: string;
+    /** 目标脚本的文件名特征（用于上游改名后仍能从文件树里认出它） */
+    filePattern: string;
+    /** 上游开源仓库地址（UI 直链） */
+    repoUrl: string;
+    /** 管理后台访问路径（如 /admin），没有则省略 */
+    adminPath?: string;
+    /** 订阅获取路径（如 /{UUID}），没有则省略 */
+    subPath?: string;
+    /**
+     * 该模板验证过的 workerd 兼容日期。
+     * 不能三个模板共用一个日期，也不能用「今天」—— 上游模板的运行时行为是在其自己的
+     * 兼容日期下验证的（源项目 Issue #10：日期错乱导致批量部署后连接失败）。
+     */
+    compatibilityDate: string;
     defaultVars: string[];
     uuidField: string;
     description: string;
@@ -26,6 +40,10 @@ export const TEMPLATES: Record<string, {
         ghRepo: "edgetunnel",
         ghBranch: "main",
         ghPath: "_worker.js",
+        filePattern: "_worker.js",
+        repoUrl: "https://github.com/cmliu/edgetunnel",
+        adminPath: "/admin",
+        compatibilityDate: '2024-04-05',
         defaultVars: ["UUID", "PROXYIP", "DOH", "PATH", "URL", "KEY", "ADMIN", "TCP_CONCURRENT_DIAL", "PROXY_CONCURRENT_DIAL"],
         uuidField: "UUID",
         description: "CMliu (beta2.1) - 建议开启 KV",
@@ -44,6 +62,10 @@ export const TEMPLATES: Record<string, {
         ghRepo: "cfnew",
         ghBranch: "main",
         ghPath: "少年你相信光吗",
+        filePattern: "少年你相信光吗",
+        repoUrl: "https://github.com/byJoey/cfnew",
+        subPath: "/{UUID}",
+        compatibilityDate: '2024-02-20',
         defaultVars: ["u"],
         uuidField: "u",
         description: "Joey (自动修复) - KV 可选",
@@ -69,6 +91,10 @@ export const TEMPLATES: Record<string, {
         ghRepo: "ech-wk",
         ghBranch: "main",
         ghPath: "_worker.js",
+        filePattern: "_worker.js",
+        repoUrl: "https://github.com/hc990275/ech-wk",
+        adminPath: "/admin",
+        compatibilityDate: '2024-04-05',
         defaultVars: ["PROXYIP"],
         uuidField: "",
         description: "ECH (无需频繁更新)",
@@ -99,14 +125,16 @@ export const BINDING = {
 };
 
 export const ECH_PROXIES = [
-    { group: "Global", list: ["ProxyIP.CMLiussss.net", "ProxyIP.Aliyun.CMLiussss.net", "ProxyIP.Oracle.CMLiussss.net"] },
+    { group: "Global (全球自动)", list: ["ProxyIP.CMLiussss.net", "ProxyIP.Aliyun.CMLiussss.net", "ProxyIP.Oracle.CMLiussss.net"] },
     { group: "HK (香港)", list: ["ProxyIP.HK.CMLiussss.net", "ProxyIP.Aliyun.HK.CMLiussss.net", "ProxyIP.Oracle.HK.CMLiussss.net"] },
     { group: "JP (日本)", list: ["ProxyIP.JP.CMLiussss.net", "ProxyIP.Aliyun.JP.CMLiussss.net", "ProxyIP.Oracle.JP.CMLiussss.net"] },
     { group: "SG (新加坡)", list: ["ProxyIP.SG.CMLiussss.net", "ProxyIP.Aliyun.SG.CMLiussss.net", "ProxyIP.Oracle.SG.CMLiussss.net"] },
     { group: "KR (韩国)", list: ["ProxyIP.KR.CMLiussss.net", "ProxyIP.Oracle.KR.CMLiussss.net"] },
-    { group: "US (美国)", list: ["ProxyIP.US.CMLiussss.net", "ProxyIP.Aliyun.US.CMLiussss.net", "ProxyIP.Oracle.US.CMLiussss.net"] },
-    { group: "Europe", list: ["ProxyIP.DE.CMLiussss.net (德国)", "ProxyIP.UK.CMLiussss.net (英国)", "ProxyIP.FR.CMLiussss.net (法国)", "ProxyIP.NL.CMLiussss.net (荷兰)", "ProxyIP.RU.CMLiussss.net (俄罗斯)"] },
-    { group: "Others", list: ["ProxyIP.TW.CMLiussss.net (台湾)", "ProxyIP.AU.CMLiussss.net (澳洲)", "ProxyIP.IN.CMLiussss.net (印度)"] }
+    { group: "US / CA (北美)", list: ["ProxyIP.US.CMLiussss.net", "ProxyIP.Aliyun.US.CMLiussss.net", "ProxyIP.Oracle.US.CMLiussss.net", "ProxyIP.CA.CMLiussss.net (加拿大)"] },
+    { group: "Europe (欧洲)", list: ["ProxyIP.DE.CMLiussss.net (德国)", "ProxyIP.UK.CMLiussss.net (英国)", "ProxyIP.FR.CMLiussss.net (法国)", "ProxyIP.NL.CMLiussss.net (荷兰)", "ProxyIP.SE.CMLiussss.net (瑞典)", "ProxyIP.FI.CMLiussss.net (芬兰)", "ProxyIP.PL.CMLiussss.net (波兰)", "ProxyIP.CH.CMLiussss.net (瑞士)", "ProxyIP.LV.CMLiussss.net (拉脱维亚)", "ProxyIP.RU.CMLiussss.net (俄罗斯)"] },
+    { group: "Others (其他)", list: ["ProxyIP.TW.CMLiussss.net (台湾)", "ProxyIP.AU.CMLiussss.net (澳洲)", "ProxyIP.IN.CMLiussss.net (印度)"] },
+    // 源项目整合的第三方高可用节点池（无 CMLiussss 前缀，直接使用原始域名）
+    { group: "Third-party (第三方维护)", list: ["kr.william.us.ci (韩国 - 威廉)", "tw.william.us.ci (台湾 - 威廉)", "proxy.mia.xx.kg (Mia)"] }
 ];
 /** KV 键名常量 — 所有数据存储的键统一在此定义，避免魔法字符串 */
 export const KV_KEYS = {
@@ -118,6 +146,8 @@ export const KV_KEYS = {
     deployConfig: (type: string) => `DEPLOY_CONFIG_${type}`, // 部署配置（锁定版本等）
     favorites: (type: string) => `FAVORITES_${type}`,   // 版本收藏
     DEPLOY_JOURNAL: 'DEPLOY_JOURNAL',                // 部署操作日志
+    /** 上游仓库分支/脚本路径的探测缓存（15 分钟 TTL）。纯缓存：不含用户数据，无需备份或回收 */
+    ghInfoCache: (type: string) => `GH_INFO_CACHE_${type}`,
 };
 
 /** 账号级变量键的正则 — 供 restore 白名单精确校验，防止前缀注入 */

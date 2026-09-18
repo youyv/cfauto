@@ -7,7 +7,7 @@
 
 import { KV_KEYS, TEMPLATES, isAccountVarsKey } from '../config/templates';
 import { json, cf, getAuthHeaders, fetchWithTimeout, readApiResult } from '../lib/cloudflare-api';
-import { readAccounts, getWorkerNames } from "../lib/account-store";
+import { readAccounts, getWorkerNames, hasAccountCredentials } from "../lib/account-store";
 import { secretFingerprint } from "../lib/crypto-utils";
 import { getJSON, listAllKeys } from "../lib/kv-utils";
 import { collectOrphanKeys, readLiveAccountIds, JOURNAL_RETENTION_DAYS } from "../lib/kv-gc";
@@ -38,14 +38,14 @@ ROUTES.set('GET /api/verify_credentials', async (_req, env) => {
     const results = await pooledMap(accounts, async (acc) => {
         // readAccounts 解密失败（ENCRYPTION_SECRET/ACCESS_CODE 变更）时会清空 globalKey，
         // 此时发请求毫无意义，直接给出可操作的提示
-        if (!acc.globalKey) {
-            return { alias: acc.alias, ok: false, error: '密钥缺失或解密失败，请重新填写 API Key' };
+        if (!hasAccountCredentials(acc)) {
+            return { alias: acc.alias, ok: false, error: '未配置凭据或解密失败，请重新填写 API Key / API Token' };
         }
         if (!acc.accountId) {
             return { alias: acc.alias, ok: false, error: '缺少 Account ID' };
         }
         try {
-            const headers = getAuthHeaders(acc.email, acc.globalKey);
+            const headers = getAuthHeaders(acc);
             // 用 /accounts/{aid}：支持 Global API Key，且同时验证 accountId 归属
             const res = await fetchWithTimeout(cf.account(acc.accountId), { method: 'GET', headers });
             if (res.ok) return { alias: acc.alias, ok: true, status: res.status };
@@ -68,7 +68,7 @@ ROUTES.set('GET /api/deploy/preview', async (req, env) => {
     if (err) return err;
     const accounts = await readAccounts(env);
     const targetWorkers = accounts.flatMap((a) => getWorkerNames(a, type).map((w) => a.alias + ' -> [' + w + ']'));
-    const missingKey = accounts.filter(a => getWorkerNames(a, type).length > 0 && !a.globalKey).map(a => a.alias);
+    const missingKey = accounts.filter(a => getWorkerNames(a, type).length > 0 && !hasAccountCredentials(a)).map(a => a.alias);
     return json({
         success: true,
         accounts: accounts.filter((a) => getWorkerNames(a, type).length > 0).length,
@@ -149,11 +149,11 @@ async function deployDriftReport(env: AppEnv) {
         const acc = accountById.get(accountId);
         const drifted: string[] = [];
         const missing: string[] = [];
-        if (!acc || !acc.globalKey) {
-            return { drifted, missing, unreadable: acc ? acc.alias + '（密钥缺失或解密失败）' : accountId };
+        if (!acc || !hasAccountCredentials(acc)) {
+            return { drifted, missing, unreadable: acc ? acc.alias + '（未配置凭据或解密失败）' : accountId };
         }
         try {
-            const headers = getAuthHeaders(acc.email, acc.globalKey);
+            const headers = getAuthHeaders(acc);
             const res = await fetchWithTimeout(cf.workerScripts(accountId), { headers });
             const list = await readApiResult<Array<{ id: string; modified_on?: string }>>(res, '读取 Worker 列表') || [];
             const modifiedById = new Map(list.map(w => [w.id, w.modified_on ? Date.parse(w.modified_on) : NaN]));

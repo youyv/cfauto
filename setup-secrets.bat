@@ -13,6 +13,11 @@ REM package manager installed the deps, and pointing at the package's declared b
 REM entry) instead of a hardcoded internal path such as wrangler-dist\cli.js.
 cd /d %~dp0
 
+REM === Local deploy credential (gitignored) ===
+REM Secret upload authenticates with the same credential as deploy.
+if exist deploy.local.bat call deploy.local.bat
+if not defined CLOUDFLARE_API_TOKEN echo [INFO] CLOUDFLARE_API_TOKEN not set - wrangler may ask you to log in via OAuth.
+
 if not exist node_modules\.bin\wrangler.cmd (
     echo [FAIL] node_modules\.bin\wrangler.cmd not found. Run install.bat first.
     pause

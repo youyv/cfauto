@@ -23,4 +23,6 @@ export interface AccountCredentials {
     accountId: string;
     email: string;
     globalKey: string;
+    /** 可选：API Token（与 globalKey 二选一，优先使用） */
+    apiToken?: string;
 }

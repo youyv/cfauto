@@ -609,13 +609,13 @@ describe('handleFix1101', () => {
 // ============================================================
 describe('check handlers', () => {
     it('handleGetCode 未知模板 → 400', async () => {
-        expect((await handleGetCode('evil')).status).toBe(400);
+        expect((await handleGetCode(mockEnv(mockKV()), 'evil')).status).toBe(400);
     });
 
     it('handleGetCode 上游 404 → 502 且带原因', async () => {
         const stub = stubFetch([{ match: 'raw.githubusercontent.com', respond: () => htmlErr(404) }]);
         try {
-            const res = await handleGetCode('cmliu');
+            const res = await handleGetCode(mockEnv(mockKV()), 'cmliu');
             expect(res.status).toBe(502);
             expect((await res.json() as any).msg).toContain('404');
         } finally { stub.restore(); }
@@ -639,7 +639,8 @@ describe('check handlers', () => {
         const stub = stubFetch(githubRoutes());
         try {
             await handleCheckUpdate(mockEnv(mockKV()), 'cmliu', 'history', 9999);
-            const call = stub.calls.find(c => c.url.includes('api.github.com'))!;
+            // resolveGithubTarget 会先访问仓库信息与文件树，这里要精确找 commits 调用
+            const call = stub.calls.find(c => c.url.includes('/commits'))!;
             expect(new URL(call.url).searchParams.get('per_page')).toBe('100');
         } finally { stub.restore(); }
     });

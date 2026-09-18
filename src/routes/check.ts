@@ -4,7 +4,7 @@
 
 import { KV_KEYS } from '../config/templates';
 import type { TemplateType } from '../config/templates';
-import { getGithubUrls, fetchGithubCommits } from '../lib/github';
+import { getGithubUrls, fetchGithubCommits, resolveGithubTarget } from '../lib/github';
 import { jsonError, json, fetchWithTimeout } from '../lib/cloudflare-api';
 import { getJSON } from "../lib/kv-utils";
 import { readAccounts } from "../lib/account-store";
@@ -24,10 +24,11 @@ const MAX_HISTORY_LIMIT = 100;
  * 不需要 env：raw.githubusercontent.com 是匿名可读的，GITHUB_TOKEN 只用于 api.github.com
  * 的限额提升。此前签名里带着一个从未使用的 env 参数。
  */
-export async function handleGetCode(type: TemplateType) {
+export async function handleGetCode(env: AppEnv, type: TemplateType) {
     const templateErr = requireTemplateType(type); if (templateErr) return templateErr;
     try {
-        const { scriptUrl } = getGithubUrls(type);
+        const target = await resolveGithubTarget(env, type);
+        const { scriptUrl } = getGithubUrls(type, null, target);
         const res = await fetchWithTimeout(scriptUrl);
         if (!res.ok) throw new Error("上游返回 HTTP " + res.status);
         const code = await res.text();

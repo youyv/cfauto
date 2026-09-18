@@ -1,6 +1,6 @@
 {
   "name": "worker-pro-refactor",
-  "version": "12.0.1",
+  "version": "12.1.0",
   "description": "Worker 智能中控 — Cloudflare 多账号 Worker 部署管理平台",
   "packageManager": "pnpm@11.22.0",
   "scripts": {

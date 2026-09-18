@@ -2,29 +2,126 @@
  * GitHub 交互 — 拉取代码、解析 SHA、模板特有转换
  */
 
-import { TEMPLATES } from '../config/templates';
+import { TEMPLATES, KV_KEYS } from '../config/templates';
 import { fetchWithTimeout } from './cloudflare-api';
 import { logger } from './logger';
 import type { TemplateType } from '../config/templates';
 import type { GithubCommit } from './types';
 import type { AppEnv } from "../config/env";
 
-export function getGithubUrls(type: TemplateType, sha: string | null = null) {
+export interface GithubTarget { branch: string; path: string; }
+
+/** 探测结果缓存时长：短到上游改名能较快生效，长到足够防 GitHub 限流 */
+export const GH_INFO_CACHE_TTL_SECONDS = 15 * 60;
+
+const GH_API = 'https://api.github.com';
+
+/** 解析探测响应体；失败返回 null，调用方据此回落到配置值（verify.js 要求 json() 有局部兜底） */
+async function readJsonOrNull<T>(res: Response): Promise<T | null> {
+    try { return await res.json() as T; }
+    catch (e) { logger.warn('resolveGithubTarget: 响应体解析失败', { status: res.status, error: (e as Error).message }); return null; }
+}
+
+/**
+ * 从仓库文件清单里挑出目标脚本路径。
+ *
+ * 优先级：配置路径本身 → 以 `filePattern` 结尾 → 包含 `filePattern`。
+ * 纯函数，导出供测试覆盖。
+ */
+export function pickScriptPath(type: TemplateType, paths: string[]): string | null {
     const t = TEMPLATES[type];
-    const rawPath = t.ghPath;
+    if (!Array.isArray(paths) || paths.length === 0) return null;
+    if (paths.includes(t.ghPath)) return t.ghPath;
+    const pattern = t.filePattern || t.ghPath;
+    const endsWith = paths.filter(p => p.endsWith(pattern));
+    if (endsWith.length > 0) return endsWith[0];
+    const contains = paths.filter(p => p.includes(pattern));
+    if (contains.length > 0) return contains[0];
+    return null;
+}
+
+/**
+ * 解析某模板当前可用的「默认分支 + 脚本路径」。
+ *
+ * 上游可能改默认分支（main ↔ master）或重命名脚本文件，硬编码任一者都会让拉取静默
+ * 拿到 404 HTML 页面并当作代码上传。这里先读 15 分钟缓存，未命中再用 GitHub API 探测
+ * 并回写；**任何一步失败都回落到配置值**，绝不因为探测本身失败而中断部署。
+ */
+export async function resolveGithubTarget(env: AppEnv, type: TemplateType): Promise<GithubTarget> {
+    const t = TEMPLATES[type];
+    const fallback: GithubTarget = { branch: t.ghBranch || 'main', path: t.ghPath };
+    if (!env || !env.CONFIG_KV) return fallback;
+
+    const cacheKey = KV_KEYS.ghInfoCache(type);
+    try {
+        const cachedRaw = await env.CONFIG_KV.get(cacheKey);
+        if (cachedRaw) {
+            const cached = JSON.parse(cachedRaw) as Partial<GithubTarget>;
+            if (cached && typeof cached.branch === 'string' && typeof cached.path === 'string') {
+                return { branch: cached.branch, path: cached.path };
+            }
+        }
+    } catch (e) {
+        logger.warn('resolveGithubTarget: 缓存读取失败，改为现场探测', { type, error: (e as Error).message });
+    }
+
+    const headers: Record<string, string> = { 'User-Agent': 'Cloudflare-Worker-Manager' };
+    if (env.GITHUB_TOKEN) headers['Authorization'] = 'token ' + env.GITHUB_TOKEN;
+
+    let branch = fallback.branch;
+    let path = fallback.path;
+    try {
+        const repoRes = await fetchWithTimeout(`${GH_API}/repos/${t.ghUser}/${t.ghRepo}`, { headers });
+        if (repoRes.ok) {
+            const repoData = await readJsonOrNull<{ default_branch?: string }>(repoRes);
+            if (repoData && typeof repoData.default_branch === 'string' && repoData.default_branch) {
+                branch = repoData.default_branch;
+            }
+        }
+        const treeRes = await fetchWithTimeout(
+            `${GH_API}/repos/${t.ghUser}/${t.ghRepo}/git/trees/${encodeURIComponent(branch)}?recursive=1`,
+            { headers }
+        );
+        if (treeRes.ok) {
+            const treeData = await readJsonOrNull<{ tree?: Array<{ type?: string; path?: string }> }>(treeRes);
+            // 文件树解析不出来（或上游返回空树）时保留配置路径
+            if (treeData) {
+                const paths = (treeData.tree || [])
+                    .filter(x => x && x.type === 'blob' && typeof x.path === 'string')
+                    .map(x => x.path as string);
+                const matched = pickScriptPath(type, paths);
+                if (matched) path = matched;
+            }
+        }
+        await env.CONFIG_KV.put(cacheKey, JSON.stringify({ branch, path }), { expirationTtl: GH_INFO_CACHE_TTL_SECONDS });
+        if (path !== t.ghPath || branch !== t.ghBranch) {
+            logger.audit('github target resolved', { type, branch, path, configured: { branch: t.ghBranch, path: t.ghPath } });
+        }
+    } catch (e) {
+        logger.warn('resolveGithubTarget: 探测失败，回落到配置值', { type, error: (e as Error).message });
+    }
+    return { branch, path };
+}
+
+export function getGithubUrls(type: TemplateType, sha: string | null = null, override?: GithubTarget) {
+    const t = TEMPLATES[type];
+    const rawPath = override?.path || t.ghPath;
+    const branch = override?.branch || t.ghBranch;
     const safePath = rawPath.split('/').map(p => encodeURIComponent(p)).join('/');
-    const apiUrl = `https://api.github.com/repos/${t.ghUser}/${t.ghRepo}/commits`;
-    const ref = sha || t.ghBranch;
+    const apiUrl = `${GH_API}/repos/${t.ghUser}/${t.ghRepo}/commits`;
+    const ref = sha || branch;
     const scriptUrl = `https://raw.githubusercontent.com/${t.ghUser}/${t.ghRepo}/${ref}/${safePath}`;
-    const repoApiBase = `https://api.github.com/repos/${t.ghUser}/${t.ghRepo}`;
-    return { apiUrl, scriptUrl, repoApiBase, branch: t.ghBranch, safePath, rawPath };
+    const repoApiBase = `${GH_API}/repos/${t.ghUser}/${t.ghRepo}`;
+    return { apiUrl, scriptUrl, repoApiBase, branch, safePath, rawPath };
 }
 
 /** 从 GitHub 拉取代码 + 解析最新 SHA */
 export async function fetchGithubCode(type: TemplateType, targetSha: string | null, env: AppEnv) {
     const isLatest = !targetSha || targetSha === 'latest';
-    const { scriptUrl } = getGithubUrls(type, isLatest ? null : targetSha);
-    
+    // 动态解析当前默认分支与脚本路径（带缓存与回落），避免上游改名后拉到 404 页面
+    const target = await resolveGithubTarget(env, type);
+    const { scriptUrl } = getGithubUrls(type, isLatest ? null : targetSha, target);
+
     const codeRes = await fetchWithTimeout(scriptUrl + `?t=${Date.now()}`);
     if (!codeRes.ok) throw new Error(`代码下载失败: ${codeRes.status}`);
     const code = await codeRes.text();
@@ -45,7 +142,8 @@ export async function fetchGithubCommits(
     type: TemplateType, env: AppEnv,
     opts: { perPage?: number; since?: string; cacheBust?: boolean } = {}
 ): Promise<GithubCommit[]> {
-    const { apiUrl, branch, rawPath } = getGithubUrls(type);
+    const target = await resolveGithubTarget(env, type);
+    const { apiUrl, branch, rawPath } = getGithubUrls(type, null, target);
     const headers: Record<string, string> = { 'User-Agent': 'Cloudflare-Worker-Manager' };
     if (env.GITHUB_TOKEN) headers['Authorization'] = 'token ' + env.GITHUB_TOKEN;
 

@@ -4,6 +4,7 @@
 
 import { cf, getAuthHeaders, fetchWithTimeout } from './cloudflare-api';
 import { pooledMap } from './concurrency';
+import { hasAccountCredentials } from './account-store';
 import type { AccountEntry } from './types';
 
 /** 免费计划的每日请求硬上限 */
@@ -57,11 +58,11 @@ export async function fetchInternalStats(accounts: AccountEntry[]): Promise<Stat
     // 有界并发：账号多时全量并发容易撞 CF 限流（1200 次/5 分钟）
     return pooledMap(accounts, async (acc) => {
         try {
-            if (!acc.globalKey) {
-                return { alias: acc.alias, total: 0, max: resolveLimit(acc), error: '密钥缺失或解密失败，请重新填写 API Key' };
+            if (!hasAccountCredentials(acc)) {
+                return { alias: acc.alias, total: 0, max: resolveLimit(acc), error: '未配置凭据或解密失败，请重新填写 API Key / API Token' };
             }
             const res = await fetchWithTimeout(cf.graphql(), {
-                method: "POST", headers: getAuthHeaders(acc.email, acc.globalKey),
+                method: "POST", headers: getAuthHeaders(acc),
                 body: JSON.stringify({ query: query, variables: { AccountID: acc.accountId, filter: { datetime_geq: todayStart.toISOString(), datetime_leq: now.toISOString() } } })
             });
             // 先判 HTTP 层：非 2xx 时 body 可能是 HTML 错误页，直接 json() 会抛异常

@@ -118,7 +118,8 @@ function closeFavoritesPanel() {
 function renderHistoryItem(type, item, container, isFavSection, isFavInHist) {
     if (!item || !item.sha) return;
     const shortSha = String(item.sha).substring(0, 7);
-    const date = item.date ? new Date(item.date).toLocaleString() : '未知时间';
+    const date = item.date ? timeAgo(item.date) : '未知时间';
+    const absDate = item.date ? new Date(item.date).toLocaleString() : '未知时间';
     const cfg = state.deployConfigs[type];
     const isCurrent = !!(cfg && cfg.currentSha === item.sha);
     const isFav = isFavSection || isFavInHist;
@@ -154,6 +155,7 @@ function renderHistoryItem(type, item, container, isFavSection, isFavInHist) {
     const dateEl = document.createElement('span');
     dateEl.className = 'text-[9px] text-gray-400';
     dateEl.textContent = date;
+    dateEl.title = absDate;
     head.appendChild(dateEl);
     content.appendChild(head);
 

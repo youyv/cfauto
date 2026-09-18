@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { mergeVariableBindings, getCompatibilityDate, MANAGED_WORKER_COMPATIBILITY_DATE, parseApiError } from '../src/lib/deploy-utils';
 import { getJSON, putJSON } from '../src/lib/kv-utils';
-import { applyTemplateTransform, getGithubUrls } from '../src/lib/github';
+import { applyTemplateTransform, getGithubUrls, pickScriptPath, resolveGithubTarget } from '../src/lib/github';
 import { withErrorBoundary, getRoute, listRoutes } from '../src/routes/register';
-import { mockKV, readKV, cfErr, htmlErr, jsonReq } from './helpers';
+import { mockKV, mockEnv, readKV, cfErr, htmlErr, jsonReq, stubFetch } from './helpers';
 
 // ============================================================
 // deploy-utils: mergeVariableBindings（导入真实实现）
@@ -179,6 +179,45 @@ describe('getGithubUrls', () => {
 
     it('指定 sha 时用 sha 替换分支名', () => {
         expect(getGithubUrls('cmliu', 'abc1234').scriptUrl).toContain('/abc1234/');
+    });
+});
+
+describe('pickScriptPath / resolveGithubTarget（上游改名自愈）', () => {
+    it('优先命中配置路径', () => {
+        expect(pickScriptPath('cmliu', ['src/x.js', '_worker.js'])).toBe('_worker.js');
+    });
+
+    it('配置路径不在时按 filePattern 结尾匹配', () => {
+        expect(pickScriptPath('cmliu', ['dist/_worker.js'])).toBe('dist/_worker.js');
+    });
+
+    it('joey 按中文文件名匹配', () => {
+        expect(pickScriptPath('joey', ['docs/readme.md', '少年你相信光吗'])).toBe('少年你相信光吗');
+    });
+
+    it('无匹配返回 null（调用方回落到配置值）', () => {
+        expect(pickScriptPath('cmliu', ['README.md'])).toBeNull();
+    });
+
+    it('探测失败 → 回落到配置值，不抛错', async () => {
+        const stub = stubFetch([{ match: 'api.github.com', respond: () => htmlErr(403) }]);
+        try {
+            expect(await resolveGithubTarget(mockEnv(mockKV()), 'cmliu')).toEqual({ branch: 'main', path: '_worker.js' });
+        } finally { stub.restore(); }
+    });
+
+    it('探测成功 → 采用默认分支与文件树里的真实路径，并写入缓存', async () => {
+        const kv = mockKV();
+        const stub = stubFetch([{
+            match: 'api.github.com',
+            respond: (c: any) => c.url.includes('/git/trees/')
+                ? new Response(JSON.stringify({ tree: [{ type: 'blob', path: 'worker/_worker.js' }] }), { status: 200 })
+                : new Response(JSON.stringify({ default_branch: 'master' }), { status: 200 })
+        }]);
+        try {
+            expect(await resolveGithubTarget(mockEnv(kv), 'cmliu')).toEqual({ branch: 'master', path: 'worker/_worker.js' });
+            expect(JSON.parse(kv._store.get('GH_INFO_CACHE_cmliu')!.value)).toEqual({ branch: 'master', path: 'worker/_worker.js' });
+        } finally { stub.restore(); }
     });
 });
 

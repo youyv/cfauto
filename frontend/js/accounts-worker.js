@@ -6,7 +6,7 @@ async function openAccountManage(i) {
     currentManageAccIndex = i;
     const acc = state.accounts[i];
     if (!acc) return;
-    if (!acc.globalKey) return Swal.fire('无法管理', '该账号的 Global API Key 缺失或解密失败，请先编辑账号重新填写', 'error');
+    if (!acc.globalKey && !acc.apiToken) return Swal.fire('无法管理', '该账号未配置凭据（Global API Key 或 API Token）或解密失败，请先编辑账号重新填写', 'error');
 
     const table = $('manage_table');
     const tbody = $('manage_list_body');

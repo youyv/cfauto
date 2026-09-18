@@ -282,11 +282,12 @@ function openBatchDeployModal() {
         const chk = document.createElement('input');
         chk.type = 'checkbox'; chk.value = a.alias; chk.className = 'bd-acc-chk';
         chk.id = 'bd_chk_' + i;
-        chk.disabled = !a.globalKey;
+        const hasCred = !!(a.globalKey || a.apiToken);
+        chk.disabled = !hasCred;
         const label = document.createElement('label');
         label.setAttribute('for', chk.id);
-        label.textContent = a.alias + (a.globalKey ? '' : '（密钥缺失）');
-        if (!a.globalKey) label.className = 'text-gray-400';
+        label.textContent = a.alias + (hasCred ? '' : '（凭据缺失）');
+        if (!hasCred) label.className = 'text-gray-400';
         div.appendChild(chk); div.appendChild(label);
         list.appendChild(div);
     });

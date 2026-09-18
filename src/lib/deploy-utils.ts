@@ -1,6 +1,6 @@
 import type { AccountCredentials } from "../config/env";
 import { cf, getAuthHeaders, fetchWithTimeout, readApiResult } from "./cloudflare-api";
-import { BINDING } from "../config/templates";
+import { BINDING, TEMPLATES } from "../config/templates";
 import { logger } from "./logger";
 import type { VariableEntry } from "./types";
 
@@ -13,9 +13,15 @@ import type { VariableEntry } from "./types";
  */
 export const MANAGED_WORKER_COMPATIBILITY_DATE = '2026-07-16';
 
-/** 上传被管理 Worker 使用的兼容性日期（固定值，见常量注释） */
-export function getCompatibilityDate(): string {
-    return MANAGED_WORKER_COMPATIBILITY_DATE;
+/**
+ * 取某个模板使用的兼容性日期。
+ *
+ * 历史上三个模板共用一个常量，但各上游框架的运行时行为是在**各自的**兼容日期下验证的；
+ * 共用一个日期会把未经验证的 workerd 行为变更带进用户的代理 Worker（源项目 Issue #10）。
+ * `TEMPLATES` 中未声明日期的模板回落到 `MANAGED_WORKER_COMPATIBILITY_DATE`。
+ */
+export function getCompatibilityDate(type?: string): string {
+    return (type && TEMPLATES[type]?.compatibilityDate) || MANAGED_WORKER_COMPATIBILITY_DATE;
 }
 
 /**
@@ -60,17 +66,19 @@ async function readUploadVerdict(res: Response): Promise<{ ok: boolean; error?: 
 export async function uploadWorker(
     cred: AccountCredentials,
     workerName: string, scriptContent: string,
-    bindings: Array<Record<string, unknown>>
+    bindings: Array<Record<string, unknown>>,
+    /** 模板类型：用于取该模板专属的兼容日期，缺省回落到默认常量 */
+    templateType?: string
 ): Promise<UploadResult> {
     const metadata = {
         main_module: "index.js",
         bindings,
-        compatibility_date: getCompatibilityDate()
+        compatibility_date: getCompatibilityDate(templateType)
     };
     const formData = new FormData();
     formData.append("metadata", JSON.stringify(metadata));
     formData.append("script", new Blob([scriptContent], { type: "application/javascript+module" }), "index.js");
-    const headers = getAuthHeaders(cred.email, cred.globalKey, true);
+    const headers = getAuthHeaders(cred, undefined, true);
     // 上传脚本可能较大（数百 KB），超时放宽到 60s
     const res = await fetchWithTimeout(cf.workerScript(cred.accountId, workerName), {
         method: "PUT", headers, body: formData

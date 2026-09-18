@@ -4,5 +4,9 @@ src/frontend-bundle.ts
 
 wrangler.local.toml
 
+# 本地部署凭据（CLOUDFLARE_API_TOKEN），切勿提交
+# 复制 deploy.local.example.bat 为 deploy.local.bat 后填写
+deploy.local.bat
+
 # pnpm 本地 store（依赖缓存，可再生；node_modules 会硬链接到它，勿手动删除）
 .pnpm-store/

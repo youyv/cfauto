@@ -746,3 +746,84 @@ CI 里加一步 `git diff --quiet` 确认构建过程没改动被跟踪文件。
 - Source: error
 - Related Files: .github/workflows/ci.yml
 - Recurrence-Count: 1
+
+---
+
+> Auto-captured from session 2026-09-18 · Worker V12.1.0（对齐源项目 hc990275/cfauto）
+
+## [LRN-20260918-001] error
+
+**Status**: resolved
+**Area**: backend
+**Pattern-Key**: credential.type.switch.must.clear.other.side
+
+### Summary
+支持「两种凭据任选其一」时，只写入新增字段而不清空另一侧，旧凭据会继续生效。
+
+### Details
+账号同时存在 `globalKey` 与 `apiToken` 时，`getAuthHeaders` 优先用 Token。用户把账号从
+Token 切回 Global API Key，如果只更新 `globalKey`，残留的 `apiToken` 仍会让请求走
+`Bearer` —— 界面上选的是 Key，实际发出去的是 Token，且不会有任何报错。
+
+**修复**: 持久化 `authMode`（`token` / `key`），`writeAccounts` 按它清空另一侧密文；
+`getAuthHeaders` 也尊重 `authMode`（`key` 时强制走 X-Auth-Key）。前端表单切换时显式提交该字段。
+
+**教训**: 「二选一」的配置项必须把**未选中的一侧也当作要写入的状态**。
+只更新被选中的字段，等于把「切换」降级成「叠加」。
+
+### Metadata
+- Source: code_review
+- Related Files: src/lib/account-store.ts, src/lib/cloudflare-api.ts, src/lib/types.ts, src/lib/validate.ts
+- Recurrence-Count: 1
+---
+
+## [LRN-20260918-002] error
+
+**Status**: resolved
+**Area**: backend
+**Pattern-Key**: shared.runtime.date.across.templates
+
+### Summary
+把「每个上游框架各自验证过的运行时参数」合并成一个全局常量，会把未经测试的行为变更一次带给所有框架。
+
+### Details
+三个代理模板共用一个 `compatibility_date`（`2026-07-16`），而上游 cmliu / joey 的运行时行为
+是在各自的 2024 年日期下验证的。workerd 的兼容日期不是「越新越好」：新日期会打开新的语义，
+对旧模板可能直接表现为连接失败 —— 源项目正是为此修了 Issue #10，本分支重构时却把按模板区分丢了。
+
+**修复**: `TEMPLATES` 增加 `compatibilityDate`，`uploadWorker` 按模板类型取；未声明的模板
+回落到原常量。模板卡片显示该日期，部署前可核对。
+
+**教训**: 兼容日期 / 协议版本这类「框架级合同参数」属于模板，不属于平台。
+发现多个形态共用同一个此类常量时，先问一句「它们真的验证过同一个值吗」。
+
+### Metadata
+- Source: code_review
+- Related Files: src/config/templates.ts, src/lib/deploy-utils.ts
+- Recurrence-Count: 1
+---
+
+## [LRN-20260918-003] best_practice
+
+**Status**: resolved
+**Area**: backend
+**Pattern-Key**: probing.failure.must.fall.back
+
+### Summary
+为「上游改名自愈」引入网络探测时，探测失败必须回落到配置值，不能让主流程跟着失败。
+
+### Details
+新增 `resolveGithubTarget` 会额外请求仓库信息与文件树。若探测异常直接向上抛，
+一次 GitHub 限流就会让**所有**部署失败 —— 比它要修的「改名后拉错文件」更严重。
+
+**修复**: 探测的每一步都局部捕获，失败保留配置值；缓存写入**无论成功与否都执行**，
+避免对已经限流的 GitHub 反复打。未命中缓存才现场探测，命中直接返回。
+
+**教训**: 「增强型探测 / 优化路径」一律要有无损回落。判断标准是：
+探测挂掉时，功能是退化成改动前的行为，还是直接不可用？必须前者。
+
+### Metadata
+- Source: code_review
+- Related Files: src/lib/github.ts, test/kv-utils.test.ts
+- Recurrence-Count: 1
+

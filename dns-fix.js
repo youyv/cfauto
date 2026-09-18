@@ -142,3 +142,81 @@ if (allUnusable(originalServers)) {
     // 配置里有真实 DNS（可能混合了 127.0.0.1 主备），Node 自带故障转移，不干预
     log('configured DNS ' + originalServers.join(', ') + ' looks valid, no change');
 }
+
+// ==================== dns.lookup 兜底 ====================
+// 为什么需要这一层：
+//   dns.setServers() 只改变 c-ares（dns.resolve*）使用的服务器，对 dns.lookup 无效 ——
+//   而 dns.lookup 走的是操作系统的 getaddrinfo，也正是 fetch/undici/net 实际使用的那条路。
+//   路由器 DNS 抖动时 getaddrinfo 会直接返回 ENOTFOUND / EAI_AGAIN，这就是 wrangler 报
+//   "Unable to resolve Cloudflare's API hostname" 的直接原因，上面的 setServers 救不了它。
+//
+// 做法：只在原生 lookup **失败**时介入，用独立的 dns.Resolver 实例（各自持有自己的服务器，
+// 不改动全局 c-ares 状态、无并发竞争）向公共 DNS 重查一次，成功就返回结果，失败则原样抛出。
+// 原生解析正常时这条路径完全不会被触发，因此对正常网络没有影响。
+const FALLBACK_DNS = ['1.1.1.1', '8.8.8.8', '223.5.5.5'];
+const FALLBACK_LOOKUP_CODES = ['ENOTFOUND', 'EAI_AGAIN', 'EAI_FAIL', 'ETIMEOUT', 'ESERVFAIL', 'EREFUSED'];
+
+let fallbackResolvers = null;
+/** 懒创建独立 Resolver 实例（每个实例只持有自己那一台服务器） */
+function getFallbackResolvers() {
+    if (fallbackResolvers) return fallbackResolvers;
+    const out = [];
+    for (const srv of FALLBACK_DNS) {
+        try {
+            const r = new dns.Resolver();
+            r.setServers([srv]);
+            out.push({ srv, r });
+        } catch (e) { /* 该运行时没有 Resolver 就跳过 */ }
+    }
+    fallbackResolvers = out;
+    return out;
+}
+
+function isLookupFailure(err) {
+    return !!(err && err.code && FALLBACK_LOOKUP_CODES.indexOf(err.code) !== -1);
+}
+
+/** 依次尝试各公共 DNS，返回 [{address, family}] 或 null */
+function resolveViaFallback(hostname, family, cb) {
+    const wantV4 = family !== 6;
+    const wantV6 = family !== 4;
+    const list = getFallbackResolvers();
+    let i = 0;
+    function next() {
+        if (i >= list.length) return cb(null);
+        const entry = list[i++];
+        const jobs = [];
+        if (wantV4) jobs.push(new Promise((resolve) => entry.r.resolve4(hostname, (e, a) => resolve((!e && a && a.length) ? a.map((x) => ({ address: x, family: 4 })) : null))));
+        if (wantV6) jobs.push(new Promise((resolve) => entry.r.resolve6(hostname, (e, a) => resolve((!e && a && a.length) ? a.map((x) => ({ address: x, family: 6 })) : null))));
+        Promise.all(jobs).then((groups) => {
+            const flat = [];
+            for (const g of groups) if (g) for (const item of g) flat.push(item);
+            if (flat.length === 0) return next();
+            log('native lookup failed for ' + hostname + ', resolved via fallback DNS ' + entry.srv);
+            cb(flat);
+        }).catch(() => next());
+    }
+    next();
+}
+
+const nativeLookup = dns.lookup;
+dns.lookup = function (hostname, options, callback) {
+    let opts = options;
+    let cb = callback;
+    if (typeof opts === 'function') { cb = opts; opts = {}; }
+    else if (typeof opts === 'number') { opts = { family: opts }; }
+    if (typeof cb !== 'function') return nativeLookup.apply(dns, arguments);
+    const wantsAll = !!(opts && opts.all);
+    const family = (opts && opts.family) || 0;
+    // DNS_FIX_FORCE_FALLBACK=1 时才跳过原生结果，用于验证兜底路径本身可用
+    const forced = process.env.DNS_FIX_FORCE_FALLBACK === '1';
+    nativeLookup.call(dns, hostname, opts, function (err, address, fam) {
+        if (!forced && (!err || !isLookupFailure(err))) return cb(err, address, fam);
+        resolveViaFallback(hostname, family, function (results) {
+            if (!results || results.length === 0) return cb(err, address, fam);
+            if (wantsAll) return cb(null, results);
+            return cb(null, results[0].address, results[0].family);
+        });
+    });
+};
+

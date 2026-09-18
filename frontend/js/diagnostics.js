@@ -117,7 +117,100 @@ async function viewTemplateCode() {
     }
 }
 
+// ===== 故障诊断 / 一键报障 =====
+
+/** Issue 目标仓库（fork 后请改成自己的仓库） */
+const PROJECT_REPO = 'youyv/cfauto';
+
+/**
+ * 报告脱敏。
+ *
+ * 报告会被粘贴到公开的 GitHub Issue，必须先把能识别个人/账号的信息抹掉：
+ * 邮箱、32 位 Account ID、UUID、Bearer/令牌类长串。宁可多抹，不可泄漏。
+ */
+function redactForReport(s) {
+    return String(s == null ? '' : s)
+        .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, '***@***')
+        .replace(/\b[0-9a-fA-F]{32}\b/g, '***')
+        .replace(/\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b/g, '***')
+        .replace(/(Bearer\s+)[A-Za-z0-9._~+/-]{8,}=*/gi, '$1***')
+        .replace(/((?:token|key|secret|code)\s*[=:]\s*)[^\s,"']{6,}/gi, '$1***');
+}
+
+/** 组装可直接粘贴的 Markdown 诊断报告 */
+function buildDebugReport(title, detail, context) {
+    const fence = String.fromCharCode(96, 96, 96);
+    const out = [];
+    out.push('### 错误概述');
+    out.push('**' + redactForReport(title) + '**');
+    out.push('');
+    out.push('### 详细报错信息');
+    out.push(fence);
+    out.push(redactForReport(detail || '（无）'));
+    out.push(fence);
+    if (context && Object.keys(context).length > 0) {
+        out.push('');
+        out.push('### 操作上下文');
+        out.push(fence + 'json');
+        out.push(redactForReport(JSON.stringify(context, null, 2)));
+        out.push(fence);
+    }
+    const logs = (typeof recentWbLogs !== 'undefined' && Array.isArray(recentWbLogs)) ? recentWbLogs.slice(-25) : [];
+    if (logs.length > 0) {
+        out.push('');
+        out.push('### 最近工作台日志');
+        out.push(fence);
+        out.push(redactForReport(logs.join('\n')));
+        out.push(fence);
+    }
+    out.push('');
+    out.push('### 环境');
+    out.push('- 版本: ' + (window.APP_VERSION || 'unknown'));
+    out.push('- 时间: ' + new Date().toISOString());
+    out.push('- 页面: ' + location.origin);
+    out.push('');
+    out.push('---');
+    out.push('*由 CF Auto 中控诊断模块生成（已脱敏）*');
+    return out.join('\n');
+}
+
+/** 复制一份已脱敏的系统诊断报告 */
+async function copyDiagnosticReport() {
+    openWorkbench();
+    wbLog('📋 正在生成诊断报告...', 'text-blue-400');
+    let diag = null;
+    try { diag = await apiFetch('/api/diag'); }
+    catch (e) { diag = { error: (e && e.message) || String(e) }; }
+    const report = buildDebugReport('系统诊断报告', '用户主动导出的诊断信息', { diag: diag });
+    await copyToClipboard(report, '📋 诊断报告已复制（已脱敏）');
+    wbLog('✅ 诊断报告已复制到剪贴板', 'text-green-400');
+}
+
+/** 一键报障：预填 GitHub Issue，或只复制报告 */
+function reportIssue() {
+    const report = buildDebugReport('用户主动故障报障', '当前系统运行状态与近期工作台日志汇报', {});
+    const issueUrl = 'https://github.com/' + PROJECT_REPO + '/issues/new'
+        + '?title=' + encodeURIComponent('[Bug] 用户报障')
+        + '&body=' + encodeURIComponent(report);
+    Swal.fire({
+        title: '🐛 故障报障',
+        html: '<div class="text-left text-xs space-y-2">'
+            + '<div class="text-gray-600">将打开 GitHub Issue 并预填诊断信息（账号 ID / 邮箱 / 令牌已脱敏）。</div>'
+            + '<div class="text-gray-400">仓库: ' + safeHtml(PROJECT_REPO) + '</div>'
+            + '</div>',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: '🚀 打开 Issue',
+        cancelButtonText: '📋 只复制报告'
+    }).then(function (r) {
+        if (r.isConfirmed) window.open(issueUrl, '_blank');
+        else if (r.dismiss === Swal.DismissReason.cancel) copyToClipboard(report, '📋 报告已复制，可自行粘贴');
+    });
+}
+
 registerActions({
     runDiagnostics: runDiagnostics,
-    viewTemplateCode: viewTemplateCode
+    viewTemplateCode: viewTemplateCode,
+    copyDiagnosticReport: copyDiagnosticReport,
+    reportIssue: reportIssue
 });

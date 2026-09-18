@@ -5,7 +5,7 @@
 import { TEMPLATES, KV_KEYS } from '../config/templates';
 import { cf, getAuthHeaders, json, jsonError, fetchWithTimeout, readApiResult } from '../lib/cloudflare-api';
 import { getJSON, putJSON } from "../lib/kv-utils";
-import { readAccounts, getWorkerNames } from "../lib/account-store";
+import { readAccounts, getWorkerNames, hasAccountCredentials } from "../lib/account-store";
 import { logger } from '../lib/logger';
 import type { AppEnv } from "../config/env";
 import type { VariableEntry } from '../lib/types';
@@ -101,8 +101,8 @@ export async function handleSaveYxip(env: AppEnv, reqData: YxipSaveRequest) {
         const accounts = await readAccounts(env);
         const targetAccount = accounts.find((a) => a.accountId === accountId);
         if (!targetAccount) return json([{ name: "查找错误", success: false, msg: "系统记录中找不到该账户" }], 404);
-        if (!targetAccount.globalKey) {
-            return json([{ name: "凭据错误", success: false, msg: "该账号密钥缺失或解密失败，请重新填写 Global API Key" }], 400);
+        if (!hasAccountCredentials(targetAccount)) {
+            return json([{ name: "凭据错误", success: false, msg: "该账号未配置凭据（Global API Key 或 API Token），或密钥解密失败，请重新填写" }], 400);
         }
 
         const targetWorkers = getWorkerNames(targetAccount, type);
@@ -112,7 +112,7 @@ export async function handleSaveYxip(env: AppEnv, reqData: YxipSaveRequest) {
 
         const logs: Array<{ name: string; success: boolean; msg: string }> = [];
         // 使用服务端存储的凭证，而非请求体中的（防止凭证伪造）
-        const jsonHeaders = getAuthHeaders(targetAccount.email, targetAccount.globalKey);
+        const jsonHeaders = getAuthHeaders(targetAccount);
         const finalContent = t.yxipBuildContent ? t.yxipBuildContent(rawContent) : rawContent;
         const contentType = t.yxipContentType || 'text/plain';
 
