@@ -115,6 +115,10 @@
   是本轮排障被误导的源头之一，现改为如实描述。
 - **deploy.bat 重试按类型分流**：原先任何失败都重试 3 次，认证/配置错误也会白等两个 5 秒；
   现在只对 `Unable to resolve` / `timed out` / `ENOTFOUND` 等网络类关键字重试。
+- **修复部署输出乱码**：上一版把 wrangler 输出整体重定向到文件再用 `type` 打印，cmd 会按控制台代码页
+  （GBK）解释这些 UTF-8 字节 → 出现 `鈻?`、`鉀咃笍` 之类乱码。wrangler 的 stdout 是横幅/进度、stderr
+  是 `X [ERROR]` 错误块；现在只重定向 **stderr**（仅用于分类），stdout 保持直连控制台让 Node 走 Unicode
+  API 渲染，stderr 也改由 node 读取后输出，全程不再经过 `type`。
 - **init_data 降级路径补齐**：`/api/init_data` 失败改为逐个请求时，原先不调用 `applyProjectTabs()`，
   导致元数据提示留白、标签页无高亮。
 

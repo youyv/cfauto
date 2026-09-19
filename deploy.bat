@@ -66,10 +66,20 @@ set DEPLOY_LOG=%TEMP%\cfauto-deploy.log
 :deploy_retry
 set /a ATTEMPT+=1
 if %ATTEMPT% gtr 1 echo [RETRY] deploy attempt %ATTEMPT% of %MAX_ATTEMPTS% ...
-echo     running wrangler - output is printed when this attempt finishes...
-call node_modules\.bin\wrangler.cmd deploy %DEPLOY_ARGS% > "%DEPLOY_LOG%" 2>&1
+REM Capture ONLY stderr, and only to classify the failure for the retry decision.
+REM stdout must stay attached to the console: Node renders UTF-8/emoji correctly only
+REM when stdout is a real TTY. The previous version redirected stdout to a file and
+REM `type`-d it, so cmd read those UTF-8 bytes under the GBK console code page -> mojibake.
+call node_modules\.bin\wrangler.cmd deploy %DEPLOY_ARGS% 2> "%DEPLOY_LOG%"
 set DEPLOY_RC=%errorlevel%
-type "%DEPLOY_LOG%"
+REM Print the captured stderr through node: it writes UTF-8 via the Unicode console API,
+REM so emoji/CJK in wrangler's output are not mangled the way `type` mangles them.
+if exist "%DEPLOY_LOG%" (
+    setlocal
+    set "NODE_OPTIONS="
+    node -e "try{process.stdout.write(require('fs').readFileSync(process.argv[1],'utf8'))}catch(e){}" "%DEPLOY_LOG%"
+    endlocal
+)
 if %DEPLOY_RC% equ 0 goto deploy_done
 REM Only network/DNS failures are worth retrying. An auth or config error would fail
 REM the same way every time, so retrying it just wastes two 5s sleeps.
