@@ -61,40 +61,26 @@ REM resolver and connections to api.cloudflare.com both flap for a few seconds a
 REM A single failed run usually succeeds on the next try, so retry before giving up.
 set MAX_ATTEMPTS=3
 set ATTEMPT=0
-set DEPLOY_LOG=%TEMP%\cfauto-deploy.log
-
 :deploy_retry
 set /a ATTEMPT+=1
 if %ATTEMPT% gtr 1 echo [RETRY] deploy attempt %ATTEMPT% of %MAX_ATTEMPTS% ...
-REM Capture ONLY stderr, and only to classify the failure for the retry decision.
-REM stdout must stay attached to the console: Node renders UTF-8/emoji correctly only
-REM when stdout is a real TTY. The previous version redirected stdout to a file and
-REM `type`-d it, so cmd read those UTF-8 bytes under the GBK console code page -> mojibake.
-call node_modules\.bin\wrangler.cmd deploy %DEPLOY_ARGS% 2> "%DEPLOY_LOG%"
-set DEPLOY_RC=%errorlevel%
-REM Print the captured stderr through node: it writes UTF-8 via the Unicode console API,
-REM so emoji/CJK in wrangler's output are not mangled the way `type` mangles them.
-if exist "%DEPLOY_LOG%" (
-    setlocal
-    set "NODE_OPTIONS="
-    node -e "try{process.stdout.write(require('fs').readFileSync(process.argv[1],'utf8'))}catch(e){}" "%DEPLOY_LOG%"
-    endlocal
-)
-if %DEPLOY_RC% equ 0 goto deploy_done
-REM Only network/DNS failures are worth retrying. An auth or config error would fail
-REM the same way every time, so retrying it just wastes two 5s sleeps.
-findstr /I /C:"Unable to resolve" /C:"timed out" /C:"fetch failed" /C:"ENOTFOUND" /C:"EAI_AGAIN" /C:"ECONNRESET" /C:"ETIMEDOUT" /C:"ECONNREFUSED" "%DEPLOY_LOG%" >nul 2>&1
-if errorlevel 1 goto deploy_failed
+REM Do NOT redirect wrangler's output. Node renders its UTF-8/emoji correctly only when
+REM stdout/stderr are real consoles (it then uses the Windows Unicode console API).
+REM Capturing to a file and printing it back makes cmd reinterpret those UTF-8 bytes under
+REM the GBK console code page (mojibake), and buffered stderr also arrives out of order.
+call node_modules\.bin\wrangler.cmd deploy %DEPLOY_ARGS%
+if %errorlevel% equ 0 goto deploy_done
 if %ATTEMPT% geq %MAX_ATTEMPTS% goto deploy_failed
 echo.
-echo [WARN] attempt %ATTEMPT% failed with a network error - retrying in 5s...
+echo [WARN] attempt %ATTEMPT% failed - retrying in 5s...
+echo        Network/DNS hiccups are common on this link; a non-network error will simply
+echo        fail again, so retrying is harmless either way.
 ping -n 6 127.0.0.1 >nul 2>&1
 goto deploy_retry
 
 :deploy_failed
 echo.
-echo [FAIL] deploy failed on attempt %ATTEMPT% of %MAX_ATTEMPTS%.
-echo        Non-network errors are deliberately not retried - fix the cause and re-run.
+echo [FAIL] deploy failed after %MAX_ATTEMPTS% attempts.
 echo        If the message is "Unable to resolve" or "timed out", the network/DNS path to
 echo        Cloudflare is flaky. Try again later, or route through your local proxy by
 echo        adding these two lines to deploy.local.bat:

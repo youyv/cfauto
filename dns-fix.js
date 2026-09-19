@@ -31,6 +31,16 @@ function log(msg) {
     try { process.stderr.write('[dns-fix] ' + msg + '\n'); } catch (_) { /* 无 stderr 时静默 */ }
 }
 
+/**
+ * 只在 DNS_FIX_VERBOSE=1 时输出。
+ *
+ * 本脚本会被 NODE_OPTIONS 加载进**每一个** node 进程；「什么都没做」这类信息每个进程
+ * 都会打印一遍，既刷屏又毫无信息量（它只是说「没干预」）。真正做了干预时才用 log()。
+ */
+function logVerbose(msg) {
+    if (process.env.DNS_FIX_VERBOSE === '1') log(msg);
+}
+
 /** 判定一个地址是否"绝对无效"：回环 / 0.0.0.0 / 广播。其余（192.168.x、10.x 等内网段）都可能是真实 DNS，一律保留 */
 function isUnusableIp(ip) {
     if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(ip)) return true;
@@ -116,7 +126,7 @@ function getSystemDnsViaIpconfig() {
 // ==================== 主流程（模块加载时同步执行，消除竞态） ====================
 const originalServers = dns.getServers();
 if (DISABLED) {
-    log('DNS_FIX_DISABLE=1 - leaving DNS configuration untouched');
+    logVerbose('DNS_FIX_DISABLE=1 - leaving DNS configuration untouched');
 } else if (allUnusable(originalServers)) {
     // 1) 同步探测当前配置：能用就保持（如本地确实跑了 DNS 服务）
     if (probeServer(originalServers[0])) {
@@ -147,7 +157,7 @@ if (DISABLED) {
     // 配置里有真实 DNS（可能混合了 127.0.0.1 主备），Node 自带故障转移，不干预
     // 只做了「地址形状」检查，并没有发起真实查询 —— 措辞必须如实，否则会把排障带偏
     // （本机 DNS 实际在抖，却每次都打印「看起来正常」）。
-    log('configured DNS ' + originalServers.join(', ') + ' has non-loopback entries; leaving untouched without probing');
+    logVerbose('configured DNS ' + originalServers.join(', ') + ' has non-loopback entries; leaving untouched without probing');
 }
 
 // ==================== dns.lookup 兜底 ====================
