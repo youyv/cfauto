@@ -52,7 +52,10 @@ const SECURITY_HEADERS: Record<string, string> = {
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
     'Referrer-Policy': 'no-referrer',
-    'Permissions-Policy': 'geolocation=(), microphone=(), camera=()'
+    'Permissions-Policy': 'geolocation=(), microphone=(), camera=()',
+    // 强制后续访问走 HTTPS。includeSubDomains 只作用于**本主机**的子域
+    // （如 kv.example.com 下），不会波及同一 zone 的兄弟域名。
+    'Strict-Transport-Security': 'max-age=31536000; includeSubDomains'
 };
 
 export default {

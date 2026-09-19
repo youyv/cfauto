@@ -22,10 +22,27 @@ export const GH_INFO_CACHE_TTL_SECONDS = 6 * 60 * 60;
 
 const GH_API = 'https://api.github.com';
 
-/** 解析探测响应体；失败返回 null，调用方据此回落到配置值（verify.js 要求 json() 有局部兜底） */
+/**
+ * GitHub JSON 响应体的体积上限。
+ *
+ * `git/trees?recursive=1` 在超大仓库上可能返回很大的 JSON；解析前先挡一道，
+ * 避免为一个体积异常/被污染的响应白付解析开销（yxip 的节点源也有同样的 2MB 上限）。
+ */
+const MAX_GITHUB_JSON_BYTES = 2 * 1024 * 1024;
+
+/** 解析探测响应体；失败或过大返回 null，调用方据此回落到配置值 */
 async function readJsonOrNull<T>(res: Response): Promise<T | null> {
-    try { return await res.json() as T; }
-    catch (e) { logger.warn('resolveGithubTarget: 响应体解析失败', { status: res.status, error: (e as Error).message }); return null; }
+    try {
+        const text = await res.text();
+        if (text.length > MAX_GITHUB_JSON_BYTES) {
+            logger.warn('github: 响应体过大，已忽略', { status: res.status, bytes: text.length, limit: MAX_GITHUB_JSON_BYTES });
+            return null;
+        }
+        return JSON.parse(text) as T;
+    } catch (e) {
+        logger.warn('resolveGithubTarget: 响应体解析失败', { status: res.status, error: (e as Error).message });
+        return null;
+    }
 }
 
 /**

@@ -433,7 +433,18 @@ console.log('\n=== 9. Batch script sanity ===');
 // （报 "before was unexpected at this time."，连结尾的 pause 都没执行到）。
 // 块内要输出字面括号必须写成 ^( ^)。批处理无法被 vitest 覆盖，只能在这里静态防回归。
 {
-    const batFiles = fs.readdirSync(ROOT).filter(f => f.toLowerCase().endsWith(".bat"));
+    // 只检查 git 跟踪的 .bat：deploy.local.bat 是用户本地的凭据文件（已 gitignore），
+    // 它不该影响仓库校验，CI 上也不存在。git 不可用时回退到目录扫描并显式排除它。
+    let batFiles;
+    try {
+        const tracked = require('child_process').execSync('git ls-files', { cwd: ROOT, encoding: 'utf-8' })
+            .split('\n').map(s => s.trim())
+            .filter(p => p.toLowerCase().endsWith('.bat'))
+            .map(p => path.basename(p));
+        batFiles = tracked;
+    } catch (e) {
+        batFiles = fs.readdirSync(ROOT).filter(f => f.toLowerCase().endsWith('.bat') && f.toLowerCase() !== 'deploy.local.bat');
+    }
     const batProblems = [];
     for (const f of batFiles) {
         const lines = fs.readFileSync(path.join(ROOT, f), "utf-8").split("\n");

@@ -280,6 +280,12 @@ node_modules\.bin\wrangler.cmd login
 > 会自动改走代理并打印一行说明。也可在 `deploy.local.bat` 里显式写 `set HTTPS_PROXY=http://127.0.0.1:7890`
 > 与 `set NODE_USE_ENV_PROXY=1` 强制走代理。
 
+> **别把两套凭据搞混**：
+> - `CLOUDFLARE_API_TOKEN`（本机环境变量，由 `deploy.local.bat` 设置）—— 只用于**部署中控自己**；
+> - 账号表单里的 API Token / Global API Key —— 存进 KV，供**中控运行后管理那些账号名下的 Worker**。
+>
+> 两者互不相关：换掉前者不影响后者；删掉某个账号也不影响部署。
+
 ---
 
 ## 🔑 账号凭证获取

@@ -125,6 +125,23 @@
   `DNS_FIX_VERBOSE=1` 时输出，真正发生干预（回落 / 兜底 / 失败）时照常打印。
 - **init_data 降级路径补齐**：`/api/init_data` 失败改为逐个请求时，原先不调用 `applyProjectTabs()`，
   导致元数据提示留白、标签页无高亮。
+- **类型收紧**：`KVNamespace` 的 `get/put/list` 从 `options?: any` 换成显式的 `KVGetOptions` /
+  `KVPutOptions` / `KVListOptions`，选项名写错时能被 tsc 拦住。
+- **GitHub 响应体积上限**：`git/trees?recursive=1` 在超大仓库上可能返回很大的 JSON，
+  `readJsonOrNull` 现在先读文本、超过 2MB 直接放弃并回落（与 yxip 节点源的 2MB 上限一致）。
+- **`verify.js` 只检查 git 跟踪的 .bat**：此前会扫描用户本地的 `deploy.local.bat`
+  （已 gitignore、CI 上不存在），一个本地文件就能让仓库校验无故失败。现在从 `git ls-files`
+  派生清单，git 不可用时回退到目录扫描并排除该文件。
+- **补 HSTS**：面板 HTML 与登录页响应增加 `Strict-Transport-Security`，与已有的
+  nosniff / X-Frame-Options / Referrer-Policy / Permissions-Policy 对齐。
+- **文档与 UI 区分两套凭据**：账号表单增加一行说明（该账号凭据 vs 部署中控自身用的
+  `CLOUDFLARE_API_TOKEN`），README 同步 —— 这是最容易误解的一处。
+
+> **暂缓（已知，非缺陷）**：`noUncheckedIndexedAccess` 实测新增 45 处报错，其中约 30 处来自
+> `TEMPLATES` 被标注为 `Record<string, …>`（索引必得 `| undefined`），其余多为「按构造安全」。
+> 要真正落地需先把 `TEMPLATES` 改为字面量键 + `satisfies`、再逐处补守卫，否则只能用 `!` 掩盖，
+> 收益为负。前端 ESM 化与 KV 乐观锁同理，留待单独排期。
+
 
 ### 🧪 测试
 
