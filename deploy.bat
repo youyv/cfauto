@@ -61,22 +61,30 @@ REM resolver and connections to api.cloudflare.com both flap for a few seconds a
 REM A single failed run usually succeeds on the next try, so retry before giving up.
 set MAX_ATTEMPTS=3
 set ATTEMPT=0
+set DEPLOY_LOG=%TEMP%\cfauto-deploy.log
 
 :deploy_retry
 set /a ATTEMPT+=1
 if %ATTEMPT% gtr 1 echo [RETRY] deploy attempt %ATTEMPT% of %MAX_ATTEMPTS% ...
-call node_modules\.bin\wrangler.cmd deploy %DEPLOY_ARGS%
-if %errorlevel% equ 0 goto deploy_done
+echo     running wrangler - output is printed when this attempt finishes...
+call node_modules\.bin\wrangler.cmd deploy %DEPLOY_ARGS% > "%DEPLOY_LOG%" 2>&1
+set DEPLOY_RC=%errorlevel%
+type "%DEPLOY_LOG%"
+if %DEPLOY_RC% equ 0 goto deploy_done
+REM Only network/DNS failures are worth retrying. An auth or config error would fail
+REM the same way every time, so retrying it just wastes two 5s sleeps.
+findstr /I /C:"Unable to resolve" /C:"timed out" /C:"fetch failed" /C:"ENOTFOUND" /C:"EAI_AGAIN" /C:"ECONNRESET" /C:"ETIMEDOUT" /C:"ECONNREFUSED" "%DEPLOY_LOG%" >nul 2>&1
+if errorlevel 1 goto deploy_failed
 if %ATTEMPT% geq %MAX_ATTEMPTS% goto deploy_failed
 echo.
-echo [WARN] attempt %ATTEMPT% failed - looks like a transient network/DNS hiccup.
-echo        retrying in 5s...
+echo [WARN] attempt %ATTEMPT% failed with a network error - retrying in 5s...
 ping -n 6 127.0.0.1 >nul 2>&1
 goto deploy_retry
 
 :deploy_failed
 echo.
-echo [FAIL] deploy failed after %MAX_ATTEMPTS% attempts.
+echo [FAIL] deploy failed on attempt %ATTEMPT% of %MAX_ATTEMPTS%.
+echo        Non-network errors are deliberately not retried - fix the cause and re-run.
 echo        If the message is "Unable to resolve" or "timed out", the network/DNS path to
 echo        Cloudflare is flaky. Try again later, or route through your local proxy by
 echo        adding these two lines to deploy.local.bat:

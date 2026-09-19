@@ -71,6 +71,8 @@ async function init() {
         await loadAccounts();
         await Promise.all(Object.keys(TEMPLATES).map(t => loadVars(t)));
         await loadGlobalConfig();
+        // 降级路径同样要初始化标签页与元数据提示，否则这里会留白、tab 也没有高亮
+        applyProjectTabs();
     }
 
     // 以下为 lazy 加载（不阻塞首屏）

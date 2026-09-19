@@ -88,6 +88,63 @@ describe('writeAccounts 掩码/空值保护（防凭证覆盖丢失）', () => {
     });
 });
 
+describe('writeAccounts 鉴权方式切换（authMode）', () => {
+    const base = (over: Partial<AccountEntry> = {}): AccountEntry => ({
+        alias: 'a1', accountId: 'a'.repeat(32), email: 'e1@x.com', globalKey: 'REAL_KEY', ...over
+    });
+
+    it('authMode=token → 清空 globalKey，只留加密后的 apiToken', async () => {
+        const kv = mockKV();
+        const env = mockEnv(kv);
+        await writeAccounts(env, [base({ authMode: 'token', apiToken: 'TOKEN_1' })]);
+        const stored = readKV<AccountEntry[]>(kv, KV_KEYS.ACCOUNTS)![0];
+        expect(stored.globalKey).toBe('');
+        expect((stored.apiToken || '').startsWith(VERSION_PREFIX)).toBe(true);
+        expect(stored.apiToken).not.toContain('TOKEN_1');
+        const acc = (await readAccounts(env))[0];
+        expect(acc.globalKey).toBe('');
+        expect(acc.apiToken).toBe('TOKEN_1');
+    });
+
+    it('authMode=key → 清空 apiToken，只留 globalKey', async () => {
+        const kv = mockKV();
+        const env = mockEnv(kv);
+        await writeAccounts(env, [base({ authMode: 'key', apiToken: 'TOKEN_1' })]);
+        const acc = (await readAccounts(env))[0];
+        expect(acc.globalKey).toBe('REAL_KEY');
+        expect(acc.apiToken).toBe('');
+    });
+
+    it('Token 切回 Key → 旧 apiToken 不残留（否则请求仍会走 Bearer）', async () => {
+        const kv = mockKV();
+        const env = mockEnv(kv);
+        await writeAccounts(env, [base({ authMode: 'token', apiToken: 'TOKEN_1', globalKey: '' })]);
+        await writeAccounts(env, [base({ authMode: 'key', globalKey: 'NEW_KEY' })]);
+        const acc = (await readAccounts(env))[0];
+        expect(acc.globalKey).toBe('NEW_KEY');
+        expect(acc.apiToken).toBe('');
+    });
+
+    it('未指定 authMode（历史数据）→ 两侧都保留', async () => {
+        const kv = mockKV();
+        const env = mockEnv(kv);
+        await writeAccounts(env, [base({ apiToken: 'TOKEN_1' })]);
+        const acc = (await readAccounts(env))[0];
+        expect(acc.globalKey).toBe('REAL_KEY');
+        expect(acc.apiToken).toBe('TOKEN_1');
+    });
+
+    it('掩码值不会被当成新凭据（同时按 authMode 清空另一侧）', async () => {
+        const kv = mockKV();
+        const env = mockEnv(kv);
+        await writeAccounts(env, [base({ apiToken: 'TOKEN_1' })]);
+        await writeAccounts(env, [base({ authMode: 'key', globalKey: 'REAL_...KEY', apiToken: 'TOK...KEN' })]);
+        const acc = (await readAccounts(env))[0];
+        expect(acc.globalKey).toBe('REAL_KEY');
+        expect(acc.apiToken).toBe('');
+    });
+});
+
 describe('readAccounts 解密失败处理', () => {
     it('密钥变更导致解密失败 → globalKey 清空（不把密文当 API Key 用）', async () => {
         const kv = mockKV();

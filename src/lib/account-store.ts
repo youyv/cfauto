@@ -1,5 +1,5 @@
 /**
- * 统一账号存储层 — 透明加解密 globalKey
+ * 统一账号存储层 — 透明加解密凭据字段（见 SECRET_FIELDS）
  * 
  * 所有对 ACCOUNTS KV 的读写都通过此模块，业务代码无需手动调用 decryptKey/encryptKey。
  * 读 = 自动解密(30s KV缓存)，写 = 自动加密，杜绝遗漏。
@@ -16,12 +16,25 @@ import { logger } from './logger';
 import type { AccountEntry } from './types';
 import type { AppEnv } from '../config/env';
 
+/**
+ * 账号里需要加密存储的秘密字段。
+ *
+ * 解密（读）、脱敏（回前端）、保留/清空（写）三处都从这一份清单派生 —— 新增一个秘密字段
+ * 只需要加到这里，不会再出现「三处漏改一处」导致的密文外泄或凭据被掩码覆盖。
+ */
+export const SECRET_FIELDS = ['globalKey', 'apiToken'] as const;
+
+/** 选定某种鉴权方式后，必须被清空的另一侧字段（否则旧凭据仍会被 getAuthHeaders 优先使用） */
+const CLEARED_BY_AUTH_MODE: Record<string, string> = {
+    token: 'globalKey',
+    key: 'apiToken'
+};
+
 /** 读取账号列表（自动解密 globalKey） */
 export async function readAccounts(env: AppEnv): Promise<AccountEntry[]> {
     const accounts = await getJSON<AccountEntry[]>(env.CONFIG_KV, KV_KEYS.ACCOUNTS, []);
     await Promise.all(accounts.map(async (a) => {
-        a.globalKey = await decryptAccountSecret(env, a.globalKey, a.alias);
-        a.apiToken = await decryptAccountSecret(env, a.apiToken, a.alias);
+        for (const f of SECRET_FIELDS) a[f] = await decryptAccountSecret(env, a[f], a.alias);
     }));
     return accounts;
 }
@@ -50,11 +63,11 @@ export function hasAccountCredentials(a: Pick<AccountEntry, 'globalKey' | 'apiTo
 /** 读取账号列表（脱敏 globalKey，安全返回给前端） */
 export async function readAccountsMasked(env: AppEnv): Promise<AccountEntry[]> {
     const accounts = await readAccounts(env);
-    return accounts.map(a => ({
-        ...a,
-        globalKey: maskKey(a.globalKey),
-        apiToken: maskKey(a.apiToken || '')
-    }));
+    return accounts.map(a => {
+        const out: AccountEntry = { ...a };
+        for (const f of SECRET_FIELDS) out[f] = maskKey(out[f] || '');
+        return out;
+    });
 }
 
 /** 脱敏 API Key：保留前 6 后 4 字符 */
@@ -79,11 +92,14 @@ export async function writeAccounts(env: AppEnv, accounts: AccountEntry[]): Prom
         // 匹配旧密文：优先 accountId；编辑时若 accountId 被修改，用 alias+email 兜底，防止凭据丢失
         const old = existing.find(e => e.accountId === a.accountId)
                  || existing.find(e => e.alias === a.alias && e.email === a.email);
-        a.globalKey = await resolveSecretForWrite(env, a.globalKey, old?.globalKey);
-        a.apiToken = await resolveSecretForWrite(env, a.apiToken, old?.apiToken);
-        // 显式选择的鉴权方式决定保留哪一侧：否则切换类型后旧凭据仍会被优先使用
-        if (a.authMode === 'token') a.globalKey = '';
-        else if (a.authMode === 'key') a.apiToken = '';
+        for (const f of SECRET_FIELDS) {
+            // 显式选择的鉴权方式只保留对应的一侧
+            if (a.authMode && CLEARED_BY_AUTH_MODE[a.authMode] === f) {
+                a[f] = '';
+                continue;
+            }
+            a[f] = await resolveSecretForWrite(env, a[f], old?.[f]);
+        }
     }));
     await putJSON(env.CONFIG_KV, KV_KEYS.ACCOUNTS, cloned);
 

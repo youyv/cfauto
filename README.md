@@ -89,7 +89,7 @@ cfauto/
 │       ├── workbench.js        #   工作台 / 日志
 │       ├── diagnostics.js      #   系统诊断 / 源码查看
 │       └── starfield.js        #   星空动画 + 应用入口
-├── test/                       # Vitest（383 个测试，全部 import 真实模块）
+├── test/                       # Vitest（388 个测试，全部 import 真实模块）
 │   ├── helpers.ts              #   内存 KV mock (含 list 分页) / CF 响应构造 / fetch 桩
 │   ├── kv-utils.test.ts        #   工具函数 + 路由表
 │   ├── kv-gc.test.ts           #   KV 回收: 日志裁剪 / 孤儿键 / 翻页 / cron 节流
@@ -189,7 +189,7 @@ build.bat → deploy.bat
 ```
 check.bat            # 或 pnpm run check
 ```
-它按 CI 相同顺序执行 build → typecheck → verify → test（383 个测试）。任一步失败就不要部署。
+它按 CI 相同顺序执行 build → typecheck → verify → test（388 个测试）。任一步失败就不要部署。
 
 ---
 
@@ -419,7 +419,7 @@ node_modules\.bin\wrangler.cmd login
 ### 🛠️ 构建与工具
 - **esbuild** — TypeScript/JS 打包为单文件 ESM 输出
 - **Node.js** — 构建脚本、内联前端资源、可复现的依赖读取
-- **Vitest** — 383 个单元与集成测试，全部 import 真实模块（内存 KV mock + fetch 桩）
+- **Vitest** — 388 个单元与集成测试，全部 import 真实模块（内存 KV mock + fetch 桩）
 - **TypeScript** — 类型安全、模板字面量索引签名消除类型断言
 - **GitHub Actions** — build → typecheck → verify → test 全链路 CI
 - **自定义静态校验** — `verify.js` 检查结构、路由覆盖、CSP、死代码（死 action / 冗余 window 导出 / 孤儿 HTML id / 未使用 import）、以及裸 `res.json()` / 裸 `fetch` 等反模式

@@ -11,8 +11,14 @@ import type { AppEnv } from "../config/env";
 
 export interface GithubTarget { branch: string; path: string; }
 
-/** 探测结果缓存时长：短到上游改名能较快生效，长到足够防 GitHub 限流 */
-export const GH_INFO_CACHE_TTL_SECONDS = 15 * 60;
+/**
+ * 探测结果缓存时长。
+ *
+ * 上游改名是低频事件，而这个缓存每失效一次就要多打 2 个 GitHub API 请求（仓库信息 + 文件树）；
+ * 未配置 GITHUB_TOKEN 时限额只有 60/小时，15 分钟一轮 × 3 个模板就吃掉近一半配额。
+ * 因此放长到 6 小时，并由 fetchGithubCode 的 404 失效重探来兜住「缓存过期后上游改名」的窗口。
+ */
+export const GH_INFO_CACHE_TTL_SECONDS = 6 * 60 * 60;
 
 const GH_API = 'https://api.github.com';
 
@@ -44,8 +50,8 @@ export function pickScriptPath(type: TemplateType, paths: string[]): string | nu
  * 解析某模板当前可用的「默认分支 + 脚本路径」。
  *
  * 上游可能改默认分支（main ↔ master）或重命名脚本文件，硬编码任一者都会让拉取静默
- * 拿到 404 HTML 页面并当作代码上传。这里先读 15 分钟缓存，未命中再用 GitHub API 探测
- * 并回写；**任何一步失败都回落到配置值**，绝不因为探测本身失败而中断部署。
+ * 拿到 404 HTML 页面并当作代码上传。这里先读缓存（TTL 见 GH_INFO_CACHE_TTL_SECONDS），
+ * 未命中再用 GitHub API 探测并回写；**任何一步失败都回落到配置值**，绝不因为探测本身失败而中断部署。
  */
 export async function resolveGithubTarget(env: AppEnv, type: TemplateType): Promise<GithubTarget> {
     const t = TEMPLATES[type];
@@ -103,6 +109,22 @@ export async function resolveGithubTarget(env: AppEnv, type: TemplateType): Prom
     return { branch, path };
 }
 
+/**
+ * 丢弃探测缓存，使下一次 resolveGithubTarget 重新探测。
+ *
+ * 用于「缓存里的路径已过期 → 拉取拿到 404」这一情形：长 TTL 降低了 API 压力，
+ * 但也意味着改名后可能用到过期路径，这里给一次主动失效的机会。
+ */
+export async function invalidateGithubTarget(env: AppEnv, type: TemplateType): Promise<void> {
+    if (!env || !env.CONFIG_KV) return;
+    try {
+        await env.CONFIG_KV.delete(KV_KEYS.ghInfoCache(type));
+        logger.audit('github target cache invalidated', { type });
+    } catch (e) {
+        logger.warn('invalidateGithubTarget failed', { type, error: (e as Error).message });
+    }
+}
+
 export function getGithubUrls(type: TemplateType, sha: string | null = null, override?: GithubTarget) {
     const t = TEMPLATES[type];
     const rawPath = override?.path || t.ghPath;
@@ -119,10 +141,18 @@ export function getGithubUrls(type: TemplateType, sha: string | null = null, ove
 export async function fetchGithubCode(type: TemplateType, targetSha: string | null, env: AppEnv) {
     const isLatest = !targetSha || targetSha === 'latest';
     // 动态解析当前默认分支与脚本路径（带缓存与回落），避免上游改名后拉到 404 页面
-    const target = await resolveGithubTarget(env, type);
-    const { scriptUrl } = getGithubUrls(type, isLatest ? null : targetSha, target);
+    let target = await resolveGithubTarget(env, type);
+    const urlFor = (tg: GithubTarget) => getGithubUrls(type, isLatest ? null : targetSha, tg).scriptUrl;
 
-    const codeRes = await fetchWithTimeout(scriptUrl + `?t=${Date.now()}`);
+    let codeRes = await fetchWithTimeout(urlFor(target) + `?t=${Date.now()}`);
+    // 缓存里的路径可能已过期（上游改名）：丢掉缓存重探一次再试一回。
+    // 只对 404 触发、且只重试一次，避免把额外的 GitHub 调用变成常态。
+    if (codeRes.status === 404) {
+        logger.warn('fetchGithubCode: 404，丢弃探测缓存后重探', { type, path: target.path });
+        await invalidateGithubTarget(env, type);
+        target = await resolveGithubTarget(env, type);
+        codeRes = await fetchWithTimeout(urlFor(target) + `?t=${Date.now()}`);
+    }
     if (!codeRes.ok) throw new Error(`代码下载失败: ${codeRes.status}`);
     const code = await codeRes.text();
     

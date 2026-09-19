@@ -8,7 +8,7 @@
 import { KV_KEYS, TEMPLATES, isAccountVarsKey } from '../config/templates';
 import { json, jsonError, safeJson } from '../lib/cloudflare-api';
 import { listAllKeys } from "../lib/kv-utils";
-import { readAccounts, writeAccounts } from "../lib/account-store";
+import { readAccounts, writeAccounts, SECRET_FIELDS } from "../lib/account-store";
 import { decryptKey, secretFingerprint } from "../lib/crypto-utils";
 import { validateAccountsPayload, MAX_ACCOUNTS } from '../lib/validate';
 import { logger } from '../lib/logger';
@@ -89,12 +89,13 @@ ROUTES.set('POST /api/accounts/import', async (req, env) => {
             if (dupIdx >= 0) { merged[dupIdx] = { ...merged[dupIdx], ...item }; importedIdx.push(dupIdx); skipped++; }
             else { merged.push(item as AccountEntry); importedIdx.push(merged.length - 1); added++; }
         }
-        // 仅解密来自 import 的条目（export 数据已加密），避免对已解密的存量条目重复解密
-        // 仅解密带 v1: 前缀的已加密值，跳过已解密的存量明文（避免无效 atob + warn）
+        // 仅解密来自 import 的条目（export 数据已加密），避免对已解密的存量条目重复解密；
+        // 只处理带 v1: 前缀的密文，跳过已解密的存量明文（避免无效 atob + warn）。
+        // 字段清单来自 account-store 的 SECRET_FIELDS，避免两处各维护一份。
         const decryptFailed = new Set<string>();
         await Promise.all(importedIdx.map(async (i) => {
-            // globalKey 与 apiToken 都是加密存储的密文，逐个字段处理
-            for (const field of ['globalKey', 'apiToken'] as const) {
+            // 所有秘密字段都是加密存储的密文，逐个字段处理
+            for (const field of SECRET_FIELDS) {
                 const raw = merged[i][field];
                 if (!raw || !/^v\d+:/.test(raw)) continue;
                 const dec = await decryptKey(env, raw);

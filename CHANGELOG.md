@@ -99,12 +99,31 @@
   （Clash / Mihomo / sing-box 默认端口）就自动经代理部署并打印说明；未监听则保持直连。
   `deploy.local.bat` 仍可用 `HTTPS_PROXY` / `NODE_USE_ENV_PROXY` 覆盖。
 
+### 🧹 审核修复（架构 / 代码 review 产出）
+
+- **凭据字段清单去重**：`account-store` 的「解密 / 脱敏 / 写入保留」三处原本各自硬编码
+  `globalKey` + `apiToken`，新增秘密字段必须同时改三处。现抽出 `SECRET_FIELDS` 单一清单，
+  导入导出（`crud-backup`）复用同一份，消除「漏改一处 → 密文外泄或被掩码值覆盖」的隐患。
+- **补 `authMode` 回归测试（5 个）**：这是最关键的数据安全不变量（切 Key 必须清 Token），
+  此前零覆盖。现覆盖 token→key、key→token、历史数据两侧保留、掩码值不被当作新凭据。
+- **收敛 GitHub 探测的调用放大**：`resolveGithubTarget` 每次缓存失效会多发 2 个 GitHub 请求，
+  而它被 `fetchGithubCode` 与 `fetchGithubCommits` 各自调用 —— 未配置 `GITHUB_TOKEN` 时
+  60/小时 的限额会被很快吃掉。缓存 TTL 由 15 分钟放宽到 6 小时，并新增 `invalidateGithubTarget`：
+  仅当拉取拿到 404 时丢弃缓存重探一次，兼顾限流与上游改名。
+- **dns-fix 可关闭 + 日志如实**：新增 `DNS_FIX_DISABLE=1` 完全跳过（排障用）；
+  原先那句 `looks valid, no change` 只检查了地址形状、并未真正查询，却断言「正常」，
+  是本轮排障被误导的源头之一，现改为如实描述。
+- **deploy.bat 重试按类型分流**：原先任何失败都重试 3 次，认证/配置错误也会白等两个 5 秒；
+  现在只对 `Unable to resolve` / `timed out` / `ENOTFOUND` 等网络类关键字重试。
+- **init_data 降级路径补齐**：`/api/init_data` 失败改为逐个请求时，原先不调用 `applyProjectTabs()`，
+  导致元数据提示留白、标签页无高亮。
+
 ### 🧪 测试
 
 - 新增 `pickScriptPath` / `resolveGithubTarget`（缓存、探测失败回落、探测成功采用真实路径）6 个用例
 - 调整 `handleGetCode` 与 history 的断言以匹配新的探测请求
 
-**测试总数 377 → 383**
+**测试总数 377 → 388**（含审核阶段新增的 5 个 authMode 用例）
 
 ## V12.0.1 (2026-09-11)
 

@@ -23,6 +23,9 @@ const cp = require('child_process');
 
 const PROBE_HOST = 'api.cloudflare.com';
 
+/** 完全关闭本脚本：设 DNS_FIX_DISABLE=1（排障时用，避免它本身成为变量） */
+const DISABLED = process.env.DNS_FIX_DISABLE === '1';
+
 /** stderr 日志 — 绝不用 console.log/process.stdout，避免污染 stdio 协议通道 */
 function log(msg) {
     try { process.stderr.write('[dns-fix] ' + msg + '\n'); } catch (_) { /* 无 stderr 时静默 */ }
@@ -112,7 +115,9 @@ function getSystemDnsViaIpconfig() {
 
 // ==================== 主流程（模块加载时同步执行，消除竞态） ====================
 const originalServers = dns.getServers();
-if (allUnusable(originalServers)) {
+if (DISABLED) {
+    log('DNS_FIX_DISABLE=1 - leaving DNS configuration untouched');
+} else if (allUnusable(originalServers)) {
     // 1) 同步探测当前配置：能用就保持（如本地确实跑了 DNS 服务）
     if (probeServer(originalServers[0])) {
         log(originalServers.join(', ') + ' OK, keeping current DNS');
@@ -140,7 +145,9 @@ if (allUnusable(originalServers)) {
     }
 } else {
     // 配置里有真实 DNS（可能混合了 127.0.0.1 主备），Node 自带故障转移，不干预
-    log('configured DNS ' + originalServers.join(', ') + ' looks valid, no change');
+    // 只做了「地址形状」检查，并没有发起真实查询 —— 措辞必须如实，否则会把排障带偏
+    // （本机 DNS 实际在抖，却每次都打印「看起来正常」）。
+    log('configured DNS ' + originalServers.join(', ') + ' has non-loopback entries; leaving untouched without probing');
 }
 
 // ==================== dns.lookup 兜底 ====================
@@ -239,7 +246,7 @@ function resolveViaFallback(hostname, family, cb) {
 }
 
 const nativeLookup = dns.lookup;
-dns.lookup = function (hostname, options, callback) {
+function cfautoLookupFallback(hostname, options, callback) {
     let opts = options;
     let cb = callback;
     if (typeof opts === 'function') { cb = opts; opts = {}; }
@@ -257,5 +264,7 @@ dns.lookup = function (hostname, options, callback) {
             return cb(null, results[0].address, results[0].family);
         });
     });
-};
+}
+// 只有在未禁用时才接管 dns.lookup（DISABLED 时保留运行时原始实现）
+if (!DISABLED) dns.lookup = cfautoLookupFallback;
 
