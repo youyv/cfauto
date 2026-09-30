@@ -7,19 +7,23 @@
               <div class="text-[10px] text-gray-400 mt-1">WORKER CONTROL CENTER · 多账号部署与运行管理</div>
           </div>
           
-          <div class="control-toolbar flex flex-wrap items-center gap-2 md:gap-3 bg-slate-50 p-2 rounded border border-slate-200 w-full lg:w-auto flex-none text-xs">
-               <div class="control-quick-actions" role="group" aria-label="快捷操作">
+               <div class="control-quick-actions text-xs" role="group" aria-label="快捷操作">
                <button data-act="toggleTheme" class="theme-toggle" id="theme_btn" title="切换主题"><span data-ui-icon="sun">☀️</span></button>
                <button data-act="logout" class="bg-red-100 text-red-700 border border-red-300 px-2 py-1 rounded hover:bg-red-200 font-bold" title="退出登录"><span data-ui-icon="log-out">🚪</span></button>
                <div class="w-px h-4 bg-gray-300 mx-0"></div>
-               <button data-act="openWorkbench" class="bg-indigo-100 text-indigo-700 border border-indigo-300 px-2 py-1 rounded hover:bg-indigo-200 font-bold"><span data-ui-icon="clipboard-list">📋</span></button>
-               <button data-act="openBatchDeployModal" class="bg-indigo-600 text-white px-2 py-1 rounded hover:bg-indigo-700 font-bold"><span data-ui-icon="layers">✨</span>批量</button>
-               <button data-act="openYxipGuarded" class="bg-yellow-500 text-white px-2 py-1 rounded hover:bg-yellow-600 font-bold shadow-sm"><span data-ui-icon="zap">⚡</span>落地</button>
+               <button data-act="openWorkbench" class="bg-indigo-100 text-indigo-700 border border-indigo-300 px-2 py-1 rounded hover:bg-indigo-200 font-bold"><span data-ui-icon="clipboard-list">📋</span><span>工作台</span></button>
+               <button data-act="openBatchDeployModal" class="bg-indigo-600 text-white px-2 py-1 rounded hover:bg-indigo-700 font-bold"><span data-ui-icon="layers">✨</span><span>批量部署</span></button>
+               <button data-act="openYxipGuarded" class="bg-yellow-500 text-white px-2 py-1 rounded hover:bg-yellow-600 font-bold shadow-sm"><span data-ui-icon="zap">⚡</span><span>落地节点</span></button>
                </div>
+          <div class="control-toolbar text-xs">
+               <details class="automation-drawer">
+                 <summary><span data-ui-icon="clock">⏱</span><span>自动任务设置</span><span class="automation-summary-hint">更新频率 · 熔断 · 告警</span><span class="automation-chevron" data-ui-icon="chevron-down">⌄</span></summary>
+                 <div class="automation-content">
                <div class="control-schedule" role="group" aria-label="自动更新设置">
+               <h2 class="control-section-title">自动更新<span>设置检查频率与参与项目</span></h2>
                
                <div class="flex items-center gap-1">
-                  <span class="text-[10px]">自动</span>
+                  <label for="auto_update_toggle">启用自动更新</label>
                   <div class="relative inline-block w-8 align-middle select-none">
                       <input type="checkbox" id="auto_update_toggle" data-act-change="updateAutoToggleLabel" class="tgl-input"/>
                       <label for="auto_update_toggle" class="tgl-switch"></label>
@@ -28,42 +32,47 @@
                </div>
 
                <div class="flex items-center gap-1">
-                  <input type="number" id="auto_update_interval" value="30" min="1" max="1440" class="w-9 text-center border rounded py-0.5 text-[10px]"><span class="text-[10px]">分</span>
+                  <label for="auto_update_interval">检查间隔</label><input type="number" id="auto_update_interval" value="30" min="1" max="1440" class="w-9 text-center border rounded py-0.5 text-[10px]"><span class="text-[10px]">分</span>
                </div>
                <div class="w-px h-4 bg-gray-300 mx-0"></div>
                <div class="flex items-center gap-1">
-                  <span class="text-[10px] font-bold text-purple-600">CM</span>
+                  <span class="text-[10px] font-bold text-purple-600">CMliu</span>
                   <div class="relative inline-block w-7 align-middle select-none" style="transform:scale(0.85)">
-                      <input type="checkbox" id="auto_cmliu_toggle" class="tgl-input"/>
+                      <input type="checkbox" id="auto_cmliu_toggle" aria-label="自动更新 CMliu" class="tgl-input"/>
                       <label for="auto_cmliu_toggle" class="tgl-switch"></label>
                   </div>
                </div>
                <div class="flex items-center gap-1">
-                  <span class="text-[10px] font-bold text-orange-500">JO</span>
+                  <span class="text-[10px] font-bold text-orange-500">Joey</span>
                   <div class="relative inline-block w-7 align-middle select-none" style="transform:scale(0.85)">
-                      <input type="checkbox" id="auto_joey_toggle" class="tgl-input"/>
+                      <input type="checkbox" id="auto_joey_toggle" aria-label="自动更新 Joey" class="tgl-input"/>
                       <label for="auto_joey_toggle" class="tgl-switch"></label>
                   </div>
                </div>
                <div class="flex items-center gap-1">
-                  <span class="text-[10px] font-bold text-blue-500">EC</span>
+                  <span class="text-[10px] font-bold text-blue-500">ECH</span>
                   <div class="relative inline-block w-7 align-middle select-none" style="transform:scale(0.85)">
-                      <input type="checkbox" id="auto_ech_toggle" class="tgl-input"/>
+                      <input type="checkbox" id="auto_ech_toggle" aria-label="自动更新 ECH" class="tgl-input"/>
                       <label for="auto_ech_toggle" class="tgl-switch"></label>
                   </div>
                </div>
                </div>
                <div class="control-safety" role="group" aria-label="熔断与告警">
+               <h2 class="control-section-title">安全与通知<span>设置用量保护与告警接收地址</span></h2>
                <div class="flex items-center gap-1">
-                  <span class="text-[10px] text-red-600 font-bold">熔断</span>
+                  <label for="fuse_threshold">熔断阈值 (%)</label>
                   <input type="number" id="fuse_threshold" value="0" min="0" max="100" placeholder="0" class="w-7 text-center border border-red-300 bg-red-50 rounded py-0.5 text-[10px] font-bold text-red-600">
                </div>
                <div class="control-webhook flex items-center gap-1">
                   <label for="fuse_webhook" class="text-[10px] text-orange-600 font-bold">告警</label>
-                  <input type="text" id="fuse_webhook" placeholder="https:// Webhook(可选)" class="text-[10px] border rounded px-1 py-0.5 w-32">
+                  <input type="text" id="fuse_webhook" placeholder="https://…（可选告警 Webhook）" class="text-[10px] border rounded px-1 py-0.5 w-32">
                </div>
                </div>
-               <button title="保存自动任务配置" data-act="saveAutoConfig" class="bg-gray-100 text-gray-700 border border-gray-300 px-2 py-1 rounded hover:bg-gray-200 font-bold ml-1"><span data-ui-icon="save">💾</span><span>保存</span></button>
+                 </div>
+                 <div class="automation-footer"><span>修改后请保存，定时执行还需配置 Cloudflare Cron。</span>
+               <button title="保存自动任务配置" data-act="saveAutoConfig" class="bg-gray-100 text-gray-700 border border-gray-300 px-2 py-1 rounded hover:bg-gray-200 font-bold ml-1"><span data-ui-icon="save">💾</span><span>保存设置</span></button>
+                 </div>
+               </details>
           </div>
       </header>
       
