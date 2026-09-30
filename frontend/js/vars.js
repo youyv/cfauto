@@ -81,7 +81,11 @@ function addVarRow(t, k, v, s) {
     secChk.addEventListener('change', function () { secHidden.value = this.checked ? '1' : ''; });
     if (s) { secChk.checked = true; secHidden.value = '1'; }
     secLabel.appendChild(secChk);
-    secLabel.appendChild(document.createTextNode('\uD83D\uDD12'));
+    const secretIcon = document.createElement('span');
+    setUiIconText(secretIcon, '🔒', '');
+    secLabel.title = '标记为 Secret 变量（加密存储）';
+    secChk.setAttribute('aria-label', '标记为 Secret 变量');
+    secLabel.appendChild(secretIcon);
     d.appendChild(secLabel);
 
     if (t === 'cmliu' && (k === 'PROXYIP' || k === 'DOH')) {
@@ -264,7 +268,7 @@ async function checkUpdate(t) {
         const upRow = document.createElement('div');
         upRow.className = 'flex justify-between items-center ' + (isBehind ? 'text-red-600 font-bold' : 'text-green-600');
         const upLeft = document.createElement('span');
-        upLeft.textContent = (isBehind ? '🚀 上游: ' : '✅ 上游: ') + remoteDate;
+        setUiIconText(upLeft, isBehind ? '🚀' : '✅', ' 上游: ' + remoteDate);
         upRow.appendChild(upLeft);
         const upRight = document.createElement('span');
         if (isBehind) {
@@ -288,10 +292,10 @@ async function checkUpdate(t) {
         const sameSha = d.local && d.remote && d.local.sha === d.remote.sha;
         localRow.className = 'flex justify-between ' + (sameSha ? 'text-gray-500' : 'text-orange-500 font-bold');
         const lLeft = document.createElement('span');
-        lLeft.textContent = '💻 本地: ' + localDateStr;
+        setUiIconText(lLeft, '💻', ' 本地: ' + localDateStr);
         localRow.appendChild(lLeft);
         const lRight = document.createElement('span');
-        lRight.textContent = d.mode === 'fixed' ? '🔒 Locked' : '';
+        setUiIconText(lRight, d.mode === 'fixed' ? '🔒' : '', d.mode === 'fixed' ? ' Locked' : '');
         localRow.appendChild(lRight);
         el.appendChild(localRow);
 
@@ -299,7 +303,7 @@ async function checkUpdate(t) {
         if (d.pending && d.pending.length > 0) {
             const pendRow = document.createElement('div');
             pendRow.className = 'text-orange-600 font-bold';
-            pendRow.textContent = '⚠️ ' + d.pending.length + ' 个 Worker 部署失败，待重试';
+            setUiIconText(pendRow, '⚠️', ' ' + d.pending.length + ' 个 Worker 部署失败，待重试');
             pendRow.title = d.pending.join('\n');
             el.appendChild(pendRow);
         }
@@ -309,7 +313,7 @@ async function checkUpdate(t) {
         el.textContent = '';
         const ws = document.createElement('span');
         ws.className = 'text-red-400 text-[10px]';
-        ws.textContent = '⚠️ ';
+        setUiIconText(ws, '⚠️', ' ');
         el.appendChild(ws);
         el.appendChild(document.createTextNode(reason));
     }
@@ -343,4 +347,44 @@ registerActions({
     addVarRow: addVarRow,
     refreshUUID: refreshUUID,
     selectSyncAccount: selectSyncAccount
+});
+
+// Source settings use the same API as cron and manual deployments.
+async function loadUpstream(t) {
+    const status = $('upstream_status_' + t);
+    const save = $('upstream_save_' + t);
+    if (!status || !save) return;
+    save.disabled = true;
+    try {
+        const d = await apiFetch('/api/upstream?type=' + encodeURIComponent(t));
+        applyUpstreamToUi(t, d);
+        save.disabled = false;
+    } catch (e) { status.textContent = '读取失败：' + e.message + '，请点击重新读取。'; }
+}
+function applyUpstreamToUi(t, d) {
+    const path = $('upstream_path_' + t), branch = $('upstream_branch_' + t);
+    path.value = d.path || ''; path.placeholder = d.defaultPath;
+    branch.value = d.branch || ''; branch.placeholder = d.defaultBranch;
+    path.disabled = false; branch.disabled = false;
+    $('upstream_status_' + t).textContent = d.repository + ' · ' + (d.path ? '自定义代码源' : '自动探测默认文件');
+}
+async function saveUpstream(t, reset) {
+    const button = $('upstream_save_' + t);
+    const path = reset ? '' : $('upstream_path_' + t).value.trim();
+    const branch = reset ? '' : ($('upstream_branch_' + t).value.trim() || $('upstream_branch_' + t).placeholder);
+    if (!reset && !path) { Swal.fire('请输入文件路径', '如需自动探测，请使用恢复默认。', 'info'); return; }
+    const answer = await Swal.fire({ title: reset ? '恢复默认代码源？' : '保存新的代码源？', text: '不会立即部署。已开启自动更新的模板将在下一轮拉取新代码源；固定版本模式仍需手动部署。请勿在部署进行中修改。', icon: 'warning', showCancelButton: true, confirmButtonText: '确认保存', cancelButtonText: '取消' });
+    if (!answer.isConfirmed) return;
+    button.disabled = true;
+    try {
+        const saved = await apiFetch('/api/upstream?type=' + encodeURIComponent(t), { method: 'POST', body: JSON.stringify({ path, branch }) });
+        applyUpstreamToUi(t, saved); // Do not immediately reread eventually-consistent KV.
+        checkDeployConfig(t); checkUpdate(t);
+        Swal.fire({ icon: 'success', title: '代码源已保存', text: '下次预览、历史查询和部署将使用新的设置。', timer: 2500 });
+    } catch (e) { Swal.fire('保存失败', e.message, 'error'); }
+    finally { button.disabled = false; }
+}
+registerActions({
+    loadUpstream: loadUpstream,
+    saveUpstream: saveUpstream
 });

@@ -20,7 +20,7 @@ export function backupKeys(): string[] {
     const templateTypes = Object.keys(TEMPLATES);
     return [
         KV_KEYS.ACCOUNTS, KV_KEYS.GLOBAL_CONFIG, KV_KEYS.DEPLOY_JOURNAL,
-        ...templateTypes.flatMap(t => [KV_KEYS.vars(t), KV_KEYS.deployConfig(t), KV_KEYS.favorites(t)])
+        ...templateTypes.flatMap(t => [KV_KEYS.vars(t), KV_KEYS.deployConfig(t), KV_KEYS.favorites(t), KV_KEYS.upstream(t)])
     ];
 }
 

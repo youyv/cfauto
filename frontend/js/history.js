@@ -40,7 +40,7 @@ async function refreshHistory() {
         latestInner.className = 'flex justify-between items-center';
         const latestLabel = document.createElement('span');
         latestLabel.className = 'font-bold text-green-700 text-xs';
-        latestLabel.textContent = '⚡ Always Latest (部署最新)';
+        setUiIconText(latestLabel, '⚡', ' Always Latest (部署最新)');
         latestInner.appendChild(latestLabel);
         latestBtn.appendChild(latestInner);
         latestBtn.addEventListener('click', () => { closeModal('history_modal'); deploy(type, 'latest'); });

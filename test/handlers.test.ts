@@ -320,7 +320,8 @@ describe('zones handlers', () => {
         const stub = stubFetch([
             { match: '/bindings', respond: () => cfOk([{ type: 'kv_namespace', namespace_id: 'ns1' }]) },
             { match: '/storage/kv/namespaces/ns1', respond: () => { kvDeleteAttempts++; return cfErr(409, 'in use'); } },
-            { match: '/workers/scripts/w1', respond: () => cfOk(null) }
+            { match: '/workers/scripts/w1', respond: () => cfOk(null) },
+            { match: '/workers/scripts', respond: () => cfOk([]) }
         ]);
         try {
             const body: any = await (await handleDeleteWorker(env, AID_A, 'w1', true)).json();

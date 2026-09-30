@@ -36,7 +36,7 @@ const _deploying = new Set();
 async function deploy(t, sha) {
     if (_deploying.has(t)) return Swal.fire('提示', t + ' 正在部署中，请等待完成', 'info');
     const btn = $('btn_deploy_' + t);
-    const ot = btn ? btn.innerText : '';
+    const ot = btn ? btn.textContent : '';
     _deploying.add(t);
     if (btn) { btn.innerText = '⏳ 部署中...'; btn.disabled = true; }
 
@@ -98,15 +98,15 @@ async function deploy(t, sha) {
 
 async function fix1101(t) {
     const confirm = await Swal.fire({
-        title: '🔧 一键修复 1101',
-        html: '<div class="text-left text-sm"><p class="mb-2">将对所有账号执行：</p><ol class="list-decimal pl-5 space-y-1"><li>📋 记录变量绑定 + 自定义域名</li><li>🗑️ 删除 Worker</li><li>🚀 用相同名称重建</li><li>♻️ 恢复所有变量值 + 自定义域名</li><li>🌐 重建成功后轮换子域名（每账号一次）</li></ol><p class="mt-3 text-orange-600 font-bold">⚠️ 子域名变更影响该账号下所有 Worker！</p><p class="mt-1 text-red-600 font-bold">⚠️ 绑定读取失败会中止该 Worker 的修复（保护既有 KV/secret）</p></div>',
+        title: '一键修复 1101',
+        html: '<div class="text-left text-sm"><p class="mb-2">将对所有账号执行：</p><ol class="list-decimal pl-5 space-y-1"><li><span data-ui-icon="clipboard-list">📋</span> 记录变量绑定 + 自定义域名</li><li><span data-ui-icon="trash-2">🗑️</span> 删除 Worker</li><li><span data-ui-icon="rocket">🚀</span> 用相同名称重建</li><li><span data-ui-icon="refresh-cw">♻️</span> 恢复所有变量值 + 自定义域名</li><li><span data-ui-icon="globe">🌐</span> 重建成功后轮换子域名（每账号一次）</li></ol><p class="mt-3 text-orange-600 font-bold"><span data-ui-icon="triangle-alert">⚠️</span> 子域名变更影响该账号下所有 Worker！</p><p class="mt-1 text-red-600 font-bold"><span data-ui-icon="triangle-alert">⚠️</span> 绑定读取失败会中止该 Worker 的修复（保护既有 KV/secret）</p></div>',
         icon: 'warning', showCancelButton: true,
         confirmButtonText: '执行修复', cancelButtonText: '取消',
         confirmButtonColor: '#f97316'
     });
     if (!confirm.isConfirmed) return;
     const btn = $('btn_fix1101_' + t);
-    const ot = btn ? btn.innerText : '';
+    const ot = btn ? btn.textContent : '';
     if (btn) { btn.innerText = '⏳ 修复中...'; btn.disabled = true; }
     openWorkbench();
     wbLog('🔧 正在修复 ' + t + ' 的 1101...', 'text-orange-400');
@@ -297,6 +297,7 @@ function openBatchDeployModal() {
 }
 
 function toggleBatchInputs() {
+    updateSelectIcon($('bd_template'));
     const t = $('bd_template').value;
     $('bd_config_cmliu').classList.toggle('hidden', t !== 'cmliu');
     // UUID 输入对所有有 uuidField 的模板都有意义（cmliu 的 UUID 也走这里）

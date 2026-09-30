@@ -11,6 +11,7 @@ import { getJSON, putJSON } from './kv-utils';
 import { pruneJournal, JOURNAL_SUMMARY_MAX } from './kv-gc';
 import { readAccounts, getWorkerNames, hasAnyWorker } from './account-store';
 import { pooledMap } from './concurrency';
+import { upstreamIdentity } from './upstream';
 import { logger } from './logger';
 import type { DeployLogEntry, JournalEntry, DeployConfig, AccountEntry, GithubVersionInfo, VariableEntry } from './types';
 import type { AppEnv } from '../config/env';
@@ -33,10 +34,11 @@ export interface DeployOptions {
      *  - 'clear'：忽略并删除覆盖 —— 用户在面板上显式点部署时走这条，
      *    因为面板展示的就是全局变量，用户的意图是「所有账号都用这一套」。
      */
-    accountOverrides?: 'apply' | 'clear';
+    accountOverrides?: 'apply' | 'clear' | 'ignore';
 }
 
 interface DeployCodeResult {
+    sourceIdentity: string;
     scriptContent: string;
     deployedSha: string | null;
     customCodeHash: string;
@@ -54,6 +56,7 @@ export async function prepareDeployCode(
     targetSha: string | null, customCode: string | null,
     variables: VariableEntry[] | null, echTokenEnabled: boolean
 ): Promise<DeployCodeResult | DeployLogEntry[]> {
+    const sourceIdentity = await upstreamIdentity(env, type);
     const isLatestMode = !targetSha || targetSha === 'latest';
     const shaForFetch = isLatestMode ? null : targetSha;
     let deployedSha: string | null = shaForFetch;
@@ -78,7 +81,7 @@ export async function prepareDeployCode(
     }
 
     scriptContent = applyTemplateTransform(type, scriptContent, variables, { echTokenEnabled });
-    return { scriptContent, deployedSha, customCodeHash, isLatestMode };
+    return { scriptContent, deployedSha, customCodeHash, isLatestMode, sourceIdentity };
 }
 
 /** [提取] 部署到单个 Worker */
@@ -168,7 +171,7 @@ async function fetchCommitDate(env: AppEnv, type: TemplateType): Promise<string 
 export async function finalizeDeploy(
     env: AppEnv, type: TemplateType, isLatestMode: boolean,
     deployedSha: string | null, logs: DeployLogEntry[], customCodeHash: string,
-    scope: 'full' | 'partial' = 'full'
+    scope: 'full' | 'partial' = 'full', sourceIdentity = ''
 ): Promise<void> {
     const failedLogs = logs.filter(l => !l.success);
     const allSucceeded = failedLogs.length === 0 && logs.length > 0;
@@ -206,6 +209,7 @@ export async function finalizeDeploy(
     const dp: DeployConfig = advances
         ? {
             mode,
+            sourceIdentity,
             currentSha: deployedSha || 'unknown',
             deployTime: nowIso,
             lastAttempt: nowIso,
@@ -224,7 +228,6 @@ export async function finalizeDeploy(
             }
             : {
                 ...prev,
-                mode,
                 lastAttempt: nowIso,
                 // pendingSha 指向"账本当前认为已部署的版本"，让重试队列能被
                 // resolveUpdatePlan 的 retry-pending 分支真正消费掉
@@ -300,7 +303,7 @@ export async function coreDeployLogic(env: AppEnv, opts: DeployOptions): Promise
     try {
         const codeResult = await prepareDeployCode(env, type, targetSha, customCode, variables, echTokenEnabled);
         if (Array.isArray(codeResult)) return codeResult; // early error from code fetch
-        const { scriptContent, deployedSha, customCodeHash, isLatestMode } = codeResult;
+        const { scriptContent, deployedSha, customCodeHash, isLatestMode, sourceIdentity } = codeResult;
 
         let accounts = await readAccounts(env);
         if (targetAccountIds && targetAccountIds.length > 0) {
@@ -341,7 +344,7 @@ export async function coreDeployLogic(env: AppEnv, opts: DeployOptions): Promise
             });
         }
 
-        await finalizeDeploy(env, type, isLatestMode, deployedSha, logs, customCodeHash, scope);
+        await finalizeDeploy(env, type, isLatestMode, deployedSha, logs, customCodeHash, scope, sourceIdentity);
         return logs;
     } catch (e: any) { return [{ name: "系统错误", success: false, msg: e.message }]; }
 }
@@ -352,11 +355,12 @@ export async function coreDeployLogic(env: AppEnv, opts: DeployOptions): Promise
  * 'apply'：账号级覆盖里的键覆盖同名全局键（其余全局键照常生效）。
  * 'clear'：删除账号级覆盖键，全部账号统一使用传入的全局变量。
  */
-async function resolveAccountVariables(
+export async function resolveAccountVariables(
     env: AppEnv, type: TemplateType, accounts: AccountEntry[],
-    globalVars: VariableEntry[], mode: 'apply' | 'clear'
+    globalVars: VariableEntry[], mode: 'apply' | 'clear' | 'ignore'
 ): Promise<Map<string, VariableEntry[]>> {
     const out = new Map<string, VariableEntry[]>();
+    if (mode === 'ignore') return out;
     if (mode === 'clear') {
         await Promise.all(accounts.map(a =>
             env.CONFIG_KV.delete(KV_KEYS.accountVars(type, a.accountId)).catch((e: unknown) =>
@@ -367,7 +371,9 @@ async function resolveAccountVariables(
     await Promise.all(accounts.map(async (a) => {
         const override = await getJSON<VariableEntry[] | null>(env.CONFIG_KV, KV_KEYS.accountVars(type, a.accountId), null);
         if (!override || !Array.isArray(override) || override.length === 0) return;
-        out.set(a.accountId, mergeVarLists(globalVars, override));
+        // Legacy snapshots must not override unrelated global variables.
+        const uuidField = TEMPLATES[type].uuidField;
+        out.set(a.accountId, mergeVarLists(globalVars, override.filter(v => v.key === uuidField)));
     }));
     return out;
 }
@@ -389,7 +395,8 @@ export async function fetchGithubVersion(env: AppEnv, type: TemplateType): Promi
     if (!hasDeployed && deployConfig.currentSha) {
         await putJSON(env.CONFIG_KV, KV_KEYS.deployConfig(type), { mode: 'latest' });
     }
-    const localSha = hasDeployed ? (deployConfig.currentSha || null) : null;
+    const sourceMatches = (deployConfig.sourceIdentity || '') === await upstreamIdentity(env, type);
+    const localSha = hasDeployed && sourceMatches ? (deployConfig.currentSha || null) : null;
     const localTime = hasDeployed ? (deployConfig.deployTime || null) : null;
     let commitDate = deployConfig.commitDate || null;
     // 无 commitDate 时通过 GitHub API 查询本地 SHA 的日期（自动回填 KV）
@@ -487,14 +494,14 @@ export async function rotateUUIDAndDeploy(env: AppEnv, type: TemplateType, accou
     for (const accountId of accountIds) {
         const accKey = KV_KEYS.accountVars(type, accountId);
         const base = await getJSON<VariableEntry[]>(env.CONFIG_KV, accKey, globalVars);
-        const rotated = rotateUuidField(base, uuidField, crypto.randomUUID());
+        const rotated = rotateUuidField(base.filter(v => v.key === uuidField), uuidField, crypto.randomUUID());
         await putJSON(env.CONFIG_KV, accKey, rotated);
         logger.audit('fuse uuid rotated', { type, accountId, field: uuidField });
         await coreDeployLogic(env, {
-            type, variables: rotated, deletedVariables: [],
+            type, variables: mergeVarLists(globalVars, rotated), deletedVariables: [],
             targetSha, targetAccountIds: [accountId],
-            // 覆盖已在上一行写入 KV，这里直接用 rotated，不再叠加一次
-            accountOverrides: 'apply'
+            // Use the in-memory rotation: KV may still return the old UUID immediately after a write.
+            accountOverrides: 'ignore'
         });
     }
 }

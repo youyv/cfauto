@@ -155,7 +155,8 @@ export async function readWorkerBindings(
         logger.warn('readWorkerBindings failed', { module: 'deploy-utils', accountId, workerName, status: res.status });
         return { ok: false, bindings: [] };
     }
-    const bindings = await readApiResult<Array<Record<string, any>>>(res, '读取绑定') || [];
+    const bindings = await readApiResult<Array<Record<string, any>>>(res, '读取绑定');
+    if (!Array.isArray(bindings)) return { ok: false, bindings: [] };
     return { ok: true, bindings };
 }
 

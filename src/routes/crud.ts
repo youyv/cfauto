@@ -14,6 +14,7 @@ import {
     requireTemplateType, normalizeVariables, normalizeAutoConfig,
     validateAccountsPayload
 } from '../lib/validate';
+import { normalizeUpstream, readUpstream, upstreamView } from '../lib/upstream';
 import { logger } from '../lib/logger';
 import type { RouteRegistrar } from "./register";
 import type { AccountEntry, FavoriteItem } from '../lib/types';
@@ -39,6 +40,28 @@ function readType(req: Request, required = false): { type: string } | { error: R
 }
 
 export function registerCrudRoutes(ROUTES: { set: RouteRegistrar }) {
+
+// --- Explicit upstream selection (CMliu / Joey) ---
+ROUTES.set('GET /api/upstream', async (req, env) => {
+    const type = new URL(req.url).searchParams.get('type') || '';
+    if (!['cmliu', 'joey'].includes(type)) return jsonError('不支持此模板', 400);
+    return json(await upstreamView(env, type));
+});
+ROUTES.set('POST /api/upstream', async (req, env) => {
+    const type = new URL(req.url).searchParams.get('type') || '';
+    if (!['cmliu', 'joey'].includes(type)) return jsonError('不支持此模板', 400);
+    const body = await safeJson(req);
+    let selected;
+    try { selected = normalizeUpstream(body); }
+    catch (e) { return jsonError((e as Error).message, 400, 'VALIDATION_ERROR'); }
+    const previous = await readUpstream(env, type).catch(() => null); // Explicit save can repair corrupt restored settings.
+    if (JSON.stringify(previous) !== JSON.stringify(selected)) {
+        await putJSON(env.CONFIG_KV, KV_KEYS.upstream(type), selected);
+        await env.CONFIG_KV.delete(KV_KEYS.ghInfoCache(type));
+    }
+    const template = TEMPLATES[type];
+    return json({ success: true, ...selected, repository: template.ghUser + '/' + template.ghRepo, defaultPath: template.ghPath, defaultBranch: template.ghBranch });
+});
 
 // --- 账号 ---
 ROUTES.set('GET /api/accounts', async (_req, env) => {
@@ -122,7 +145,7 @@ ROUTES.set('POST /api/auto_config', async (req, env) => {
     }
     const parsed = normalizeAutoConfig(incoming);
     if (!parsed.ok) return parsed.response;
-    await putJSON(env.CONFIG_KV, KV_KEYS.GLOBAL_CONFIG, parsed.value);
+    await putJSON(env.CONFIG_KV, KV_KEYS.GLOBAL_CONFIG, { ...parsed.value, ...(typeof current.lastGc === 'number' ? { lastGc: current.lastGc } : {}) });
     logger.audit('auto config saved', { enabled: parsed.value.enabled, interval: parsed.value.interval, fuseThreshold: parsed.value.fuseThreshold });
     return json({ success: true });
 });

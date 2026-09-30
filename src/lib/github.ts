@@ -4,6 +4,7 @@
 
 import { TEMPLATES, KV_KEYS } from '../config/templates';
 import { fetchWithTimeout } from './cloudflare-api';
+import { readUpstream } from './upstream';
 import { logger } from './logger';
 import type { TemplateType } from '../config/templates';
 import type { GithubCommit } from './types';
@@ -75,6 +76,8 @@ export async function resolveGithubTarget(env: AppEnv, type: TemplateType): Prom
     const fallback: GithubTarget = { branch: t.ghBranch || 'main', path: t.ghPath };
     if (!env || !env.CONFIG_KV) return fallback;
 
+    const selected = await readUpstream(env, type);
+    if (selected.path) return selected;
     const cacheKey = KV_KEYS.ghInfoCache(type);
     try {
         const cachedRaw = await env.CONFIG_KV.get(cacheKey);

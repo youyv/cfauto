@@ -185,6 +185,7 @@ registerActions({
 // 因此在此启动。defer 保证 DOM 已解析完成；仍做一次保险检查。
 function bootApp() {
     applyTheme();
+    initUiIcons();
     init();
 }
 if (document.readyState === 'loading') {

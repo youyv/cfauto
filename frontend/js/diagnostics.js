@@ -182,7 +182,7 @@ async function copyDiagnosticReport() {
     try { diag = await apiFetch('/api/diag'); }
     catch (e) { diag = { error: (e && e.message) || String(e) }; }
     const report = buildDebugReport('系统诊断报告', '用户主动导出的诊断信息', { diag: diag });
-    await copyToClipboard(report, '📋 诊断报告已复制（已脱敏）');
+    await copyToClipboard(report, '诊断报告已复制（已脱敏）');
     wbLog('✅ 诊断报告已复制到剪贴板', 'text-green-400');
 }
 
@@ -193,7 +193,7 @@ function reportIssue() {
         + '?title=' + encodeURIComponent('[Bug] 用户报障')
         + '&body=' + encodeURIComponent(report);
     Swal.fire({
-        title: '🐛 故障报障',
+        title: '故障报障',
         html: '<div class="text-left text-xs space-y-2">'
             + '<div class="text-gray-600">将打开 GitHub Issue 并预填诊断信息（账号 ID / 邮箱 / 令牌已脱敏）。</div>'
             + '<div class="text-gray-400">仓库: ' + safeHtml(PROJECT_REPO) + '</div>'
@@ -204,7 +204,7 @@ function reportIssue() {
         cancelButtonText: '📋 只复制报告'
     }).then(function (r) {
         if (r.isConfirmed) window.open(issueUrl, '_blank');
-        else if (r.dismiss === Swal.DismissReason.cancel) copyToClipboard(report, '📋 报告已复制，可自行粘贴');
+        else if (r.dismiss === Swal.DismissReason.cancel) copyToClipboard(report, '报告已复制，可自行粘贴');
     });
 }
 

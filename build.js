@@ -36,15 +36,30 @@ const pkg = require('./package.json');
 // ===== 1. 读取前端资源 =====
 let htmlContent = fs.readFileSync(path.join(ROOT, 'frontend/index.html'), 'utf-8');
 htmlContent = htmlContent.replace(/\{\{VERSION\}\}/g, pkg.version);
-const cssContent = fs.readFileSync(path.join(ROOT, 'frontend/css/style.css'), 'utf-8');
+let cssContent = fs.readFileSync(path.join(ROOT, 'frontend/css/style.css'), 'utf-8');
 
 // 拼接顺序即依赖顺序：dom.js 提供 $/registerActions/apiFetch，state.js 提供 state，
 // starfield.js 位于最后并负责启动应用（bootApp）。verify.js 以此数组为文件清单的真相源。
 const jsFiles = [
-    'dom.js', 'state.js', 'accounts.js', 'accounts-io.js', 'accounts-worker.js',
+    'dom.js', 'icons.js', 'state.js', 'accounts.js', 'accounts-io.js', 'accounts-worker.js',
     'deploy.js', 'vars.js', 'history.js', 'yxip.js', 'workbench.js', 'diagnostics.js', 'starfield.js'
 ];
-const jsContent = jsFiles
+// Lucide is vendored and pinned: embed only the selected SVG shapes, no runtime fetch.
+const iconDir = path.join(ROOT, 'frontend/vendor/lucide');
+const iconMap = JSON.parse(fs.readFileSync(path.join(iconDir, 'map.json'), 'utf8'));
+const iconPaths = Object.fromEntries([...new Set(Object.values(iconMap))].map(name => {
+    const svg = fs.readFileSync(path.join(iconDir, name + '.svg'), 'utf8');
+    return [name, svg.slice(svg.indexOf('>', svg.indexOf('<svg')) + 1, svg.lastIndexOf('</svg>')).trim()];
+}));
+// Input placeholders cannot contain SVG: use a local SVG background instead.
+for (const [name, tone, color] of [['search', '', '#64748b'], ['box', '', '#64748b'], ['rocket', '', '#64748b'], ['orbit', '', '#64748b'], ['globe', '', '#64748b'], ['box', 'cmliu', '#dc2626'], ['box', 'joey', '#2563eb'], ['box', 'ech', '#059669']]) {
+    const selector = '[data-input-icon="' + name + '"]' + (tone ? '[data-icon-tone="' + tone + '"]' : '');
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="' + color + '" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + iconPaths[name] + '</svg>';
+    cssContent += '\n' + selector + '{background-image:url("data:image/svg+xml,' + encodeURIComponent(svg) + '");background-repeat:no-repeat;background-position:9px center;background-size:15px 15px;padding-left:31px!important;}';
+}
+const iconLicense = fs.readFileSync(path.join(iconDir, 'LICENSE'), 'utf8');
+const iconPrelude = '/*! Lucide 0.468.0\n' + iconLicense + '\n*/\nconst UI_ICON_MAP = ' + JSON.stringify(iconMap) + ';\nconst UI_ICON_PATHS = ' + JSON.stringify(iconPaths) + ';\n';
+const jsContent = iconPrelude + jsFiles
     .map(f => {
         const p = path.join(ROOT, 'frontend/js', f);
         if (!fs.existsSync(p)) {

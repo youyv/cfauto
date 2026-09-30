@@ -75,6 +75,7 @@ async function init() {
         applyProjectTabs();
     }
 
+    ['cmliu', 'joey'].forEach(t => loadUpstream(t));
     // 以下为 lazy 加载（不阻塞首屏）
     loadStats();
     // 所有模板都做版本检查 —— ech 同样需要跟随上游更新（此前被 uuidField 条件排除）
@@ -97,7 +98,7 @@ function renderTemplateHints() {
         const conf = TEMPLATES[t];
         if (!conf) return;
         const parts = [];
-        if (conf.repoUrl) parts.push('<a href="' + safeHtml(conf.repoUrl) + '" target="_blank" rel="noreferrer" class="text-blue-500 hover:underline">🔗 开源仓库</a>');
+        if (conf.repoUrl) parts.push('<a href="' + safeHtml(conf.repoUrl) + '" target="_blank" rel="noreferrer" class="text-blue-500 hover:underline"> <span data-ui-icon="external-link">🔗</span> 开源仓库</a>');
         if (conf.adminPath) parts.push('<span>后台路径 <b class="font-mono">' + safeHtml(conf.adminPath) + '</b></span>');
         if (conf.subPath) parts.push('<span>订阅路径 <b class="font-mono">' + safeHtml(conf.subPath) + '</b></span>');
         if (conf.compatibilityDate) parts.push('<span>兼容日期 <b class="font-mono">' + safeHtml(conf.compatibilityDate) + '</b></span>');

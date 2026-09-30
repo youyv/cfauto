@@ -14,7 +14,7 @@ name = "改成你的Worker名"
 main = "dist/worker.js"
 
 # ---------- 兼容日期 ----------
-# 每次 build.bat 自动更新为当天日期，无需手动改
+# 构建脚本同步固定兼容日期，不随当天日期变化
 compatibility_date = "2026-07-16"
 
 # workers_dev = false                                           # 禁用 *.workers.dev 默认域名

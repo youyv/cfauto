@@ -106,8 +106,7 @@ async function runAutoUpdate(env: AppEnv) {
         const statsData = await fetchInternalStats(accounts);
         const allErrored = statsData.length > 0 && statsData.every(s => s.error);
         if (allErrored) {
-            logger.warn('cron: all accounts stats errored, skipping this cycle', { count: statsData.length });
-            return;
+            logger.warn('cron: all accounts stats errored, skipping fuse checks only', { count: statsData.length });
         }
 
         // ===== 熔断：只轮换真正超限账号的 UUID =====

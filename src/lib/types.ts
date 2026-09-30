@@ -32,6 +32,8 @@ export interface VariableEntry {
 
 // ===== 部署配置 =====
 export interface DeployConfig {
+    /** Code-source selection used by the last successful full deployment. */
+    sourceIdentity?: string;
     mode: 'latest' | 'fixed';
     currentSha?: string | null;
     deployTime?: string | null;

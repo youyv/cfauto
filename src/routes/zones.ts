@@ -124,9 +124,33 @@ export async function handleDeleteWorker(env: AppEnv, accountId: string, workerN
             }
         }
 
+        // Bindings do not establish ownership. Fail closed when inspection fails.
+        let skippedKv = 0;
+        if (deleteKv && kvNamespaceIds.length > 0) {
+            try {
+                const scriptsRes = await fetchWithTimeout(cf.workerScripts(aid), { headers });
+                const scripts = await readApiResult<Array<{ id: string }>>(scriptsRes, '检查共享 KV');
+                if (!Array.isArray(scripts)) throw new Error('Worker 列表无效');
+                const shared = new Set<string>();
+                for (const script of scripts) {
+                    if (script.id === workerName) continue;
+                    const other = await readWorkerBindings(aid, script.id, headers);
+                    if (!other.ok) throw new Error('无法确认其他 Worker 的绑定');
+                    for (const b of other.bindings) if (b.namespace_id) shared.add(b.namespace_id);
+                }
+                const safe = kvNamespaceIds.filter(id => !shared.has(id));
+                skippedKv = kvNamespaceIds.length - safe.length;
+                kvNamespaceIds = [...new Set(safe)];
+            } catch (e) {
+                skippedKv = kvNamespaceIds.length;
+                kvNamespaceIds = [];
+                logger.warn('共享检查失败，保留 KV', { error: String(e) });
+            }
+        }
         const kvDeleteErrors = deleteKv
             ? await deleteKvNamespaces(aid, kvNamespaceIds, headers)
             : [];
+        if (skippedKv > 0) return json({ success: true, kvWarnings: skippedKv + ' 个共享或无法确认归属的 KV 已保留；' + kvDeleteErrors.length + ' 个删除失败' });
 
         if (kvDeleteErrors.length > 0) {
             return json({ success: true, kvWarnings: kvDeleteErrors.length + ' 个 KV 命名空间删除失败，请到 Cloudflare Dashboard 手动清理' });

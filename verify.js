@@ -180,7 +180,7 @@ const dynamicIds = new Set([
     ...[...concatenated.matchAll(/id="([a-z0-9_]+)"/g)].map(m => m[1])
 ]);
 // 模板插值构造的 ID（如 'vars_' + t）无法静态判定，按前缀放行
-const dynamicPrefixes = ['vars_', 'ver_', 'badge_', 'btn_deploy_', 'btn_fix1101_', 'auto_', 'in_workers_', 'bd_chk_'];
+const dynamicPrefixes = ['upstream_', 'vars_', 'ver_', 'badge_', 'btn_deploy_', 'btn_fix1101_', 'auto_', 'in_workers_', 'bd_chk_'];
 const danglingIds = [...referencedIds].filter(id =>
     !htmlIds.has(id) && !dynamicIds.has(id) && !dynamicPrefixes.some(p => id.startsWith(p)));
 if (danglingIds.length > 0) {
@@ -213,7 +213,7 @@ const expectedRoutes = [
     'GET /api/diag', 'GET /api/deploy_journal',
     'GET /api/accounts/export', 'POST /api/accounts/import',
     'GET /api/backup', 'POST /api/restore',
-    'GET /api/init_data'
+    'GET /api/init_data', 'GET /api/upstream', 'POST /api/upstream'
 ];
 const missingRoutes = expectedRoutes.filter(r => !routesTS.includes("'" + r + "'") && !routesTS.includes('"' + r + '"'));
 if (missingRoutes.length > 0) {

@@ -273,3 +273,185 @@
         border-bottom-color: var(--accent-blue);
         background: var(--glass-3);
       }
+/* Modern control center: retain all existing panels, actions and theme semantics. */
+:root:not([data-theme="dark"]) { --text-muted: #64748b; --border-color: #dce4ef; }
+body { font-family: Inter, 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif; line-height: 1.6; }
+.dashboard-shell { padding: 12px 0 32px; }
+.dashboard-shell > header { border: 1px solid var(--border-color); border-radius: 20px; padding: 24px; box-shadow: 0 8px 30px rgba(15,23,42,.045); }
+.dashboard-shell h1 { letter-spacing: -.035em; font-size: 25px; }
+.dashboard-shell h2 { letter-spacing: -.015em; }
+.dashboard-shell .shadow { border-radius: 16px; box-shadow: 0 4px 20px rgba(15,23,42,.045); }
+.dashboard-shell .project-card { overflow: hidden; border-top-width: 3px; }
+.dashboard-shell button { transition: background-color .18s, box-shadow .18s; }
+.dashboard-shell button:not(.source-primary):not(.source-secondary) { border-radius: 8px; }
+.dashboard-shell button:disabled { opacity: .55; cursor: not-allowed; }
+.dashboard-shell .input-field { min-height: 34px; border-radius: 8px; padding: 7px 10px; }
+.dashboard-shell button:focus-visible, .dashboard-shell input:focus-visible, .dashboard-shell summary:focus-visible, .dashboard-shell select:focus-visible { outline: 2px solid #6366f1; outline-offset: 3px; }
+.upstream-card { border: 1px solid var(--border-color); background: var(--glass-3); border-radius: 12px; margin-bottom: 16px; color: var(--text-primary); }
+.upstream-card summary { cursor: pointer; padding: 12px 14px; font-size: 12px; font-weight: 650; }
+.upstream-card summary span { font-weight: 400; color: var(--text-secondary); margin-left: 8px; font-size: 11px; }
+.upstream-content { padding: 0 14px 14px; display: grid; gap: 8px; }
+.upstream-content label { font-size: 11px; font-weight: 600; color: var(--text-secondary); }
+.upstream-status { overflow-wrap: anywhere; font-size: 11px; color: var(--text-secondary); }
+.upstream-help { font-size: 11px; line-height: 1.7; color: var(--text-secondary); }
+.upstream-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+.source-primary, .source-secondary { border-radius: 8px; padding: 8px 12px; font-size: 11px; font-weight: 600; }
+.source-primary { background: #4f46e5; color: #fff; }
+.source-primary:hover { background: #4338ca; }
+.source-secondary { background: var(--glass-input); color: var(--text-secondary); border: 1px solid var(--border-color); }
+[data-theme="dark"] .dashboard-shell > header { box-shadow: 0 8px 30px rgba(0,0,0,.16); }
+[data-theme="dark"] .upstream-card { background: rgba(15,23,42,.45); }
+@media (max-width: 640px) { .dashboard-shell > header { padding: 16px; } .dashboard-shell h1 { font-size: 20px; } .upstream-actions button { flex: 1 1 auto; } }
+@media (prefers-reduced-motion: reduce) { .dashboard-shell *, .dashboard-shell *::before, .dashboard-shell *::after { animation: none !important; transition: none !important; } }
+
+/* Comfortable density and a distinct command toolbar. */
+html:not([data-theme="dark"]) body { background: radial-gradient(ellipse at 5% 0%, #e8edff 0, transparent 45%), #f4f6fa; }
+.dashboard-shell > header { flex-direction: column; align-items: stretch; }
+.dashboard-shell .control-toolbar { width: 100%; padding: 12px; border-radius: 12px; gap: 12px; }
+.dashboard-shell [class*="text-[10px]"] { font-size: 12px; }
+.dashboard-shell [class*="text-[9px]"] { font-size: 11px; }
+.dashboard-shell .control-toolbar button { min-height: 30px; }
+.dashboard-shell .control-toolbar input:not([type="checkbox"]) { min-height: 28px; }
+.dashboard-shell .control-toolbar #auto_toggle_label { margin-left: 4px; }
+.dashboard-shell .project-hints { padding-bottom: 8px; line-height: 1.7; }
+.dashboard-shell .project-card > .p-3 { padding: 16px; }
+@media (max-width: 640px) { .dashboard-shell .control-toolbar { gap: 10px; } .dashboard-shell button { min-height: 32px; } }
+
+@media (max-width: 640px) { .account-toolbar, .account-search-row { max-width: calc(100vw - 66px); } .account-toolbar { row-gap: 8px; } .account-toolbar .ml-auto { margin-left: 0; } .account-search-row input { min-width: 0; } }
+
+/* Local Lucide icons: consistent optical size, inherited theme colours. */
+.ui-icon {
+    display: inline-flex;
+    width: 1.05rem;
+    height: 1.05rem;
+    vertical-align: -0.2em;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    pointer-events: none;
+}
+.ui-icon svg { width: 100%; height: 100%; overflow: visible; }
+.ui-icon-source { display: none !important; }
+.ui-icon-filled svg { fill: currentColor; }
+.ui-icon-cmliu { color: #dc2626; }
+.ui-icon-joey { color: #2563eb; }
+.ui-icon-ech { color: #059669; }
+[data-theme="dark"] .ui-icon-cmliu { color: #f87171; }
+[data-theme="dark"] .ui-icon-joey { color: #60a5fa; }
+[data-theme="dark"] .ui-icon-ech { color: #34d399; }
+button:focus-visible, summary:focus-visible {
+    outline: 2px solid #6366f1;
+    outline-offset: 3px;
+}
+
+/* Account tools drawer: native details keeps keyboard and expanded-state semantics. */
+.account-tools-drawer {
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    background: #f8fafc;
+    overflow: hidden;
+}
+.account-tools-toggle {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 10px;
+    color: #475569;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+}
+.account-tools-toggle::-webkit-details-marker { display: none; }
+.account-tools-toggle:hover { background: #eef2ff; }
+.account-tools-hint { margin-left: auto; font-size: 11px; font-weight: 400; color: #64748b; }
+.account-tools-chevron { transition: transform 160ms ease; }
+.account-tools-drawer[open] .account-tools-chevron { transform: rotate(180deg); }
+.account-tools-drawer .account-toolbar { padding: 10px; margin: 0; border-top: 1px solid #e2e8f0; }
+[data-theme="dark"] .account-tools-drawer { background: #111c2d; border-color: #334155; }
+[data-theme="dark"] .account-tools-toggle { color: #cbd5e1; }
+[data-theme="dark"] .account-tools-toggle:hover { background: #1e293b; }
+[data-theme="dark"] .account-tools-hint { color: #94a3b8; }
+[data-theme="dark"] .account-tools-drawer .account-toolbar { border-color: #334155; }
+@media (prefers-reduced-motion: reduce) { .account-tools-chevron { transition: none; } }
+
+/* Group actions by scope instead of presenting an undifferentiated colour strip. */
+.account-tools-drawer .account-tools-content { padding: 14px; text-align: left; white-space: normal; }
+.account-tool-group { min-width: 0; }
+.account-tool-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: #334155; font-size: 12px; }
+.account-tool-heading strong { font-weight: 650; }
+.account-tool-count { color: #6366f1; font-size: 11px; }
+.account-tool-description { margin: 5px 0 10px; color: #64748b; font-size: 11px; line-height: 1.7; }
+.account-tool-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.account-selection-actions { display: inline-flex; gap: 0; }
+.account-tools-drawer .account-tool-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 34px; padding: 6px 10px; border: 1px solid #dbe2ea; border-radius: 7px; background: #fff; color: #475569; font-size: 12px; font-weight: 500; line-height: 1.4; box-shadow: 0 1px 2px #0f172a05; }
+.account-tools-drawer .account-tool-button:hover { background: #eef2ff; border-color: #a5b4fc; color: #4338ca; }
+.account-selection-actions .account-tool-button:first-child { border-radius: 7px 0 0 7px; }
+.account-selection-actions .account-tool-button:last-child { margin-left: -1px; border-radius: 0 7px 7px 0; }
+.account-tools-drawer .account-tool-danger { color: #dc2626; border-color: #fecaca; }
+.account-tools-drawer .account-tool-danger:hover { color: #b91c1c; background: #fef2f2; border-color: #fca5a5; }
+.account-tools-drawer .account-tool-caution { color: #92400e; }
+.account-data-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-top: 16px; padding-top: 16px; border-top: 1px solid #e2e8f0; }
+.account-tool-tag { flex-shrink: 0; padding: 2px 6px; border-radius: 5px; background: #e9eef5; color: #64748b; font-size: 10px; }
+.account-tools-note { margin: 14px 0 0; color: #64748b; font-size: 10px; line-height: 1.7; }
+[data-theme="dark"] .account-tool-heading { color: #e2e8f0; }
+[data-theme="dark"] .account-tool-description, [data-theme="dark"] .account-tools-note { color: #94a3b8; }
+[data-theme="dark"] .account-tool-count { color: #a5b4fc; }
+[data-theme="dark"] .account-tools-drawer .account-tool-button { background: #1e293b; border-color: #475569; color: #cbd5e1; }
+[data-theme="dark"] .account-tools-drawer .account-tool-button:hover { background: #303c57; border-color: #818cf8; color: #e0e7ff; }
+[data-theme="dark"] .account-tools-drawer .account-tool-danger { color: #fca5a5; border-color: #7f3541; }
+[data-theme="dark"] .account-tools-drawer .account-tool-danger:hover { background: #44232d; border-color: #f87171; }
+[data-theme="dark"] .account-tools-drawer .account-tool-caution { color: #fcd34d; }
+[data-theme="dark"] .account-data-groups { border-color: #334155; }
+[data-theme="dark"] .account-tool-tag { background: #263449; color: #94a3b8; }
+@media (max-width: 420px) {
+    .account-data-groups { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+    .account-data-groups .account-tool-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .account-tools-drawer .account-tools-content { padding: 12px; }
+}
+
+/* Header toolbar: fixed action groups + flexible alert field use the entire row. */
+.dashboard-shell .control-toolbar { display: flex; align-items: center; gap: 14px; }
+.control-quick-actions, .control-schedule, .control-safety { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.control-quick-actions, .control-schedule { flex: 0 0 auto; }
+.control-schedule { padding-left: 14px; border-left: 1px solid #dbe2ea; }
+.control-safety { flex: 1 1 240px; padding-left: 14px; border-left: 1px solid #dbe2ea; }
+.control-webhook { flex: 1 1 0; min-width: 0; }
+.control-webhook label { flex-shrink: 0; }
+.control-toolbar #fuse_webhook { width: 100%; min-width: 0; flex: 1 1 0; padding-left: 8px; padding-right: 8px; }
+.control-toolbar #auto_update_interval { width: 44px; }
+.control-toolbar #fuse_threshold { width: 42px; }
+.control-toolbar button[data-act="saveAutoConfig"] { display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: 0 0 auto; margin-left: 0; padding: 6px 12px; }
+[data-theme="dark"] .control-schedule, [data-theme="dark"] .control-safety { border-color: #334155; }
+@media (max-width: 1100px) {
+    .control-quick-actions { flex: 1 1 auto; }
+    .control-safety { flex-basis: calc(100% - 100px); border-left: 0; padding-left: 0; }
+}
+@media (max-width: 640px) {
+    .control-quick-actions { flex-basis: 100%; flex-wrap: wrap; }
+    .control-schedule { flex: 1 1 100%; flex-wrap: wrap; border-left: 0; padding-left: 0; gap: 8px; }
+    .control-safety { gap: 8px; }
+}
+@media (max-width: 420px) {
+    .control-safety { flex-basis: 100%; }
+    .control-toolbar button[data-act="saveAutoConfig"] { margin-left: auto; }
+}
+
+/* Only the workbench header captures touch gestures; logs remain scrollable. */
+#workbench_drag { cursor: grab; touch-action: none; }
+#workbench_drag.is-dragging { cursor: grabbing; }
+#workbench_drag > h3 { flex-shrink: 0; }
+#workbench_drag > div { flex-wrap: wrap; justify-content: flex-end; }
+
+/* Shared column alignment for account headings and their actual content. */
+.compact-table th.account-ratio-cell, .compact-table td.account-ratio-cell,
+.compact-table th.account-actions-cell, .compact-table td.account-actions-cell {
+    text-align: center;
+    vertical-align: middle;
+}
+.account-ratio-content { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.account-ratio-content > div { flex-shrink: 0; }
+.account-ratio-content > span { min-width: 4.5ch; text-align: right; font-variant-numeric: tabular-nums; }
+.account-actions-content { display: inline-flex; align-items: center; justify-content: center; gap: 10px; }
+.account-actions-content button { margin: 0; }

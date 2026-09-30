@@ -147,6 +147,7 @@ export const KV_KEYS = {
     favorites: (type: string) => `FAVORITES_${type}`,   // 版本收藏
     DEPLOY_JOURNAL: 'DEPLOY_JOURNAL',                // 部署操作日志
     /** 上游仓库分支/脚本路径的探测缓存（15 分钟 TTL）。纯缓存：不含用户数据，无需备份或回收 */
+    upstream: (type: string) => `UPSTREAM_${type}`,
     ghInfoCache: (type: string) => `GH_INFO_CACHE_${type}`,
 };
 

@@ -39,6 +39,7 @@ function yxipTemplateOf(type) {
 }
 
 function toggleYxipAccountSelect() {
+    updateSelectIcon($('yxip_type'));
     const type = $('yxip_type').value;
     const tmpl = yxipTemplateOf(type);
     const accountList = $('yxip_account_list');
@@ -111,7 +112,7 @@ function toggleYxipAccountSelect() {
 
 async function fetchYxipRegions() {
     const container = $('yxip_regions');
-    container.innerHTML = '<div class="col-span-full text-center py-4 text-gray-400">✈️ 正在获取全球节点数据...</div>';
+    container.innerHTML = '<div class="col-span-full text-center py-4 text-gray-400"><span data-ui-icon="plane">✈️</span> 正在获取全球节点数据...</div>';
     try {
         const data = await apiFetch('/api/get_regions_data');
         if (data.success) {
@@ -122,7 +123,7 @@ async function fetchYxipRegions() {
             container.innerHTML = '';
             const err = document.createElement('div');
             err.className = 'col-span-full text-center py-4 text-red-500';
-            err.textContent = '❌ 获取失败: ' + (data.msg || '未知错误');
+            setUiIconText(err, '❌', ' 获取失败: ' + (data.msg || '未知错误'));
             container.appendChild(err);
         }
     } catch (e) {
@@ -130,7 +131,7 @@ async function fetchYxipRegions() {
         container.innerHTML = '';
         const err = document.createElement('div');
         err.className = 'col-span-full text-center py-4 text-red-500';
-        err.textContent = '❌ ' + e.message;
+        setUiIconText(err, '❌', ' ' + e.message);
         container.appendChild(err);
     }
 }
@@ -174,13 +175,15 @@ function renderYxipRegions() {
     searchRow.className = 'col-span-full flex gap-1 items-center mb-1';
     const searchInput = document.createElement('input');
     searchInput.id = 'yxip_search';
-    searchInput.placeholder = '🔍 搜索国家/代码...';
+    searchInput.placeholder = '搜索国家/代码...';
+    searchInput.setAttribute('data-input-icon', 'search');
     searchInput.className = 'flex-1 text-xs border rounded px-2 py-1';
     searchInput.addEventListener('input', doYxipSearch);
     const clearBtn = document.createElement('button');
     clearBtn.className = 'text-xs text-gray-400 hover:text-red-500 px-1';
     clearBtn.title = '清除 (Esc)';
     clearBtn.textContent = '✕';
+    clearBtn.title = '清空国家或地区搜索条件';
     clearBtn.addEventListener('click', clearYxipSearch);
     searchRow.appendChild(searchInput); searchRow.appendChild(clearBtn);
     container.appendChild(searchRow);

@@ -232,7 +232,7 @@ export async function handleBatchDeploy(env: AppEnv, reqData: BatchDeployRequest
     // 此前传 null 导致批量创建的 ech Worker 全部回落到硬编码默认代理。
     const codeResult = await prepareDeployCode(env, template, null, null, configToVariables(config), false);
     if (Array.isArray(codeResult)) return json(codeResult);
-    const { scriptContent, deployedSha, isLatestMode } = codeResult;
+    const { scriptContent, deployedSha, isLatestMode, sourceIdentity } = codeResult;
 
     const settled = await pooledMapSettled(accountsToDeploy, (acc) =>
         deployToSingleAccount(acc, template, trimmedName, scriptContent,
@@ -267,7 +267,7 @@ export async function handleBatchDeploy(env: AppEnv, reqData: BatchDeployRequest
 
     // 批量部署只覆盖「本次新建的那一个 Worker 名」，属于子集作用域 → 不推进版本账本，
     // 由 cron 的版本检查在下一轮按全量补齐其余 Worker。
-    await finalizeDeploy(env, template, isLatestMode, deployedSha, logs, '', 'partial');
+    await finalizeDeploy(env, template, isLatestMode, deployedSha, logs, '', 'partial', sourceIdentity);
 
     return json(logs);
 }

@@ -332,7 +332,7 @@ describe('restore 白名单', () => {
         const keys = backupKeys();
         expect(keys).toContain(KV_KEYS.ACCOUNTS);
         for (const t of Object.keys(TEMPLATES)) expect(keys).toContain(KV_KEYS.vars(t));
-        expect(keys.length).toBe(3 + Object.keys(TEMPLATES).length * 3);
+        expect(keys.length).toBe(3 + Object.keys(TEMPLATES).length * 4);
     });
 });
 

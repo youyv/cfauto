@@ -86,7 +86,7 @@ async function restoreBackup() {
     const picked = await pickJsonFile();
     if (!picked) return;
     const confirmed = await Swal.fire({
-        title: '⚠️ 恢复数据',
+        title: '恢复数据',
         html: '将用 <b>' + safeHtml(picked.name) + '</b> 覆盖现有配置（账号、变量、部署记录、收藏）。<br><span class="text-xs text-gray-500">未出现在备份中的键保持不变。</span>',
         icon: 'warning',
         showCancelButton: true, confirmButtonText: '确认恢复', confirmButtonColor: '#d33'

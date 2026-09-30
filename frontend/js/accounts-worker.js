@@ -13,7 +13,7 @@ async function openAccountManage(i) {
     const loading = $('manage_loading');
     const subDisplay = $('manage_subdomain_display');
 
-    $('manage_modal_title').innerText = '📂 管理账号: ' + acc.alias;
+    setUiIconText($('manage_modal_title'), '📂', ' 管理账号: ' + acc.alias);
     subDisplay.innerText = '加载中...';
     openModal('account_manage_modal');
     table.classList.add('hidden');
@@ -113,7 +113,7 @@ async function promptChangeSubdomain() {
             '<div class="text-left text-sm space-y-2">' +
             '<div class="bg-gray-50 p-2 rounded">当前: <b>' + safeHtml(currentSub) + '</b>.workers.dev</div>' +
             '<input id="swal_new_subdomain" class="swal2-input" placeholder="输入新子域名前缀" style="margin:0;width:100%">' +
-            '<div class="text-xs text-gray-400">⚠️ 修改子域名可能需要数分钟生效，且会影响该账号下所有 Worker 的访问地址。</div>' +
+            '<div class="text-xs text-gray-400"><span data-ui-icon="triangle-alert">⚠️</span> 修改子域名可能需要数分钟生效，且会影响该账号下所有 Worker 的访问地址。</div>' +
             '</div>',
         focusConfirm: false,
         showCancelButton: true,
@@ -172,11 +172,11 @@ async function confirmDeleteWorker(workerId, accIndex) {
             '<p>确认要删除 <b>' + safeHtml(workerId) + '</b> 吗？</p>' +
             '<div class="mt-4 text-left bg-gray-50 p-2 rounded text-xs">' +
             '<label class="flex items-center space-x-2">' +
-            '<input type="checkbox" id="del_kv_chk" checked class="form-checkbox text-red-600">' +
-            '<span class="text-gray-700 font-bold">同时删除绑定的 KV (推荐)</span>' +
+            '<input type="checkbox" id="del_kv_chk" class="form-checkbox text-red-600">' +
+            '<span class="text-gray-700 font-bold">同时删除未被其他 Worker 共用的 KV</span>' +
             '</label>' +
-            '<p class="text-gray-400 mt-1 pl-5">执行顺序: 1.读取绑定 → 2.删除 Worker(自动解绑) → 3.删除 KV 空间</p>' +
-            '<p class="text-red-500 mt-1 pl-5">⚠️ 删除 KV 会一并丢失其中的优选节点等数据，不可恢复</p>' +
+            '<p class="text-gray-400 mt-1 pl-5">无法确认是否共用时保留 KV；建议先备份数据。</p>' +
+            '<p class="text-red-500 mt-1 pl-5"><span data-ui-icon="triangle-alert">⚠️</span> 删除 KV 会一并丢失其中的优选节点等数据，不可恢复</p>' +
             '</div>',
         icon: 'warning',
         showCancelButton: true,

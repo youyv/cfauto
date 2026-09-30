@@ -37,26 +37,45 @@ document.addEventListener('keydown', function (e) {
 
 /** 表格工具栏 + 搜索行（data-act 事件委托，无内联 onclick） */
 let _tableHeaderCache = '';
+let accountToolsOpen = false;
+// toggle does not bubble; capture preserves drawer state across table refreshes.
+document.addEventListener('toggle', function (event) {
+    if (event.target.matches && event.target.matches('.account-tools-drawer')) {
+        if (event.target.isConnected) accountToolsOpen = event.target.open;
+    }
+}, true);
 function _getTableHeader() {
     if (!_tableHeaderCache) {
         _tableHeaderCache =
-            '<tr><td colspan="7" class="p-1"><div class="flex gap-1 mb-1">' +
-            '<button data-act="selectAllAccounts" class="text-xs bg-gray-100 px-2 py-0.5 rounded">全选</button>' +
-            '<button data-act="deselectAllAccounts" class="text-xs bg-gray-100 px-2 py-0.5 rounded">取消</button>' +
-            '<button data-act="batchDeleteAccounts" id="btn_batch_del" class="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded">批量删除</button>' +
-            '<button data-act="verifyAllCredentials" class="text-xs bg-teal-100 text-teal-700 px-2 py-0.5 rounded font-bold" title="批量验证所有账号 API Key 是否有效">🔑 验证凭据</button>' +
-            '<button data-act="exportAccounts" class="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded ml-auto">导出</button>' +
-            '<button data-act="importAccounts" class="text-xs bg-green-100 text-green-600 px-2 py-0.5 rounded">导入</button>' +
-            '<button data-act="backupAll" class="text-xs bg-purple-100 text-purple-600 px-2 py-0.5 rounded">备份</button>' +
-            '<button data-act="restoreBackup" class="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded">恢复</button>' +
-            '<span id="batch_count" class="text-[10px] text-gray-400 ml-1"></span></div></td></tr>' +
-            '<tr><td colspan="7" class="p-1"><div class="flex gap-1 items-center">' +
-            '<input id="account_search" placeholder="🔍 搜索账号/别名/邮箱/域名..." class="flex-1 text-xs border rounded px-2 py-1">' +
+            '<tr><td colspan="7" class="p-1"><details class="account-tools-drawer">' +
+            '<summary class="account-tools-toggle"><span data-ui-icon="list">📝</span><span>账号工具</span><span class="account-tools-hint">批量 · 迁移 · 备份</span><span class="account-tools-chevron" data-ui-icon="chevron-down">▼</span></summary>' +
+            '<div class="account-toolbar account-tools-content">' +
+            '<section class="account-tool-group"><div class="account-tool-heading"><strong>批量操作</strong><span id="batch_count" class="account-tool-count"></span></div>' +
+            '<p class="account-tool-description">管理账号选择，或验证全部账号凭据。</p>' +
+            '<div class="account-tool-actions"><div class="account-selection-actions">' +
+            '<button data-act="selectAllAccounts" class="account-tool-button">全选</button>' +
+            '<button data-act="deselectAllAccounts" class="account-tool-button">取消选择</button></div>' +
+            '<button data-act="verifyAllCredentials" class="account-tool-button" title="验证全部账号的 API Key 或 API Token">🔑 验证凭据</button>' +
+            '<button data-act="batchDeleteAccounts" id="btn_batch_del" class="account-tool-button account-tool-danger"><span data-ui-icon="trash-2">🗑️</span> 删除所选</button></div></section>' +
+            '<div class="account-data-groups"><section class="account-tool-group"><div class="account-tool-heading"><strong>账号迁移</strong><span class="account-tool-tag">仅账号</span></div>' +
+            '<p class="account-tool-description">导入时新增或合并账号，不恢复其他配置。</p>' +
+            '<div class="account-tool-actions"><button data-act="exportAccounts" class="account-tool-button">📤 导出账号</button>' +
+            '<button data-act="importAccounts" class="account-tool-button">📥 导入账号</button></div></section>' +
+            '<section class="account-tool-group"><div class="account-tool-heading"><strong>中控备份</strong><span class="account-tool-tag">完整配置</span></div>' +
+            '<p class="account-tool-description">备份账号及中控配置；恢复会覆盖对应配置。</p>' +
+            '<div class="account-tool-actions"><button data-act="backupAll" class="account-tool-button">💾 下载备份</button>' +
+            '<button data-act="restoreBackup" class="account-tool-button account-tool-caution" title="恢复前需确认，备份中的配置会覆盖现有对应项">📥 恢复备份</button></div></section></div>' +
+            '<p class="account-tools-note"><span data-ui-icon="lock">🔒</span> 账号凭据为加密数据，迁移时需使用相同的加密密钥。</p>' +
+            '</div></details></td></tr>' +
+            '<tr><td colspan="7" class="p-1"><div class="account-search-row flex gap-1 items-center">' +
+            '<input id="account_search" data-input-icon="search" placeholder="搜索账号/别名/邮箱/域名..." class="flex-1 text-xs border rounded px-2 py-1">' +
             '<button data-act="clearSearch" class="text-xs text-gray-400 hover:text-red-500 px-1" title="清除搜索 (Esc)">✕</button>' +
             '<button data-act="doSearch" class="text-xs bg-blue-500 text-white px-2 py-0.5 rounded" title="搜索 (Enter)">搜索</button>' +
             '<span id="search_count" class="text-[10px] text-gray-400"></span></div></td></tr>';
     }
-    return _tableHeaderCache;
+    return accountToolsOpen
+        ? _tableHeaderCache.replace('class="account-tools-drawer"', 'class="account-tools-drawer" open')
+        : _tableHeaderCache;
 }
 
 /** 计算用量占比（防御 stats 缺失 / max 为 0） */
@@ -109,14 +128,18 @@ function renderTable() {
             const warn = document.createElement('span');
             warn.className = 'text-red-500 ml-1 cursor-help';
             warn.title = '未配置凭据（Global API Key 或 API Token），或解密失败，请编辑账号重新填写';
-            warn.textContent = '🔑';
+            setUiIconText(warn, '⚠️', '');
+            warn.setAttribute('role', 'img');
+            warn.setAttribute('aria-label', warn.title);
             tdAlias.appendChild(warn);
         } else {
             // 标出该账号实际使用的凭据类型，便于排查「改了密码/令牌后失效」
             const mode = document.createElement('span');
             mode.className = 'text-gray-400 ml-1 text-[10px] cursor-help';
             mode.title = (a.apiToken && a.authMode !== 'key') ? '使用 API Token 认证' : '使用 Global API Key 认证';
-            mode.textContent = (a.apiToken && a.authMode !== 'key') ? '🎫' : '🔐';
+            setUiIconText(mode, (a.apiToken && a.authMode !== 'key') ? '🔑' : '🔐', '');
+            mode.setAttribute('role', 'img');
+            mode.setAttribute('aria-label', mode.title);
             tdAlias.appendChild(mode);
         }
         tr.appendChild(tdAlias);
@@ -145,15 +168,15 @@ function renderTable() {
         if (a.stats && a.stats.error) {
             const s = document.createElement('span');
             s.className = 'text-red-500 cursor-help'; s.title = a.stats.error;
-            s.textContent = '⚠️ 0'; tdStats.appendChild(s);
+            setUiIconText(s, '⚠️', ' 0'); tdStats.appendChild(s);
         } else {
             tdStats.textContent = (a.stats && a.stats.total) || 0;
         }
         tr.appendChild(tdStats);
 
         // 占比条
-        const tdBar = document.createElement('td');
-        const barWrap = document.createElement('div'); barWrap.className = 'flex items-center gap-2';
+        const tdBar = document.createElement('td'); tdBar.className = 'account-ratio-cell';
+        const barWrap = document.createElement('div'); barWrap.className = 'account-ratio-content';
         const barBg = document.createElement('div'); barBg.className = 'w-12 bg-gray-200 rounded-full h-1.5 overflow-hidden';
         const barFill = document.createElement('div');
         barFill.className = barColor + ' h-1.5';
@@ -164,24 +187,26 @@ function renderTable() {
         tdBar.appendChild(barWrap); tr.appendChild(tdBar);
 
         // 操作按钮
-        const tdBtn = document.createElement('td'); tdBtn.className = 'text-right';
+        const tdBtn = document.createElement('td'); tdBtn.className = 'account-actions-cell';
+        const actions = document.createElement('div'); actions.className = 'account-actions-content';
+        tdBtn.appendChild(actions);
         const btnMgr = document.createElement('button');
         btnMgr.className = 'text-purple-600 mr-2 text-xs font-bold hover:bg-purple-50 px-1 rounded';
         btnMgr.textContent = '📂 管理';
         btnMgr.addEventListener('click', () => openAccountManage(originalIndex));
-        tdBtn.appendChild(btnMgr);
+        actions.appendChild(btnMgr);
 
         const btnEdit = document.createElement('button');
         btnEdit.className = 'text-blue-500 mr-2 text-xs'; btnEdit.textContent = '✎';
         btnEdit.title = '编辑';
         btnEdit.addEventListener('click', () => editAccount(originalIndex));
-        tdBtn.appendChild(btnEdit);
+        actions.appendChild(btnEdit);
 
         const btnDel = document.createElement('button');
         btnDel.className = 'text-red-500 text-xs'; btnDel.textContent = '×';
         btnDel.title = '删除';
         btnDel.addEventListener('click', () => delAccount(originalIndex));
-        tdBtn.appendChild(btnDel);
+        actions.appendChild(btnDel);
 
         tr.appendChild(tdBtn);
         fragment.appendChild(tr);
@@ -268,7 +293,7 @@ async function saveAccount() {
     }
 
     const btn = $('btn_save_acc');
-    const origText = btn ? btn.innerText : '';
+    const origText = btn ? btn.textContent : '';
     if (btn) { btn.disabled = true; btn.innerText = '⏳ 保存中...'; }
     try {
         await apiFetch('/api/accounts', { method: 'POST', body: JSON.stringify(state.accounts) });
@@ -415,7 +440,7 @@ async function loadStats() {
             Swal.fire({
                 title: '用量查询异常',
                 html: '<div class="text-left text-xs max-h-60 overflow-y-auto">' +
-                    errs.map(e => '<p class="text-red-600 mb-1">⚠️ ' + e + '</p>').join('') + '</div>',
+                    errs.map(e => '<p class="text-red-600 mb-1"><span data-ui-icon="triangle-alert">⚠️</span> ' + e + '</p>').join('') + '</div>',
                 icon: 'warning', confirmButtonColor: '#4f46e5'
             });
         }
@@ -434,7 +459,7 @@ async function fetchZonesForAccount() {
     // 读取使用服务端 KV 中存储的凭据，表单里的 email/token/key 均不参与，故只校验 Account ID
     if (!ACCOUNT_ID_RE.test(id)) return Swal.fire('提示', '请先填写合法的 Account ID（32 位十六进制）', 'warning');
     if (state.editingIndex < 0) {
-        return Swal.fire('提示', '新账号请先「💾 保存账号」，之后再读取域名列表（读取使用服务端存储的凭据）', 'info');
+        return Swal.fire('提示', '新账号请先「保存账号」，之后再读取域名列表（读取使用服务端存储的凭据）', 'info');
     }
 
     select.innerHTML = '<option>Loading...</option>';
@@ -484,7 +509,7 @@ async function verifyAllCredentials() {
         if (!Array.isArray(results)) throw new Error('返回格式异常');
         const ok = results.filter((x) => x.ok).length;
         const fail = results.filter((x) => !x.ok).length;
-        let html = '✅ ' + ok + ' / ❌ ' + fail + '<br><div class="text-left text-xs max-h-40 overflow-y-auto mt-2">';
+        let html = '<span data-ui-icon="circle-check">✅</span> ' + ok + ' / <span data-ui-icon="x">❌</span> ' + fail + '<br><div class="text-left text-xs max-h-40 overflow-y-auto mt-2">';
         results.forEach((x) => {
             if (!x.ok) html += '<p class="text-red-500">' + safeHtml(x.alias) + ': ' + safeHtml(x.error || ('HTTP ' + x.status)) + '</p>';
         });
