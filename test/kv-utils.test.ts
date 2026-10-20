@@ -322,7 +322,7 @@ describe('路由注册表', () => {
 
     it('路由键格式统一为 "METHOD /path"', () => {
         for (const key of listRoutes()) {
-            expect(key).toMatch(/^(GET|POST|PUT|DELETE|PATCH) \/[a-z0-9_\/]+$/i);
+            expect(key.replace(/\/:id(?=\/|$)/g,'/task')).toMatch(/^(GET|POST|PUT|DELETE|PATCH) \/[a-z0-9_\/]+$/i);
         }
     });
 

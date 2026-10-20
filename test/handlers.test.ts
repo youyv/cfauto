@@ -46,6 +46,27 @@ describe('handleBatchDeploy', () => {
         enableKV: true
     };
 
+
+    it.each(['business', 'network'])('域名后续步骤失败 %s 不丢失已上传 Worker', async mode => {
+        const env = mockEnv(mockKV());
+        await writeAccounts(env, [acct({ defaultZoneId: 'zone', defaultZoneName: 'example.com' })]);
+        const stub = stubFetch([
+            ...githubRoutes(),
+            { match: '/workers/domains', respond: () => { if (mode === 'network') throw new Error('connection lost'); return cfErr(200, 'rejected'); } },
+            { match: '/subdomain', respond: () => cfErr(200, 'rejected') },
+            scriptEndpoint(STUB_CODE)
+        ]);
+        try {
+            const logs: any = await (await handleBatchDeploy(env, { ...base, enableKV: false, customDomainPrefix: 'api', disableWorkersDev: true })).json();
+            expect(logs[0].success).toBe(true);
+            expect(logs[0].msg).toContain('域名绑定未确认');
+            expect(logs[0].msg).toContain('禁用未确认');
+            expect(logs[0].msg).not.toContain('默认域名已禁用');
+            expect(getWorkerNames((await readAccounts(env))[0], 'cmliu')).toContain('new-proxy');
+            expect(stub.calls.some(c => c.method === 'POST' && c.url.includes('/subdomain'))).toBe(true);
+        } finally { stub.restore(); }
+    });
+
     it('缺必填字段 → 400', async () => {
         const res = await handleBatchDeploy(mockEnv(mockKV()), { template: 'cmliu' } as any);
         expect(res.status).toBe(400);
@@ -381,11 +402,12 @@ describe('zones handlers', () => {
     it('handleChangeSubdomain 新值失败后恢复旧子域名', async () => {
         const { env } = await withAccount();
         const putBodies: string[] = [];
+        let deleted = false;
         const stub = stubFetch([{
             match: '/workers/subdomain',
             respond: (c) => {
-                if (c.method === 'GET') return cfOk({ subdomain: 'oldsub' });
-                if (c.method === 'DELETE') return cfOk(null);
+                if (c.method === 'GET') return cfOk({ subdomain: deleted ? '' : 'oldsub' });
+                if (c.method === 'DELETE') { deleted = true; return cfOk(null); }
                 putBodies.push(c.body || '');
                 if ((c.body || '').includes('oldsub')) return cfOk({ subdomain: 'oldsub' });
                 return cfErr(400, 'account already has a subdomain');
@@ -520,6 +542,83 @@ describe('yxip handlers', () => {
 // fix1101
 // ============================================================
 describe('handleFix1101', () => {
+    it('缺凭据目标仍计入失败，其他目标成功不能推进全局版本', async () => {
+        const kv = mockKV(); const env = mockEnv(kv);
+        await writeAccounts(env, [acct({ workers_cmliu: ['w1'] }), { alias: 'missing', accountId: 'b'.repeat(32), workers_cmliu: ['w2'] }]);
+        await kv.put(KV_KEYS.deployConfig('cmliu'), JSON.stringify({ mode: 'latest', currentSha: 'old-sha' }));
+        const stub = stubFetch([
+            ...githubRoutes(),
+            { match: '/bindings', respond: () => cfOk([]) },
+            { match: '/workers/domains', respond: () => cfOk([]) },
+            { match: '/workers/subdomain', respond: () => cfOk({ subdomain: 'old' }) },
+            { match: '/workers/scripts/w1', respond: c => c.method === 'GET' ? cfScript(STUB_CODE) : cfOk({}) }
+        ]);
+        try {
+            const logs: any = await (await handleFix1101(env, 'cmliu')).json();
+            expect(logs.find((l: any) => l.targetKey === 'b'.repeat(32) + '::w2').success).toBe(false);
+            const config = readKV<DeployConfig>(kv, KV_KEYS.deployConfig('cmliu'))!;
+            expect(config.currentSha).toBe('old-sha');
+            expect(config.pendingTargets).toContain('b'.repeat(32) + '::w2');
+        } finally { stub.restore(); }
+    });
+
+    it('修复成功但账本写入失败 → 保留远端结果与明确警告', async () => {
+        const kv = mockKV(); const env = mockEnv(kv);
+        await writeAccounts(env, [acct({ workers_cmliu: ['w1'] })]);
+        const put = kv.put.bind(kv);
+        kv.put = async (key, value, opts) => { if (key === KV_KEYS.deployConfig('cmliu')) throw new Error('KV unavailable'); return put(key, value, opts); };
+        const stub = stubFetch([
+            ...githubRoutes(),
+            { match: '/bindings', respond: () => cfOk([]) },
+            { match: '/workers/domains', respond: () => cfOk([]) },
+            { match: '/workers/subdomain', respond: () => cfOk({ subdomain: 'old' }) },
+            { match: '/workers/scripts/w1', respond: c => c.method === 'GET' ? cfScript(STUB_CODE) : cfOk({}) }
+        ]);
+        try {
+            const response = await handleFix1101(env, 'cmliu');
+            expect(response.status).toBe(200);
+            const logs: any = await response.json();
+            expect(logs[0].success).toBe(true);
+            expect(logs.at(-1).success).toBe(false);
+            expect(logs.at(-1).msg).toContain('版本账本写入失败');
+        } finally { stub.restore(); }
+    });
+
+    it.each([500, 200])('域名读取失败或结构无效 (%s) → 不执行删除', async (status) => {
+        const kv = mockKV();
+        const env = mockEnv(kv);
+        await writeAccounts(env, [acct({ workers_cmliu: ['w1'] })]);
+        const stub = stubFetch([
+            ...githubRoutes(),
+            { match: '/bindings', respond: () => cfOk([]) },
+            { match: '/workers/domains', respond: () => status === 500 ? htmlErr(500) : cfOk(null) }
+        ]);
+        try {
+            const logs: any = await (await handleFix1101(env, 'cmliu')).json();
+            expect(logs[0].success).toBe(false);
+            expect(logs[0].msg).toContain('未执行删除');
+            expect(stub.calls.some(c => c.method === 'DELETE' || c.method === 'PUT')).toBe(false);
+        } finally { stub.restore(); }
+    });
+
+    it('删除响应丢失 → 报告未知状态且不盲目重建', async () => {
+        const kv = mockKV();
+        const env = mockEnv(kv);
+        await writeAccounts(env, [acct({ workers_cmliu: ['w1'] })]);
+        const stub = stubFetch([
+            ...githubRoutes(),
+            { match: '/bindings', respond: () => cfOk([]) },
+            { match: '/workers/domains', respond: () => cfOk([]) },
+            { match: '/workers/scripts/w1', respond: () => { throw new Error('connection lost'); } }
+        ]);
+        try {
+            const logs: any = await (await handleFix1101(env, 'cmliu')).json();
+            expect(logs[0].success).toBe(false);
+            expect(logs[0].msg).toContain('最终状态需到 Dashboard 核对');
+            expect(stub.calls.some(c => c.method === 'PUT')).toBe(false);
+        } finally { stub.restore(); }
+    });
+
     it('bindings 读取失败 → 不删除 Worker（保护既有绑定）', async () => {
         const kv = mockKV();
         const env = mockEnv(kv);
@@ -587,7 +686,7 @@ describe('handleFix1101', () => {
         } finally { stub.restore(); }
     }, 20000);
 
-    it('secret 绑定无 KV 值 → 跳过并警告需手动重配', async () => {
+    it('secret 绑定无 KV 值 → 删除前中止并保留原 Worker', async () => {
         const kv = mockKV();
         const env = mockEnv(kv);
         await writeAccounts(env, [acct({ workers_cmliu: ['w1'] })]);
@@ -601,6 +700,8 @@ describe('handleFix1101', () => {
         try {
             const logs: any = await (await handleFix1101(env, 'cmliu')).json();
             expect(logs[0].msg).toContain('secret 绑定无法从 API 恢复');
+            expect(logs[0].success).toBe(false);
+            expect(stub.calls.some(c => c.method === 'DELETE' || c.method === 'PUT')).toBe(false);
         } finally { stub.restore(); }
     }, 20000);
 });

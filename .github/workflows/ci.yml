@@ -10,11 +10,16 @@ on:
     branches: ['**']
   pull_request:
   workflow_dispatch:
+    inputs:
+      browser_regression:
+        description: 'Run optional mock browser regressions (not production acceptance)'
+        type: boolean
+        default: false
 
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
 
     steps:
       - uses: actions/checkout@v5
@@ -34,22 +39,30 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
 
-      - name: Build (生成 frontend-bundle.ts + dist/worker.js)
-        run: pnpm run build
+      - name: Local code gates (one build/type/verify/test pipeline)
+        run: pnpm check
 
-      - name: Typecheck (tsc --noEmit，0 容忍)
-        run: pnpm run typecheck
+      - name: Install Chromium for browser regressions
+        run: pnpm exec playwright install --with-deps chromium --only-shell
 
-      - name: Verify (源码结构 / 路由 / CSP / 反模式扫描)
-        run: pnpm run test:verify
+      - name: Browser regressions (mock API only)
+        run: pnpm run test:e2e
 
-      - name: Unit & integration tests
-        run: pnpm test
+      - name: Install cross-engine test browsers
+        run: pnpm exec playwright install --with-deps firefox webkit
 
-      - name: 检查构建产物存在且非空
-        run: |
-          test -s dist/worker.js
-          echo "dist/worker.js: $(wc -c < dist/worker.js) bytes"
+      - name: Cross-engine critical interactions (mock API only)
+        run: pnpm exec playwright test -c playwright.cross-browser.config.cjs
+
+      - name: Preserve browser failure evidence
+        if: failure() && github.event_name == 'workflow_dispatch' && inputs.browser_regression
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-failure-evidence
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
 
       - name: 确认仓库未被构建过程改动
         run: |
@@ -61,3 +74,21 @@ jobs:
             git diff --stat
             exit 1
           fi
+
+      - name: Preserve verified build (not a deployment)
+        uses: actions/upload-artifact@v4
+        with:
+          name: verified-worker-${{ github.sha }}
+          path: |
+            dist/worker.js
+            dist/build-manifest.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: 构建身份摘要（不代表已部署）
+        run: |
+          echo '### 已校验构建，未执行部署' >> "$GITHUB_STEP_SUMMARY"
+          echo '实际 checkout 提交以清单为准；PR 可能为合并测试提交。' >> "$GITHUB_STEP_SUMMARY"
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          cat dist/build-manifest.json >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"

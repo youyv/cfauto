@@ -1,5 +1,6 @@
 // ===== 星空主题引擎 (Premium) =====
 
+const reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
 let starAnimId = null;
 let nebulaPhase = 0;
 /** 已初始化标记：initStarfield 会被 toggleTheme / visibilitychange / 系统主题变化多次调用，
@@ -42,6 +43,7 @@ function buildStarScene() {
 
 function initStarfield() {
     try {
+        if (reducedMotionQuery.matches || document.hidden) { stopStarfield(); return; }
         if (starAnimId !== null) return;              // 已在运行
         if (!starScene) starScene = buildStarScene();
         if (!starScene) return;
@@ -124,7 +126,7 @@ function initStarfield() {
 }
 
 function stopStarfield() {
-    if (starAnimId) { cancelAnimationFrame(starAnimId); starAnimId = null; }
+    if (starAnimId !== null) { cancelAnimationFrame(starAnimId); starAnimId = null; }
 }
 
 /** 应用暗色/亮色外观（不含 localStorage 写入） */
@@ -134,12 +136,12 @@ function setDarkMode(dark) {
     if (dark) {
         html.setAttribute('data-theme', 'dark');
         document.body.style.setProperty('background', '#040914', 'important');
-        if (btn) btn.innerText = '🌙';
+        if (btn) setUiContent(btn, 'moon', '', { label: '切换主题' });
         initStarfield();
     } else {
         html.removeAttribute('data-theme');
         document.body.style.removeProperty('background');
-        if (btn) btn.innerText = '☀️';
+        if (btn) setUiContent(btn, 'sun', '', { label: '切换主题' });
         stopStarfield();
     }
 }
@@ -149,7 +151,7 @@ function toggleTheme() {
     const btn = document.getElementById('theme_btn');
     setDarkMode(!isDark);
     localStorage.setItem('worker_theme', isDark ? 'light' : 'dark');
-    if (btn) {
+    if (btn && !reducedMotionQuery.matches) {
         btn.style.transform = isDark ? 'rotate(-180deg)' : 'rotate(180deg)';
         setTimeout(() => { btn.style.transform = ''; }, 400);
     }
@@ -167,6 +169,17 @@ document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
         stopStarfield();
     } else if (document.documentElement.getAttribute('data-theme') === 'dark') {
+        initStarfield();
+    }
+});
+
+// 系统减少动画偏好可在页面运行中改变；仅恢复可见暗色页。
+reducedMotionQuery.addEventListener('change', () => {
+    if (reducedMotionQuery.matches) {
+        stopStarfield();
+        const btn = document.getElementById('theme_btn');
+        if (btn) btn.style.transform = '';
+    } else if (!document.hidden && document.documentElement.getAttribute('data-theme') === 'dark') {
         initStarfield();
     }
 });

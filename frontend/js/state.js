@@ -20,6 +20,7 @@ const state = {
     deletedVars: {},
     deployConfigs: {},
     currentHistoryType: null,
+    savedAutoConfig: null,
     favData: []
 };
 
@@ -33,6 +34,8 @@ async function init() {
     // 🚀 单次 /api/init_data 替代多轮 fetch：accounts + vars + autoConfig + deployConfigs
     try {
         const d = await apiFetch('/api/init_data');
+        if (d.reliability && d.reliability.protocol === 1) Object.keys(d.reliability.revisions).forEach(domain => acceptConfigView(domain, d));
+        applyTemplateSettings(d.templateSettings || {});
 
         // 恢复 accounts（防御：后端异常时可能非数组）
         state.accounts = Array.isArray(d.accounts) ? d.accounts : [];
@@ -41,7 +44,7 @@ async function init() {
         // 恢复 deployConfigs
         state.deployConfigs = d.deployConfigs || {};
 
-        applyAutoConfigToUi(d.autoConfig || {});
+        applyAutoConfigToUi({ ...(d.autoConfig || {}), ...((d.runtime && d.runtime.value) || {}) });
 
         // 恢复 vars + defaultVars 补充缺失变量 + 重置已删除追踪
         Object.keys(TEMPLATES).forEach(t => {
@@ -83,13 +86,37 @@ async function init() {
 }
 
 function switchProjectTab(tab) {
-    document.querySelectorAll('[data-tab-panel]').forEach(function (p) {
-        p.classList.toggle('hidden', p.getAttribute('data-tab-panel') !== tab);
+    const panels = Array.from(document.querySelectorAll('[data-tab-panel]'));
+    const buttons = Array.from(document.querySelectorAll('[data-tab-btn]'));
+    // Invalid actions must not hide every project or discard the active selection.
+    if (!panels.some(p => p.dataset.tabPanel === tab) || !buttons.some(b => b.dataset.tabBtn === tab)) return;
+    panels.forEach(p => {
+        const selected = p.dataset.tabPanel === tab;
+        p.classList.toggle('hidden', !selected);
+        p.hidden = !selected;
     });
-    document.querySelectorAll('[data-tab-btn]').forEach(function (b) {
-        b.classList.toggle('tab-active', b.getAttribute('data-tab-btn') === tab);
+    buttons.forEach(b => {
+        const selected = b.dataset.tabBtn === tab;
+        b.classList.toggle('tab-active', selected);
+        b.setAttribute('aria-selected', String(selected));
+        b.tabIndex = selected ? 0 : -1;
     });
 }
+// These panels are already in the DOM: automatic activation needs no network read.
+document.addEventListener('keydown', e => {
+    if (e.isComposing || e.altKey || e.ctrlKey || e.metaKey) return;
+    const button = e.target.closest && e.target.closest('[role="tab"][data-tab-btn]');
+    const list = button && button.closest('[role="tablist"]');
+    if (!list || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+    const buttons = Array.from(list.querySelectorAll('[data-tab-btn]')).filter(b => !b.disabled);
+    const index = buttons.indexOf(button);
+    if (index < 0) return;
+    const next = e.key === 'Home' ? 0 : e.key === 'End' ? buttons.length - 1
+        : (index + (e.key === 'ArrowRight' ? 1 : -1) + buttons.length) % buttons.length;
+    e.preventDefault();
+    switchProjectTab(buttons[next].dataset.tabBtn);
+    buttons[next].focus();
+});
 
 /** 渲染每个模板卡片的仓库直链 / 访问路径 / 兼容日期（元数据来自服务端注入的 TEMPLATES） */
 function renderTemplateHints() {
@@ -113,6 +140,57 @@ function applyProjectTabs() {
     if (first) switchProjectTab(first);
 }
 
+/** 兼容日期是可按模板编辑的权威配置（template:<type>），默认值来自服务端注入的 TEMPLATES。 */
+function syncCompatibilityInputs() {
+    Object.keys(TEMPLATES).forEach(t => {
+        const input = $('compat_' + t);
+        if (input) input.value = TEMPLATES[t].compatibilityDate || '';
+    });
+}
+function applyTemplateSettings(settings) {
+    if (!settings || typeof settings !== 'object') return;
+    Object.keys(TEMPLATES).forEach(t => {
+        const entry = settings[t];
+        const date = entry && typeof entry === 'object' ? entry.compatibilityDate : undefined;
+        if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) TEMPLATES[t].compatibilityDate = date;
+    });
+    syncCompatibilityInputs();
+    renderTemplateHints();
+}
+async function saveCompatibilityDate(t) {
+    const input = $('compat_' + t), status = $('compat_' + t + '_status');
+    if (!input || !Object.hasOwn(TEMPLATES, t)) return;
+    const value = String(input.value || '').trim();
+    const today = new Date().toISOString().slice(0, 10);
+    const fail = message => {
+        if (status) status.textContent = message;
+        if (typeof Swal !== 'undefined') Swal.fire('保存失败', message, 'error');
+    };
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return fail('请选择合法日期（YYYY-MM-DD）');
+    if (value < '2021-11-01' || value > today) return fail('兼容日期必须在 2021-11-01 与今天之间');
+    if (!configProtocol || !configProtocol.isEnabled()) return fail('当前部署模式不支持在线修改兼容日期（仅 authority 模式）');
+    const baseline = configProtocol.baseline('template:' + t);
+    if (!baseline) return fail('缺少该仓库的权威修订；请刷新页面后重试');
+    if (status) status.textContent = '保存中…';
+    try {
+        const data = await apiFetch('/api/reliability/config', {
+            method: 'POST',
+            body: JSON.stringify({
+                key: crypto.randomUUID(), generation: baseline.generation, epoch: baseline.epoch, revision: baseline.revision,
+                selector: { kind: 'template', template: t }, value: { compatibilityDate: value }
+            })
+        });
+        if (!data || data.domain !== 'template:' + t || typeof data.revision !== 'number') throw new Error('保存回执不完整；请重新读取后再试');
+        TEMPLATES[t].compatibilityDate = value;
+        renderTemplateHints();
+        if (status) status.textContent = '已保存 ' + value;
+        if (typeof wbLog === 'function') wbLog('🕒 ' + t + ' 兼容日期已保存为 ' + value + '（部署/更新/1101 修复按计划冻结）', 'text-green-400');
+        if (typeof Swal !== 'undefined') Swal.fire({ icon: 'success', title: '兼容日期已保存', text: t + ' → ' + value, timer: 1400, showConfirmButton: false });
+    } catch (e) {
+        if (status) status.textContent = '保存失败';
+        if (typeof Swal !== 'undefined') Swal.fire('保存失败', e.message, 'error');
+    }
+}
 /** 把自动更新配置回填到 Header 控件（init 与 loadGlobalConfig 共用） */
 function applyAutoConfigToUi(ac) {
     const master = $('auto_update_toggle');
@@ -128,4 +206,11 @@ function applyAutoConfigToUi(ac) {
         const flag = 'auto' + t.charAt(0).toUpperCase() + t.slice(1);
         el.checked = !!ac.enabled && ac[flag] !== false;
     });
+    state.savedAutoConfig = { ...ac };
+    renderAutomationSummary(state.savedAutoConfig);
+    configDrafts.accept('auto');
 }
+
+registerActions({
+    saveCompatibilityDate: saveCompatibilityDate
+});

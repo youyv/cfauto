@@ -1,10 +1,12 @@
+import { executionNow, frozenSource } from '../reliability/execution-context';
 /**
  * GitHub 交互 — 拉取代码、解析 SHA、模板特有转换
  */
 
 import { TEMPLATES, KV_KEYS } from '../config/templates';
 import { fetchWithTimeout } from './cloudflare-api';
-import { readUpstream } from './upstream';
+import type { ErrorCode } from './cloudflare-api';
+import { readUpstream, normalizeUpstream } from './upstream';
 import { logger } from './logger';
 import type { TemplateType } from '../config/templates';
 import type { GithubCommit } from './types';
@@ -119,7 +121,7 @@ export async function resolveGithubTarget(env: AppEnv, type: TemplateType): Prom
                 if (matched) path = matched;
             }
         }
-        await env.CONFIG_KV.put(cacheKey, JSON.stringify({ branch, path }), { expirationTtl: GH_INFO_CACHE_TTL_SECONDS });
+        if (!env.reliabilityReadOnly) await env.CONFIG_KV.put(cacheKey, JSON.stringify({ branch, path }), { expirationTtl: GH_INFO_CACHE_TTL_SECONDS });
         if (path !== t.ghPath || branch !== t.ghBranch) {
             logger.audit('github target resolved', { type, branch, path, configured: { branch: t.ghBranch, path: t.ghPath } });
         }
@@ -136,7 +138,7 @@ export async function resolveGithubTarget(env: AppEnv, type: TemplateType): Prom
  * 但也意味着改名后可能用到过期路径，这里给一次主动失效的机会。
  */
 export async function invalidateGithubTarget(env: AppEnv, type: TemplateType): Promise<void> {
-    if (!env || !env.CONFIG_KV) return;
+    if (!env || !env.CONFIG_KV || env.reliabilityReadOnly) return;
     try {
         await env.CONFIG_KV.delete(KV_KEYS.ghInfoCache(type));
         logger.audit('github target cache invalidated', { type });
@@ -159,19 +161,21 @@ export function getGithubUrls(type: TemplateType, sha: string | null = null, ove
 
 /** 从 GitHub 拉取代码 + 解析最新 SHA */
 export async function fetchGithubCode(type: TemplateType, targetSha: string | null, env: AppEnv) {
+    const frozen = frozenSource(type, targetSha);
+    if (frozen) return frozen;
     const isLatest = !targetSha || targetSha === 'latest';
     // 动态解析当前默认分支与脚本路径（带缓存与回落），避免上游改名后拉到 404 页面
     let target = await resolveGithubTarget(env, type);
     const urlFor = (tg: GithubTarget) => getGithubUrls(type, isLatest ? null : targetSha, tg).scriptUrl;
 
-    let codeRes = await fetchWithTimeout(urlFor(target) + `?t=${Date.now()}`);
+    let codeRes = await fetchWithTimeout(urlFor(target) + `?t=${executionNow()}`);
     // 缓存里的路径可能已过期（上游改名）：丢掉缓存重探一次再试一回。
     // 只对 404 触发、且只重试一次，避免把额外的 GitHub 调用变成常态。
     if (codeRes.status === 404) {
         logger.warn('fetchGithubCode: 404，丢弃探测缓存后重探', { type, path: target.path });
         await invalidateGithubTarget(env, type);
         target = await resolveGithubTarget(env, type);
-        codeRes = await fetchWithTimeout(urlFor(target) + `?t=${Date.now()}`);
+        codeRes = await fetchWithTimeout(urlFor(target) + `?t=${executionNow()}`);
     }
     if (!codeRes.ok) throw new Error(`代码下载失败: ${codeRes.status}`);
     const code = await codeRes.text();
@@ -202,7 +206,7 @@ export async function fetchGithubCommits(
     params.set('per_page', String(opts.perPage || 10));
     params.set('path', rawPath);
     if (opts.since) params.set('since', opts.since);
-    if (opts.cacheBust) params.set('t', String(Date.now()));
+    if (opts.cacheBust) params.set('t', String(executionNow()));
 
     const res = await fetchWithTimeout(`${apiUrl}?${params.toString()}`, { headers });
     if (!res.ok) throw new Error('GitHub API Error: ' + res.status);
@@ -251,4 +255,43 @@ export function applyTemplateTransform(
     }
     
     return result;
+}
+
+/** Read-only draft validation: never reads/writes deployment selection or discovery caches. */
+export class UpstreamValidationError extends Error {
+    constructor(message: string, public status: number, public code: ErrorCode) { super(message); }
+}
+export async function validateGithubDraft(env: AppEnv, type: TemplateType, input: unknown) {
+    let selected;
+    try { selected = normalizeUpstream(input); }
+    catch (e) { throw new UpstreamValidationError((e as Error).message, 400, 'VALIDATION_ERROR'); }
+    if (!selected.path) throw new UpstreamValidationError('验证草稿时请输入文件路径和分支；恢复默认请使用单独操作', 400, 'VALIDATION_ERROR');
+    const t = TEMPLATES[type];
+    const base = getGithubUrls(type, null, selected).repoApiBase;
+    const headers: Record<string, string> = { 'User-Agent': 'Cloudflare-Worker-Manager', Accept: 'application/vnd.github+json' };
+    if (env.GITHUB_TOKEN) headers.Authorization = 'token ' + env.GITHUB_TOKEN;
+    const request = async (url: string, stage: 'REF' | 'FILE') => {
+        let res: Response;
+        try { res = await fetchWithTimeout(url, { headers, redirect: 'error' }, 10000); }
+        catch (e) {
+            const timeout = (e as Error).name === 'AbortError';
+            throw new UpstreamValidationError(timeout ? 'GitHub 请求超时，请稍后重试' : 'GitHub 网络请求失败，请稍后重试', timeout ? 504 : 502, timeout ? 'UPSTREAM_TIMEOUT' : 'UPSTREAM_NETWORK');
+        }
+        if (!res.ok) {
+            if (res.status === 404) throw new UpstreamValidationError(stage === 'REF' ? '分支或标签不存在（或仓库不可访问）' : '该引用下文件不存在', 404, stage === 'REF' ? 'UPSTREAM_REF_NOT_FOUND' : 'UPSTREAM_FILE_NOT_FOUND');
+            if (res.status === 429 || (res.status === 403 && (res.headers.get('x-ratelimit-remaining') === '0' || res.headers.has('retry-after')))) throw new UpstreamValidationError('GitHub 请求限流，请稍后重试', 429, 'UPSTREAM_RATE_LIMIT');
+            if (res.status === 401 || res.status === 403) throw new UpstreamValidationError('GitHub 拒绝访问，请检查仓库权限或令牌配置', 502, 'UPSTREAM_FORBIDDEN');
+            throw new UpstreamValidationError('GitHub 服务暂不可用（HTTP ' + res.status + '）', 502, 'UPSTREAM_UNAVAILABLE');
+        }
+        // Contents metadata can include base64 source; do not return it to the browser.
+        const data = await readJsonOrNull<Record<string, unknown>>(res);
+        if (!data) throw new UpstreamValidationError('GitHub 返回无效或过大响应', 502, 'UPSTREAM_INVALID_RESPONSE');
+        return data;
+    };
+    const commit = await request(base + '/commits/' + encodeURIComponent(selected.branch), 'REF');
+    if (typeof commit.sha !== 'string' || !/^[a-f0-9]{40}$/i.test(commit.sha)) throw new UpstreamValidationError('GitHub 未返回有效提交 SHA', 502, 'UPSTREAM_INVALID_RESPONSE');
+    // Pin file lookup to the resolved commit, so a moving branch cannot mismatch the SHA.
+    const file = await request(base + '/contents/' + selected.path.split('/').map(encodeURIComponent).join('/') + '?ref=' + commit.sha, 'FILE');
+    if (file.type !== 'file' || file.submodule_git_url) throw new UpstreamValidationError('目标必须是普通文件，不能是目录、子模块或符号链接', 400, 'UPSTREAM_NOT_FILE');
+    return { success: true, repository: t.ghUser + '/' + t.ghRepo, path: selected.path, branch: selected.branch, sha: commit.sha };
 }

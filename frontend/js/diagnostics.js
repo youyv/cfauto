@@ -7,6 +7,15 @@ async function runDiagnostics() {
     try {
         const d = await apiFetch('/api/diag');
         wbLog('─── 系统诊断结果 ───', 'text-white');
+        if (d.__authority?.kind === 'durable_object') {
+            wbLog('配置权威：Durable Object；代际 '+d.__authority.generation+' / epoch '+d.__authority.epoch, 'text-green-300');
+            wbLog('配置域 '+d.__authority.domains+'；运行记录修订 '+d.__authority.runtimeRevision+'；会话KV不是业务权威。', 'text-slate-400');
+            wbLog('旧密钥、旧代际、旧KV及备份全部保留；GC仅审计，不自动删除。', 'text-slate-400');
+            wbLog('GITHUB_TOKEN：'+(d.__github_token_set?'已设置':'未设置（匿名限额）'), 'text-slate-400');
+            renderDeployDrift(d.__deploy_drift);
+            wbLog('权威诊断读取完成；元数据检查不能替代源码/绑定验收。', 'text-blue-300');
+            return;
+        }
         wbLog('KV 绑定: ' + (d.__kv_bound ? '✅ 已绑定' : '❌ 未绑定'), d.__kv_bound ? 'text-green-300' : 'text-red-400');
         wbLog('ACCESS_CODE: ' + (d.__access_code_set ? '✅ 已设置' : '❌ 未设置'), d.__access_code_set ? 'text-green-300' : 'text-red-400');
         wbLog('GITHUB_TOKEN: ' + (d.__github_token_set ? '✅ 已设置' : '⚠️ 未设置（GitHub API 限额 60/小时）'), d.__github_token_set ? 'text-green-300' : 'text-orange-400');
@@ -71,13 +80,13 @@ function renderDeployDrift(dr) {
     const drifted = dr.drifted || [];
     const missing = dr.missing || [];
     const unreadable = dr.unreadable || [];
-    const clean = drifted.length === 0 && missing.length === 0;
+    const clean = drifted.length === 0 && missing.length === 0 && unreadable.length === 0 && dr.evidence !== 'metadata_only';
     wbLog('  受管目标: ' + (dr.checked || 0) + ' 个' + (clean ? '（账本与实况一致）' : ''),
         clean ? 'text-green-300' : 'text-orange-400');
-    drifted.forEach(function (l) { wbLog('  ⚠️ 未生效: ' + l, 'text-orange-400'); });
+    drifted.forEach(function (l) { wbLog('  ⚠️ 可能存在时间戳漂移: ' + l, 'text-orange-400'); });
     missing.forEach(function (l) { wbLog('  ⚠️ 云端不存在: ' + l, 'text-orange-400'); });
     unreadable.forEach(function (u) { wbLog('  ⚠️ 无法核对: ' + u, 'text-orange-400'); });
-    if (drifted.length > 0) wbLog('    ↳ 这些 Worker 的脚本比账本记录的部署时间还旧，说明那次写入没有真正落地', 'text-slate-500');
+    if (drifted.length > 0) wbLog('    ↳ 这些 Worker 的脚本比账本记录的部署时间还旧，只能提示可能存在漂移，尚不能据此判定源码/绑定未生效', 'text-slate-500');
     if (missing.length > 0) wbLog('    ↳ 账本里还记着它们，但 Cloudflare 上已经没有这个脚本了', 'text-slate-500');
 }
 
@@ -128,13 +137,30 @@ const PROJECT_REPO = 'youyv/cfauto';
  * 报告会被粘贴到公开的 GitHub Issue，必须先把能识别个人/账号的信息抹掉：
  * 邮箱、32 位 Account ID、UUID、Bearer/令牌类长串。宁可多抹，不可泄漏。
  */
+// This is a conservative public-report filter, not a sanitizer for arbitrary source code.
+const REPORT_SENSITIVE_KEY = /(?:token|key|secret|password|authorization|cookie|code|webhook)$/i;
+function redactReportContext(value, ancestors = new Set()) {
+    if (!value || typeof value !== 'object') return value;
+    if (ancestors.has(value)) return '[Circular]';
+    ancestors.add(value);
+    const result = Array.isArray(value) ? [] : Object.create(null);
+    const secretVariable = value.secret === true || value.type === 'secret_text';
+    Object.keys(value).forEach(key => {
+        result[key] = REPORT_SENSITIVE_KEY.test(key) || (secretVariable && /^(?:value|text)$/i.test(key))
+            ? '***' : redactReportContext(value[key], ancestors);
+    });
+    ancestors.delete(value);
+    return result;
+}
 function redactForReport(s) {
     return String(s == null ? '' : s)
+        // Quoted JSON/assignment values may contain spaces, escapes and short secrets.
+        .replace(/((?:["'][\w-]*(?:token|key|secret|password|authorization|cookie|code|webhook)["']|\b[\w-]*(?:token|key|secret|password|authorization|cookie|code|webhook))\s*[=:]\s*)("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/gi, '$1"***"')
+        .replace(/(\b(?:Bearer|Basic)\s+)[A-Za-z0-9._~+\/-]+=*/gi, '$1***')
+        .replace(/(\b[\w-]*(?:token|key|secret|password|authorization|cookie|code|webhook)\s*[=:]\s*)[^\s,;"'&}]+/gi, '$1***')
         .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, '***@***')
         .replace(/\b[0-9a-fA-F]{32}\b/g, '***')
-        .replace(/\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b/g, '***')
-        .replace(/(Bearer\s+)[A-Za-z0-9._~+/-]{8,}=*/gi, '$1***')
-        .replace(/((?:token|key|secret|code)\s*[=:]\s*)[^\s,"']{6,}/gi, '$1***');
+        .replace(/\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b/g, '***');
 }
 
 /** 组装可直接粘贴的 Markdown 诊断报告 */
@@ -152,7 +178,7 @@ function buildDebugReport(title, detail, context) {
         out.push('');
         out.push('### 操作上下文');
         out.push(fence + 'json');
-        out.push(redactForReport(JSON.stringify(context, null, 2)));
+        out.push(redactForReport(JSON.stringify(redactReportContext(context), null, 2)));
         out.push(fence);
     }
     const logs = (typeof recentWbLogs !== 'undefined' && Array.isArray(recentWbLogs)) ? recentWbLogs.slice(-25) : [];
@@ -164,13 +190,26 @@ function buildDebugReport(title, detail, context) {
         out.push(fence);
     }
     out.push('');
+    if (typeof recentRequestTraces !== 'undefined' && recentRequestTraces.length) {
+        out.push('### 最近请求追踪（不是可恢复任务）');
+        out.push(fence + 'json');
+        out.push(JSON.stringify(recentRequestTraces, null, 2));
+        out.push(fence);
+    }
     out.push('### 环境');
     out.push('- 版本: ' + (window.APP_VERSION || 'unknown'));
+    const build = window.APP_BUILD_INFO;
+    if (build) {
+        out.push('- 构建: ' + build.buildId);
+        out.push('- 提交: ' + (build.shortCommit || '未知') + '（' + (build.dirty === true ? '含未提交修改' : build.dirty === false ? '工作区干净' : 'Git 状态未知') + '）');
+        out.push('- 来源输入指纹: ' + build.sourceSha256);
+    } else out.push('- 构建: 未知（旧构建未提供来源信息）');
+    out.push('- 此信息不代表已推送或已部署，线上状态需单独核验。');
     out.push('- 时间: ' + new Date().toISOString());
     out.push('- 页面: ' + location.origin);
     out.push('');
     out.push('---');
-    out.push('*由 CF Auto 中控诊断模块生成（已脱敏）*');
+    out.push('*由 CF Auto 中控诊断模块生成（已自动脱敏，请在公开提交前人工复核）*');
     return out.join('\n');
 }
 
@@ -195,13 +234,13 @@ function reportIssue() {
     Swal.fire({
         title: '故障报障',
         html: '<div class="text-left text-xs space-y-2">'
-            + '<div class="text-gray-600">将打开 GitHub Issue 并预填诊断信息（账号 ID / 邮箱 / 令牌已脱敏）。</div>'
+            + '<div class="text-gray-600">将打开 GitHub Issue 并预填诊断信息。已执行自动脱敏，未标记的敏感文本可能无法识别，请在公开提交前人工复核。</div>'
             + '<div class="text-gray-400">仓库: ' + safeHtml(PROJECT_REPO) + '</div>'
             + '</div>',
         icon: 'question',
         showCancelButton: true,
-        confirmButtonText: '🚀 打开 Issue',
-        cancelButtonText: '📋 只复制报告'
+        confirmButtonText: '<span data-ui-icon="rocket">🚀</span> 打开 Issue',
+        cancelButtonText: '<span data-ui-icon="clipboard-list">📋</span> 只复制报告'
     }).then(function (r) {
         if (r.isConfirmed) window.open(issueUrl, '_blank');
         else if (r.dismiss === Swal.DismissReason.cancel) copyToClipboard(report, '报告已复制，可自行粘贴');

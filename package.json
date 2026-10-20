@@ -1,6 +1,6 @@
 {
   "name": "worker-pro-refactor",
-  "version": "12.1.1",
+  "version": "12.2.0",
   "description": "Worker 智能中控 — Cloudflare 多账号 Worker 部署管理平台",
   "packageManager": "pnpm@11.22.0",
   "scripts": {
@@ -8,19 +8,29 @@
     "build:cloudflare": "node build.js",
     "dev": "wrangler dev --port 7890",
     "deploy": "wrangler deploy",
-    "test": "vitest run",
+    "test": "vitest run --maxWorkers=4",
     "test:watch": "vitest",
     "test:verify": "node verify.js",
     "typecheck": "tsc --noEmit",
     "test:smoke": "node test/smoke.js",
-    "check": "node build.js && tsc --noEmit && node verify.js && vitest run"
+    "check": "node scripts/check.cjs",
+    "test:e2e": "playwright test",
+    "test:e2e:install": "playwright install chromium --only-shell",
+    "test:reliability:runtime": "node scripts/test-reliability-runtime.cjs",
+    "check:runtime": "node scripts/check.cjs --runtime",
+    "test:ui": "node scripts/test-scope.cjs run frontend",
+    "test:core": "node scripts/test-scope.cjs run core",
+    "test:operations": "node scripts/test-scope.cjs run operations",
+    "test:reliability": "node scripts/test-scope.cjs run reliability"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260731.1",
+    "@playwright/test": "1.58.2",
     "esbuild": "^0.24.2",
+    "sweetalert2": "11.14.5",
+    "tailwindcss": "3.4.17",
     "typescript": "^6.0.3",
     "vitest": "^4.1.9",
-    "wrangler": "^4.99.0",
-    "@cloudflare/workers-types": "^5.20260731.1",
-    "sweetalert2": "11.14.5"
+    "wrangler": "^4.99.0"
   }
 }

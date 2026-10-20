@@ -15,6 +15,7 @@ import {
     validateAccountsPayload
 } from '../lib/validate';
 import { normalizeUpstream, readUpstream, upstreamView } from '../lib/upstream';
+import { validateGithubDraft, UpstreamValidationError } from '../lib/github';
 import { logger } from '../lib/logger';
 import type { RouteRegistrar } from "./register";
 import type { AccountEntry, FavoriteItem } from '../lib/types';
@@ -40,6 +41,18 @@ function readType(req: Request, required = false): { type: string } | { error: R
 }
 
 export function registerCrudRoutes(ROUTES: { set: RouteRegistrar }) {
+
+// --- Read-only validation is POST only to avoid draft values in query logs. ---
+ROUTES.set('POST /api/upstream/validate', async (req, env) => {
+    const type = new URL(req.url).searchParams.get('type') || '';
+    if (type !== 'cmliu' && type !== 'joey') return jsonError('不支持此模板', 400);
+    const body = await safeJson(req);
+    try { return json(await validateGithubDraft(env, type, body)); }
+    catch (e) {
+        if (e instanceof UpstreamValidationError) return jsonError(e.message, e.status, e.code);
+        throw e;
+    }
+});
 
 // --- Explicit upstream selection (CMliu / Joey) ---
 ROUTES.set('GET /api/upstream', async (req, env) => {
@@ -147,7 +160,8 @@ ROUTES.set('POST /api/auto_config', async (req, env) => {
     if (!parsed.ok) return parsed.response;
     await putJSON(env.CONFIG_KV, KV_KEYS.GLOBAL_CONFIG, { ...parsed.value, ...(typeof current.lastGc === 'number' ? { lastGc: current.lastGc } : {}) });
     logger.audit('auto config saved', { enabled: parsed.value.enabled, interval: parsed.value.interval, fuseThreshold: parsed.value.fuseThreshold });
-    return json({ success: true });
+    // 回传规范化后的已写入配置，避免前端重读 KV 时拿到旧值。
+    return json({ success: true, config: parsed.value });
 });
 
 // --- 初始化数据合并端点：单次请求替代多次 fetch ---
@@ -155,9 +169,11 @@ ROUTES.set('GET /api/init_data', async (req, env) => {
     try {
         const requestedTypes = new URL(req.url).searchParams.get('types');
         const templateTypes = requestedTypes
-            ? requestedTypes.split(',').map((t: string) => t.trim()).filter((t: string) => TEMPLATES[t])
+            ? Array.from(new Set(requestedTypes.split(',').map((t: string) => t.trim()).filter((t: string) => Object.hasOwn(TEMPLATES, t))))
             : Object.keys(TEMPLATES);
 
+        // Fixed template set, deduplicated above: two reads per template + config/accounts.
+        // Keep this small parallel group; user-supplied duplicate types must not amplify KV reads.
         const [globalCfgRaw, accounts, varsResults, deployCfgResults] = await Promise.all([
             env.CONFIG_KV.get(KV_KEYS.GLOBAL_CONFIG, { cacheTtl: 60 }),
             readAccountsMasked(env),

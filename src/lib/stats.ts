@@ -1,3 +1,4 @@
+import { BILLING_METRICS_QUERY } from './billing-query';
 /**
  * 用量统计 — Cloudflare GraphQL 查询
  */
@@ -17,6 +18,7 @@ function guessDailyLimit(total: number): number {
 }
 
 export interface StatResult {
+    accountId: string;
     alias: string;
     total: number;
     max: number;
@@ -50,16 +52,12 @@ function resolveMax(acc: Pick<AccountEntry, 'dailyLimit'>, total: number): numbe
 export async function fetchInternalStats(accounts: AccountEntry[]): Promise<StatResult[]> {
     const now = new Date();
     const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0));
-    const query = `query getBillingMetrics($AccountID: String!, $filter: AccountWorkersInvocationsAdaptiveFilter_InputObject) {
-         viewer { accounts(filter: {accountTag: $AccountID}) {
-             workersInvocationsAdaptive(limit: 1000, filter: $filter) { sum { requests } }
-             pagesFunctionsInvocationsAdaptiveGroups(limit: 1000, filter: $filter) { sum { requests } }
-         }}}`;
+    const query = BILLING_METRICS_QUERY;
     // 有界并发：账号多时全量并发容易撞 CF 限流（1200 次/5 分钟）
     return pooledMap(accounts, async (acc) => {
         try {
             if (!hasAccountCredentials(acc)) {
-                return { alias: acc.alias, total: 0, max: resolveLimit(acc), error: '未配置凭据或解密失败，请重新填写 API Key / API Token' };
+                return { accountId: acc.accountId, alias: acc.alias, total: 0, max: resolveLimit(acc), error: '未配置凭据或解密失败，请重新填写 API Key / API Token' };
             }
             const res = await fetchWithTimeout(cf.graphql(), {
                 method: "POST", headers: getAuthHeaders(acc),
@@ -67,25 +65,52 @@ export async function fetchInternalStats(accounts: AccountEntry[]): Promise<Stat
             });
             // 先判 HTTP 层：非 2xx 时 body 可能是 HTML 错误页，直接 json() 会抛异常
             if (!res.ok) {
-                return { alias: acc.alias, total: 0, max: resolveLimit(acc), error: "HTTP " + res.status + " (检查 API Key 权限)" };
+                // Free the response connection before this pool slot starts another account.
+                await res.body?.cancel();
+                return { accountId: acc.accountId, alias: acc.alias, total: 0, max: resolveLimit(acc), error: "HTTP " + res.status + " (检查 API Key 权限)" };
             }
             let data: any;
             try { data = await res.json(); }
-            catch { return { alias: acc.alias, total: 0, max: resolveLimit(acc), error: 'GraphQL 响应不是合法 JSON' }; }
+            catch { return { accountId: acc.accountId, alias: acc.alias, total: 0, max: resolveLimit(acc), error: 'GraphQL 响应不是合法 JSON' }; }
             // GraphQL 返回的错误信息（API Key 无权限等）
-            if (data.errors) return { alias: acc.alias, total: 0, max: resolveLimit(acc), error: data.errors[0]?.message || "GraphQL error" };
-            const accountData = data.data?.viewer?.accounts?.[0];
-            if (!accountData) return { alias: acc.alias, total: 0, max: resolveLimit(acc), error: "无数据(检查 Account ID 是否正确)" };
-            const workerReqs = sumRequests(accountData.workersInvocationsAdaptive);
-            const pagesReqs = sumRequests(accountData.pagesFunctionsInvocationsAdaptiveGroups);
+            if (data.errors) return { accountId: acc.accountId, alias: acc.alias, total: 0, max: resolveLimit(acc), error: data.errors[0]?.message || "GraphQL error" };
+            const accountRows = data.data?.viewer?.accounts;
+            const accountData = Array.isArray(accountRows) && accountRows.length === 1 ? accountRows[0] : null;
+            if (!accountData) return { accountId: acc.accountId, alias: acc.alias, total: 0, max: resolveLimit(acc), error: "无数据(检查 Account ID 是否正确)" };
+            const workerReqs = parseUsageGroups(accountData.workersInvocationsAdaptive);
+            const pagesReqs = parseUsageGroups(accountData.pagesFunctionsInvocationsAdaptiveGroups);
+            if (workerReqs === null || pagesReqs === null || !Number.isSafeInteger(workerReqs + pagesReqs)) return { accountId: acc.accountId, alias: acc.alias, total: 0, max: resolveLimit(acc), error: '统计结构不完整、已截断或数值无效；禁止据此熔断' };
             const total = workerReqs + pagesReqs;
-            return { alias: acc.alias, total, max: resolveMax(acc, total) };
-        } catch (e: any) { return { alias: acc.alias, total: 0, max: resolveLimit(acc), error: e.message }; }
+            return { accountId: acc.accountId, alias: acc.alias, total, max: resolveMax(acc, total) };
+        } catch (e: any) { return { accountId: acc.accountId, alias: acc.alias, total: 0, max: resolveLimit(acc), error: e.message }; }
     });
 }
 
-/** 累加 GraphQL 分组的 requests，容忍缺失的 sum 节点 */
-function sumRequests(groups: unknown): number {
-    if (!Array.isArray(groups)) return 0;
-    return groups.reduce((acc: number, g: any) => acc + (g?.sum?.requests || 0), 0);
+/** A limit-sized response may be truncated. Missing or malformed groups are unknown,
+ * never usable zero; only an explicitly empty array is a complete zero observation. */
+export function parseUsageGroups(groups: unknown): number | null {
+    if (!Array.isArray(groups) || groups.length >= 1000) return null;
+    let total=0;
+    for (const group of groups) {
+        const count=group?.sum?.requests;
+        if (!Number.isSafeInteger(count) || count<0 || !Number.isSafeInteger(total+count)) return null;
+        total+=count;
+    }
+    return total;
+}
+/** Labels are mutable and non-unique. Duplicate provider/account results fail closed. */
+export function statForAccount(stats: StatResult[], accountId: string): StatResult | undefined {
+    const matches=stats.filter(s=>s.accountId===accountId);
+    return matches.length===1 ? matches[0] : undefined;
+}
+
+/** 熔断判定 — 纯函数，导出供测试覆盖边界（0 阈值、缺 stats、limit 兜底） */
+export function isFuseTriggered(
+    stat: { total: number; max: number; error?: string } | undefined,
+    threshold: number
+): boolean {
+    if (!Number.isFinite(threshold) || threshold <= 0) return false;
+    if (!stat || stat.error || !Number.isSafeInteger(stat.total) || stat.total < 0 || !Number.isSafeInteger(stat.max) || stat.max <= 0) return false;
+    const limit = stat.max;
+    return (stat.total / limit) * 100 >= threshold;
 }

@@ -10,3 +10,23 @@ deploy.local.bat
 
 # pnpm 本地 store（依赖缓存，可再生；node_modules 会硬链接到它，勿手动删除）
 .pnpm-store/
+
+# Local browser regression reports (mock data only)
+playwright-report/
+test-results/
+
+# Sensitive backup / recovery artifacts (never commit)
+worker-backup-*.json
+accounts-*.json
+restore-snapshot-*.json
+kv-put.json
+kv-delete.json
+
+# Local Windows shell cache created when SystemDrive is unresolved
+/%SystemDrive%/
+
+# Preserved pre-fix C7 mock browser failure evidence
+test-results-c7-prior/
+
+# Wrangler local-only integration state/build cache
+.wrangler/

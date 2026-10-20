@@ -1,0 +1,13 @@
+/** Loopback-only harness for the actual production index. Never deploy this file. */
+import application from '../../../src/index';
+import {signMaintenance} from '../../../src/reliability/maintenance-protocol';
+import type {ReliabilityEnv} from '../../../src/reliability/production-config';
+export async function applicationProbe(request:Request,env:ReliabilityEnv):Promise<Response>{
+ const body=await request.json() as {action:string};let kvBusinessTouches=0,kvSessionTouches=0;
+ const kv={get:async(key:string)=>{if(key==='SESSION_application-local-session'){kvSessionTouches++;return 'application-local-csrf';}kvBusinessTouches++;throw Error('BUSINESS_KV_FORBIDDEN');},put:async()=>{kvBusinessTouches++;throw Error('BUSINESS_KV_FORBIDDEN');},delete:async()=>{kvBusinessTouches++;throw Error('BUSINESS_KV_FORBIDDEN');},list:async()=>{kvBusinessTouches++;throw Error('BUSINESS_KV_FORBIDDEN');}};
+ const settings:any={...env,CONFIG_KV:kv,ACCESS_CODE:'local-only-login-secret'},pending:Promise<unknown>[]=[];const ctx={waitUntil:(p:Promise<unknown>)=>pending.push(p)} as ExecutionContext;
+ if(body.action==='cron'){await application.scheduled({scheduledTime:Date.now()} as ScheduledEvent,settings,ctx);const results=await Promise.allSettled(pending);return Response.json({result:{cronRejected:results.some(r=>r.status==='rejected'),kvBusinessTouches,kvSessionTouches}});}
+ let path='/api/reliability/recovery',method='GET',payload:unknown;const headers:Record<string,string>={cookie:'__Host-auth=application-local-session','x-csrf-token':'application-local-csrf',origin:'https://application.test','content-type':'application/json'};
+ if(body.action==='restore'){path='/api/restore';method='POST';payload={ACCOUNTS:[]};}else if(body.action==='tasks')path='/api/reliability/tasks';else if(body.action==='partial')delete settings.RELIABILITY_RPC_SECRET;else if(body.action==='maintenance'){path='/api/reliability/maintenance';method='POST';delete settings.ACCESS_CODE;delete headers.cookie;delete headers['x-csrf-token'];payload=await signMaintenance({version:1,target:{account:env.RELIABILITY_MANAGER_ACCOUNT,worker:env.RELIABILITY_MANAGER_WORKER,namespace:env.RELIABILITY_CONFIG_NAMESPACE},operator:'ops',at:Date.now(),nonce:crypto.randomUUID(),command:{id:'application_status',action:'status',expected:null,args:{}}},'6'.repeat(64));}else if(body.action!=='recovery')return Response.json({error:'INVALID'},{status:400});
+ const response=await application.fetch(new Request('https://application.test'+path,{method,headers,...(payload===undefined?{}:{body:JSON.stringify(payload)})}),settings,ctx);return Response.json({result:{status:response.status,body:await response.json(),kvBusinessTouches,kvSessionTouches}});
+}

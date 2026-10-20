@@ -1,9 +1,10 @@
+import { executionJournal } from '../reliability/execution-context';
 /**
  * 并发工具 — 统一全项目的批量请求并发策略
  *
- * 背景：Cloudflare API 限流 1200 次/5 分钟，单次 Worker 调用还有 1000 subrequest 上限。
- * 此前项目里存在两个极端：账号遍历全串行（账号多必然超时），批量部署 Promise.all 全并发
- * （容易触发限流）。此模块提供有界并发，三处调用点统一使用。
+ * 控制单次批量操作的在飞任务数，兼顾吞吐与连接/内存占用。
+ * 不减少总请求数，不是跨请求限流器，也不绕过当前计划的 subrequest/CPU 配额。
+ * 同一请求中的独立池、不同请求与 Cron 的并发仍会叠加；协调与任务拆分另行处理。
  */
 
 /** 默认并发度 — 兼顾吞吐与 CF 限流余量 */
@@ -13,14 +14,14 @@ export const DEFAULT_CONCURRENCY = 5;
  * 有界并发 map — 保持输入顺序，任一任务抛错都会向外传播（调用方需自行包裹 try/catch）。
  * @param items 待处理项
  * @param worker 处理函数，接收 (item, index)
- * @param concurrency 同时在飞的任务数（<=0 视为 1）
+ * @param concurrency 同时在飞的任务数（有限值 <=0 视为 1，非有限值回退默认值）
  */
 export async function pooledMap<T, R>(
     items: readonly T[],
     worker: (item: T, index: number) => Promise<R>,
     concurrency = DEFAULT_CONCURRENCY
 ): Promise<R[]> {
-    const limit = Math.max(1, Math.floor(concurrency));
+    const limit = executionJournal() ? 1 : (Number.isFinite(concurrency) ? Math.max(1, Math.floor(concurrency)) : DEFAULT_CONCURRENCY);
     const results = new Array<R>(items.length);
     let cursor = 0;
 

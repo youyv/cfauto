@@ -2,10 +2,11 @@
  * 路由: 部署逻辑 — 手动部署、批量部署
  */
 
-import { TEMPLATES, BINDING } from '../config/templates';
+import { buildBatchBindings, configToVariables } from '../lib/batch-bindings';
+import { redactDiagnosticText } from '../lib/redaction';
 import type { TemplateType } from '../config/templates';
 import { cf, getAuthHeaders, json, fetchWithTimeout, readApiResult } from '../lib/cloudflare-api';
-import { uploadWorker, mergeVariableBindings, verifyWorkerScript } from '../lib/deploy-utils';
+import { uploadWorker, verifyWorkerScript } from '../lib/deploy-utils';
 import { readAccounts, writeAccounts, addWorkerName, hasAccountCredentials } from "../lib/account-store";
 import { pooledMapSettled } from '../lib/concurrency';
 import { validateRequired, requireTemplateType, isNonEmptyString, WORKER_NAME_RE } from "../lib/validate";
@@ -22,7 +23,7 @@ import type { BatchDeployRequest, DeployLogEntry, AccountEntry, VariableEntry } 
  */
 export async function handleManualDeploy(env: AppEnv, opts: DeployOptions) {
     const result = await coreDeployLogic(env, { ...opts, accountOverrides: 'clear' });
-    return json(result);
+    return json(result.map(l => ({ ...l, msg: redactDiagnosticText(l.msg || '') })));
 }
 
 /** [提取] 查找或创建 KV 命名空间 */
@@ -42,64 +43,6 @@ async function ensureKVNamespace(
     return created.id;
 }
 
-/**
- * [提取] 把批量部署请求里的 `config: Record<string, string>` 转成变量列表。
- *
- * 供 applyTemplateTransform 使用：部分模板（如 ech）的关键参数是靠改写源码常量
- * 注入的，必须在代码转换阶段拿到值，而不是只写进 bindings。
- */
-function configToVariables(config: Record<string, string> | undefined): VariableEntry[] {
-    if (!config || typeof config !== 'object') return [];
-    return Object.entries(config)
-        .filter(([k, v]) => k && typeof v === 'string' && v.trim() !== '')
-        .map(([key, value]) => ({ key, value }));
-}
-
-/** [提取] 构建批量部署的 Worker Bindings */
-function buildBatchBindings(
-    template: TemplateType, nsId: string, enableKV: boolean,
-    savedVars: VariableEntry[] | undefined, config: Record<string, string>
-): Array<Record<string, unknown>> {
-    let bindings: Array<Record<string, unknown>> = [];
-    const t = TEMPLATES[template];
-
-    if (enableKV && nsId && t.kvBindingName) {
-        bindings.push({ name: t.kvBindingName, type: BINDING.KV_NAMESPACE, namespace_id: nsId });
-    }
-
-    // 无论走 savedVars 还是 config 兜底，都统一交给 mergeVariableBindings 合并：
-    // 此前 config 分支直接 push 空字符串绑定，而 mergeVariableBindings 会跳过空值，
-    // 导致「批量创建」与「更新部署」对空变量的处理不一致 —— 前者写入空绑定会覆盖掉
-    // 上游模板的默认值，后者则保留默认值。统一后两条路径行为一致。
-    const vars: VariableEntry[] = (savedVars && Array.isArray(savedVars) && savedVars.length > 0)
-        ? savedVars
-        : buildFallbackVars(t, config);
-
-    return mergeVariableBindings(bindings, vars);
-}
-
-/**
- * [提取] savedVars 缺失时，用 config + 模板默认值兜底出变量列表。
- *
- * 空值一律用 '' 表示，由 mergeVariableBindings 统一跳过，
- * 从而保证上游模板的默认值仍然生效。
- */
-function buildFallbackVars(
-    t: (typeof TEMPLATES)[TemplateType], config: Record<string, string>
-): VariableEntry[] {
-    const vars: VariableEntry[] = [];
-    if (config?.ADMIN) vars.push({ key: 'ADMIN', value: config.ADMIN });
-    if (t.uuidField && config?.[t.uuidField]) {
-        vars.push({ key: t.uuidField, value: config[t.uuidField] });
-    }
-    t.defaultVars.forEach(key => {
-        if (key !== t.kvBindingName && key !== 'ADMIN' && key !== t.uuidField) {
-            vars.push({ key, value: config?.[key] ?? '' });
-        }
-    });
-    return vars;
-}
-
 /** [提取] 配置 Worker 域名和子域名 */
 async function configureDomains(
     acc: AccountEntry, workerName: string,
@@ -109,45 +52,37 @@ async function configureDomains(
     const msgs: string[] = [];
     if (customDomainPrefix) {
         if (!acc.defaultZoneId || !acc.defaultZoneName) {
-            msgs.push('\u26A0\uFE0F 已填自定义域名前缀，但该账号未配置默认 Zone，已跳过绑定');
+            msgs.push('⚠️ 已填自定义域名前缀，但该账号未配置默认 Zone，已跳过绑定');
         } else {
             const hostname = customDomainPrefix + '.' + acc.defaultZoneName;
-            const domainRes = await fetchWithTimeout(cf.workerDomains(acc.accountId), {
-                method: "PUT", headers: jsonHeaders,
-                body: JSON.stringify({ hostname, service: workerName, zone_id: acc.defaultZoneId })
-            });
-            if (domainRes.ok) msgs.push('\u2705 绑定: https://' + hostname);
-            else msgs.push('\u26A0\uFE0F 域名绑定失败 (HTTP ' + domainRes.status + ')');
-        }
-    }
-    if (disableWorkersDev) {
-        const r = await fetchWithTimeout(cf.workerSubdomain(acc.accountId, workerName), {
-            method: "POST", headers: jsonHeaders, body: JSON.stringify({ enabled: false })
-        });
-        msgs.push(r.ok ? '\u{1F6AB} 默认域名已禁用' : '\u26A0\uFE0F 默认域名禁用失败 (HTTP ' + r.status + ')');
-    } else {
-        const enableRes = await fetchWithTimeout(cf.workerSubdomain(acc.accountId, workerName), {
-            method: "POST", headers: jsonHeaders, body: JSON.stringify({ enabled: true })
-        });
-        if (!enableRes.ok) {
-            msgs.push('\u26A0\uFE0F 默认域名启用失败 (HTTP ' + enableRes.status + ')');
-        } else {
             try {
-                const subRes = await fetchWithTimeout(cf.acctSubdomain(acc.accountId), { headers: jsonHeaders });
-                const result = await readApiResult<{ subdomain?: string }>(subRes, '读取账号子域名');
-                const prefix = result?.subdomain || 'unknown';
-                msgs.push('\u2705 默认: https://' + workerName + '.' + prefix + '.workers.dev');
-            } catch (e) {
-                msgs.push('\u2705 默认域名已启用（子域名查询失败: ' + (e as Error).message + '）');
-            }
+                await readApiResult(await fetchWithTimeout(cf.workerDomains(acc.accountId), {
+                    method: 'PUT', headers: jsonHeaders,
+                    body: JSON.stringify({ hostname, service: workerName, zone_id: acc.defaultZoneId })
+                }), '绑定自定义域名');
+                msgs.push('✅ 绑定: https://' + hostname);
+            } catch (error) { msgs.push('⚠️ 域名绑定未确认，请到 Dashboard 核对: ' + redactDiagnosticText((error as Error).message)); }
         }
     }
+    try {
+        await readApiResult(await fetchWithTimeout(cf.workerSubdomain(acc.accountId, workerName), {
+            method: 'POST', headers: jsonHeaders, body: JSON.stringify({ enabled: !disableWorkersDev })
+        }), disableWorkersDev ? '禁用默认域名' : '启用默认域名');
+        if (disableWorkersDev) msgs.push('🚫 默认域名已禁用');
+        else {
+            try {
+                const result = await readApiResult<{ subdomain?: string }>(await fetchWithTimeout(cf.acctSubdomain(acc.accountId), { headers: jsonHeaders }), '读取账号子域名');
+                if (!result?.subdomain) throw new Error('账号子域名为空');
+                msgs.push('✅ 默认: https://' + workerName + '.' + result.subdomain + '.workers.dev');
+            } catch (error) { msgs.push('⚠️ 默认域名已启用，但访问地址未确认: ' + redactDiagnosticText((error as Error).message)); }
+        }
+    } catch (error) { msgs.push('⚠️ 默认域名' + (disableWorkersDev ? '禁用' : '启用') + '未确认，请到 Dashboard 核对: ' + redactDiagnosticText((error as Error).message)); }
     return msgs;
 }
 
 /** [提取] 对单个账号执行批量部署 */
 async function deployToSingleAccount(
-    acc: AccountEntry, template: TemplateType, workerName: string,
+    env: AppEnv, acc: AccountEntry, template: TemplateType, workerName: string,
     scriptContent: string, enableKV: boolean, kvName: string,
     savedVars: VariableEntry[] | undefined, config: Record<string, string>,
     customDomainPrefix?: string, disableWorkersDev?: boolean
@@ -168,7 +103,7 @@ async function deployToSingleAccount(
         }
 
         const bindings = buildBatchBindings(template, nsId, enableKV, savedVars, config);
-        const { ok, error: uploadError } = await uploadWorker(acc, workerName, scriptContent, bindings, template);
+        const { ok, error: uploadError } = await uploadWorker(acc, workerName, scriptContent, bindings, template, env);
 
         if (ok) {
             // 回读校验：上传响应成功不代表脚本真的变了（见 deploy-utils.verifyWorkerScript）
@@ -231,11 +166,11 @@ export async function handleBatchDeploy(env: AppEnv, reqData: BatchDeployRequest
     // CF_FALLBACK_IPS 常量），仅靠 bindings 绑定一个名为 PROXYIP 的变量对 ech 无效。
     // 此前传 null 导致批量创建的 ech Worker 全部回落到硬编码默认代理。
     const codeResult = await prepareDeployCode(env, template, null, null, configToVariables(config), false);
-    if (Array.isArray(codeResult)) return json(codeResult);
+    if (Array.isArray(codeResult)) return json(codeResult.map(l => ({ ...l, msg: redactDiagnosticText(l.msg || '') })));
     const { scriptContent, deployedSha, isLatestMode, sourceIdentity } = codeResult;
 
     const settled = await pooledMapSettled(accountsToDeploy, (acc) =>
-        deployToSingleAccount(acc, template, trimmedName, scriptContent,
+        deployToSingleAccount(env, acc, template, trimmedName, scriptContent,
             !!enableKV, kvName, savedVars, config,
             customDomainPrefix, disableWorkersDev)
     );
@@ -269,5 +204,5 @@ export async function handleBatchDeploy(env: AppEnv, reqData: BatchDeployRequest
     // 由 cron 的版本检查在下一轮按全量补齐其余 Worker。
     await finalizeDeploy(env, template, isLatestMode, deployedSha, logs, '', 'partial', sourceIdentity);
 
-    return json(logs);
+    return json(logs.map(l => ({ ...l, msg: redactDiagnosticText(l.msg || '') })));
 }

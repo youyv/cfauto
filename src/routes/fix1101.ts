@@ -1,3 +1,4 @@
+import { executionNow, frozenSubdomain } from '../reliability/execution-context';
 /**
  * 路由: 一键修复 1101
  *
@@ -7,12 +8,14 @@
 
 import { KV_KEYS } from '../config/templates';
 import type { TemplateType } from '../config/templates';
-import { cf, getAuthHeaders, json, fetchWithTimeout, readApiResult } from '../lib/cloudflare-api';
+import { cf, getAuthHeaders, json, jsonError, fetchWithTimeout, readApiResult } from '../lib/cloudflare-api';
 import { fetchGithubCode, applyTemplateTransform } from '../lib/github';
 import { uploadWorker, readWorkerBindings, verifyWorkerScript } from '../lib/deploy-utils';
 import { getJSON, putJSON } from "../lib/kv-utils";
 import { readAccounts, getWorkerNames, hasAccountCredentials } from "../lib/account-store";
 import { deployTargetKey, mergeSubsetPending } from '../lib/auto-update';
+import { traceEvent } from '../lib/trace';
+import { redactDiagnosticText } from '../lib/redaction';
 import { logger } from '../lib/logger';
 import type { AppEnv } from "../config/env";
 import type { DeployConfig, DeployLogEntry, VariableEntry } from '../lib/types';
@@ -26,6 +29,8 @@ const POST_DELETE_DELAY_MS = 1500;
 
 /** 生成加密安全的随机子域名（Math.random 可预测，会削弱熔断规避机制） */
 export function randomSubdomain(): string {
+    const frozen = frozenSubdomain();
+    if (frozen !== undefined) return frozen;
     const ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
     const randBuf = crypto.getRandomValues(new Uint8Array(6));
     const randSubStr = Array.from(randBuf).map(b => ALPHABET[b % ALPHABET.length]).join('');
@@ -74,8 +79,49 @@ export function rebuildBindings(
     return { bindings, secretSkipped };
 }
 
-export async function handleFix1101(env: AppEnv, type: TemplateType) {
+/** 删除旧子域名前必须读到恢复值；失败恢复仅为 best effort，不承诺回滚。 */
+export async function rotateRepairSubdomain(accountId: string, headers: Record<string, string>): Promise<string> {
+    let oldSubdomain = '';
+    let deleteRequested = false;
+    try {
+        const old = await readApiResult<{ subdomain?: string }>(await fetchWithTimeout(cf.acctSubdomain(accountId), { headers }), '读取原子域名');
+        oldSubdomain = typeof old?.subdomain === 'string' ? old.subdomain : '';
+        if (!oldSubdomain) return '⚠️ 子域名：无法读取原值，未执行删除；请到 Dashboard 核对';
+        deleteRequested = true;
+        await readApiResult(await fetchWithTimeout(cf.acctSubdomain(accountId), { method: 'DELETE', headers }), '删除原子域名');
+        const next = randomSubdomain();
+        await readApiResult(await fetchWithTimeout(cf.acctSubdomain(accountId), {
+            method: 'PUT', headers, body: JSON.stringify({ subdomain: next })
+        }), '设置新子域名');
+        logger.audit('fix1101 subdomain rotated', { accountId, to: next });
+        return '🌐 子域名 → ' + next;
+    } catch (error) {
+        const reason = redactDiagnosticText((error as Error).message);
+        if (!deleteRequested) return '⚠️ 子域名：读取失败，未执行删除 (' + reason + ')';
+        // 删除/设置响应丢失时结果未知，先回读，避免覆盖已生效的新值。
+        try {
+            const current = await readApiResult<{ subdomain?: string }>(await fetchWithTimeout(cf.acctSubdomain(accountId), { headers }), '核对子域名');
+            if (!current || !Object.prototype.hasOwnProperty.call(current, 'subdomain') || (current.subdomain !== null && typeof current.subdomain !== 'string')) throw new Error('子域名回读结构无效');
+            if (current.subdomain) return '⚠️ 子域名轮换未确认；当前值为 ' + current.subdomain + '，请人工核对 (' + reason + ')';
+            await readApiResult(await fetchWithTimeout(cf.acctSubdomain(accountId), {
+                method: 'PUT', headers, body: JSON.stringify({ subdomain: oldSubdomain })
+            }), '恢复原子域名');
+            return '⚠️ 子域名轮换失败，已恢复原子域名: ' + oldSubdomain + ' (' + reason + ')';
+        } catch (restoreError) {
+            return '⚠️ 子域名状态未知，无法确认恢复；请到 Dashboard 手动核对原值 ' + oldSubdomain + ' (' + reason + '; ' + redactDiagnosticText((restoreError as Error).message) + ')';
+        }
+    }
+}
+
+export async function handleFix1101(env: AppEnv, type: TemplateType, expectedTargets?: Array<{ accountId: string; workerName: string }>) {
     const accounts = await readAccounts(env);
+    if (expectedTargets !== undefined) {
+        if (!Array.isArray(expectedTargets) || expectedTargets.some(t => !t || typeof t.accountId !== 'string' || typeof t.workerName !== 'string')) return jsonError('修复目标清单无效', 400);
+        const actual = accounts.flatMap(a => getWorkerNames(a, type).map(w => JSON.stringify([a.accountId, w]))).sort();
+        const expected = expectedTargets.map(t => JSON.stringify([t.accountId, t.workerName])).sort();
+        if (JSON.stringify(actual) !== JSON.stringify(expected)) return jsonError('修复目标已变化，请重新读取清单并确认；未执行删除', 409);
+    }
+    traceEvent(env, 'repair started', { type });
     if (accounts.length === 0) return json([{ name: "提示", success: false, msg: "无账号" }]);
 
     const logs: DeployLogEntry[] = [];
@@ -86,7 +132,7 @@ export async function handleFix1101(env: AppEnv, type: TemplateType) {
         freshCode = result.code;
         latestSha = result.sha;
     } catch (e: any) {
-        return json([{ name: "系统", success: false, msg: `代码下载失败: ${e.message}` }]);
+        return json([{ name: "系统", success: false, msg: redactDiagnosticText(`代码下载失败: ${e.message}`) }]);
     }
 
     const kvVars = await getJSON<VariableEntry[]>(env.CONFIG_KV, KV_KEYS.vars(type), []);
@@ -100,7 +146,7 @@ export async function handleFix1101(env: AppEnv, type: TemplateType) {
             continue;
         }
         if (!hasAccountCredentials(acc)) {
-            logs.push({ name: acc.alias, success: false, msg: "❌ 未配置凭据或解密失败，请重新填写 Global API Key / API Token" });
+            for (const workerName of targetWorkers) logs.push({ name: `${acc.alias} → [${workerName}]`, targetKey: deployTargetKey(acc.accountId, workerName), success: false, msg: "❌ 未配置凭据或解密失败，请重新填写 Global API Key / API Token" });
             continue;
         }
 
@@ -114,6 +160,8 @@ export async function handleFix1101(env: AppEnv, type: TemplateType) {
                 targetKey: deployTargetKey(acc.accountId, wName)
             };
             const steps: string[] = [];
+            let deleteRequested = false;
+            let deleted = false;
             try {
                 const baseUrl = cf.workerScript(acc.accountId, wName);
 
@@ -135,30 +183,40 @@ export async function handleFix1101(env: AppEnv, type: TemplateType) {
                 const varCount = savedBindings.filter((b) => b.type === 'plain_text').length;
                 steps.push(`📋 记录 ${savedBindings.length} 个绑定 (${varCount} 变量)`);
 
+                // 在删除前验证 Secret 可恢复性；不能先删再提示手动补回。
+                const { bindings: restoredBindings, secretSkipped } = rebuildBindings(savedBindings, kvVars);
+                if (secretSkipped.length) throw new Error('secret 绑定无法从 API 恢复，已中止修复；请先在变量配置中补齐原值: ' + secretSkipped.join(', '));
+
                 // Step 1.5: 记录自定义域名
                 let savedDomains: Array<Record<string, any>> = [];
+                let domainsReadOk = false;
                 try {
                     const domainsRes = await fetchWithTimeout(cf.workerDomains(acc.accountId), { headers });
                     if (domainsRes.ok) {
-                        const allDomains = await readApiResult<Array<Record<string, any>>>(domainsRes, '读取域名') || [];
+                        const allDomains = await readApiResult<Array<Record<string, any>>>(domainsRes, '读取域名');
+                        if (!Array.isArray(allDomains) || allDomains.some(d => !d || typeof d.service !== 'string' || typeof d.hostname !== 'string' || typeof d.zone_id !== 'string')) throw new Error('域名清单格式无效');
                         savedDomains = allDomains.filter((d) => d.service === wName);
+                        domainsReadOk = true;
                     } else {
                         steps.push('⚠️ 记录域名失败 (HTTP ' + domainsRes.status + ')');
                     }
                 } catch (e) { steps.push('⚠️ 记录域名失败: ' + (e as Error).message); }
+                if (!domainsReadOk) throw new Error('无法完整读取自定义域名，已中止修复；未执行删除');
                 if (savedDomains.length > 0) steps.push(`🔗 记录 ${savedDomains.length} 个自定义域名`);
 
                 // Step 2: 删除 Worker（不删 KV）
+                deleteRequested = true;
                 const delRes = await fetchWithTimeout(baseUrl, { method: "DELETE", headers });
                 if (!delRes.ok) {
                     let msg = 'HTTP ' + delRes.status;
                     try { const err: any = await delRes.json(); msg = err.errors?.[0]?.message || msg; } catch { /* 非 JSON 错误页 */ }
                     throw new Error(`删除失败: ${msg}`);
                 }
+                await readApiResult(delRes, '删除 Worker');
+                deleted = true;
                 steps.push("🗑️ 已删除");
 
                 // Step 3: 重建绑定并上传（CF 删除是异步的，先等一小段再试）
-                const { bindings: restoredBindings, secretSkipped } = rebuildBindings(savedBindings, kvVars);
                 const restoredVarCount = restoredBindings.filter((b) => b.type === 'plain_text').length;
 
                 await new Promise(r => setTimeout(r, POST_DELETE_DELAY_MS));
@@ -169,7 +227,8 @@ export async function handleFix1101(env: AppEnv, type: TemplateType) {
                     if (attempt > 0) {
                         await new Promise(r => setTimeout(r, REBUILD_BASE_DELAY_MS * Math.pow(2, attempt - 1)));
                     }
-                    const result = await uploadWorker(acc, wName, deployCode, restoredBindings, type);
+                    traceEvent(env, 'repair upload attempt', { workerName: wName, attempt: attempt + 1 });
+                    const result = await uploadWorker(acc, wName, deployCode, restoredBindings, type, env);
                     lastError = result.error;
                     if (result.ok) { ok = true; break; }
                 }
@@ -200,8 +259,8 @@ export async function handleFix1101(env: AppEnv, type: TemplateType) {
                                     method: 'PUT', headers,
                                     body: JSON.stringify({ hostname: d.hostname, service: wName, zone_id: d.zone_id, environment: d.environment || 'production' })
                                 });
-                                if (dRes.ok) domainOk++;
-                                else logger.warn('fix1101 domain restore failed', { hostname: d.hostname, status: dRes.status });
+                                await readApiResult(dRes, '恢复自定义域名');
+                                domainOk++;
                             } catch (e) { logger.warn('fix1101 domain restore best-effort failed', { error: (e as Error).message }); }
                         }
                         steps.push(`🔗 域名恢复 ${domainOk}/${savedDomains.length}`);
@@ -215,31 +274,17 @@ export async function handleFix1101(env: AppEnv, type: TemplateType) {
                 }
             } catch (err: any) {
                 steps.push(`❌ ${err.message}`);
+                if (deleted) steps.push('⚠️ Worker 已删除，后续恢复未完成；请在 Dashboard 核对脚本、绑定和域名，不保证自动回滚');
+                else if (deleteRequested) steps.push('⚠️ 删除请求已发出，最终状态需到 Dashboard 核对；未继续重建');
             }
-            logItem.msg = steps.join(' → ');
+            logItem.msg = redactDiagnosticText(steps.join(' → '));
             logs.push(logItem);
         }
 
         // Step 4(账号级): 至少一个 Worker 重建成功后，每账号只执行一次子域名轮换
         if (accAnySuccess) {
-            try {
-                const delSubRes = await fetchWithTimeout(cf.acctSubdomain(acc.accountId), { method: 'DELETE', headers });
-                if (!delSubRes.ok) {
-                    logs.push({ name: acc.alias, success: true, msg: '🌐 子域名: 跳过（删除旧子域名失败 HTTP ' + delSubRes.status + '）' });
-                } else {
-                    const randomSub = randomSubdomain();
-                    const subRes = await fetchWithTimeout(cf.acctSubdomain(acc.accountId), {
-                        method: 'PUT', headers,
-                        body: JSON.stringify({ subdomain: randomSub })
-                    });
-                    if (subRes.ok) {
-                        logger.audit('fix1101 subdomain rotated', { accountId: acc.accountId, to: randomSub });
-                        logs.push({ name: acc.alias, success: true, msg: `🌐 子域名 → ${randomSub}` });
-                    } else {
-                        logs.push({ name: acc.alias, success: true, msg: '⚠️ 子域名已删除但新值设置失败 (HTTP ' + subRes.status + ')，请到 Dashboard 手动设置' });
-                    }
-                }
-            } catch (e) { logs.push({ name: acc.alias, success: true, msg: '🌐 子域名: 跳过 (' + (e as Error).message + ')' }); }
+            const msg = await rotateRepairSubdomain(acc.accountId, headers);
+            logs.push({ name: acc.alias, success: !msg.startsWith('⚠️'), msg });
         }
     }
 
@@ -248,26 +293,31 @@ export async function handleFix1101(env: AppEnv, type: TemplateType) {
     // 已更新，其余仍停在旧代码的 Worker 从此被判成"已是最新"而不再更新。
     const realTargets = logs.filter(l => l.targetKey);
     const allRebuilt = realTargets.length > 0 && realTargets.every(l => l.success);
-    if (allRebuilt) {
-        await putJSON(env.CONFIG_KV, KV_KEYS.deployConfig(type), {
-            mode: 'latest',
-            currentSha: latestSha || 'unknown',
-            deployTime: new Date().toISOString(),
-            lastAttempt: new Date().toISOString(),
-            pendingTargets: [],
-            pendingSha: null
-        });
-    } else if (realTargets.length > 0) {
-        // 部分失败：账本原地不动，把失败目标挂进重试队列交给 cron
-        const nowIso = new Date().toISOString();
-        const prev = await getJSON<DeployConfig>(env.CONFIG_KV, KV_KEYS.deployConfig(type), { mode: 'latest' });
-        await putJSON(env.CONFIG_KV, KV_KEYS.deployConfig(type), {
-            ...prev,
-            lastAttempt: nowIso,
-            pendingSha: prev.pendingSha || prev.currentSha || null,
-            pendingTargets: mergeSubsetPending(prev, logs)
-        });
+    try {
+        if (allRebuilt) {
+            await putJSON(env.CONFIG_KV, KV_KEYS.deployConfig(type), {
+                mode: 'latest',
+                currentSha: latestSha || 'unknown',
+                deployTime: new Date(executionNow()).toISOString(),
+                lastAttempt: new Date(executionNow()).toISOString(),
+                pendingTargets: [],
+                pendingSha: null
+            });
+        } else if (realTargets.length > 0) {
+            // 部分失败：账本原地不动，把失败目标挂进重试队列交给 cron
+            const nowIso = new Date(executionNow()).toISOString();
+            const prev = await getJSON<DeployConfig>(env.CONFIG_KV, KV_KEYS.deployConfig(type), { mode: 'latest' });
+            await putJSON(env.CONFIG_KV, KV_KEYS.deployConfig(type), {
+                ...prev,
+                lastAttempt: nowIso,
+                pendingSha: prev.pendingSha || prev.currentSha || null,
+                pendingTargets: mergeSubsetPending(prev, logs)
+            });
+        }
+    } catch (error) {
+        logs.push({ name: '版本账本', success: false, msg: '⚠️ 远端修复步骤已执行，但版本账本写入失败；不会回滚远端结果，请核对部署状态与重试队列: ' + redactDiagnosticText((error as Error).message) });
     }
 
-    return json(logs);
+    traceEvent(env, 'repair completed', { targets: realTargets.length, success: allRebuilt });
+    return json(logs.map(l => ({ ...l, msg: redactDiagnosticText(l.msg || '') })));
 }

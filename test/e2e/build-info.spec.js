@@ -1,0 +1,31 @@
+const { test, expect, openPanel, noOverflow } = require('./fixtures.cjs');
+const fs = require('node:fs');
+
+test('build provenance matches the artifact, supports keyboard disclosure and survives reload', async ({ page, mock }) => {
+    await openPanel(page);
+    const manifest = JSON.parse(fs.readFileSync('dist/build-manifest.json', 'utf8'));
+    const info = manifest.build;
+    const details = page.locator('.build-info');
+    const summary = details.locator('summary');
+    await expect(summary).toContainText(info.shortCommit || '提交未知');
+    await expect(page.locator('h1')).toContainText('V' + info.version);
+    await expect(details).not.toHaveAttribute('open', '');
+    await summary.focus();
+    await page.keyboard.press('Enter');
+    await expect(details).toHaveAttribute('open', '');
+    await expect(details).toContainText(info.buildId);
+    await expect(details).toContainText(info.sourceSha256);
+    await expect(details).toContainText('不代表已推送或已部署');
+    expect(await page.evaluate(() => window.APP_BUILD_INFO)).toEqual(info);
+    const report = await page.evaluate(() => buildDebugReport('mock report', '', {}));
+    expect(report).toContain(info.buildId);
+    expect(report).toContain('不代表已推送或已部署');
+    await noOverflow(page);
+    await page.screenshot({ path: test.info().outputPath('build-info.png') });
+    await page.keyboard.press('Enter');
+    await expect(details).not.toHaveAttribute('open', '');
+    await page.reload();
+    await expect(summary).toContainText(info.shortCommit || '提交未知');
+    expect(await page.evaluate(() => window.APP_BUILD_INFO.buildId)).toBe(info.buildId);
+    await noOverflow(page);
+});

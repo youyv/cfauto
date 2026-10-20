@@ -1,3 +1,6 @@
+import { enforceReadOnlyNetwork, boundReadOnlyResponse } from '../reliability/read-only-network';
+import { executionJournal } from '../reliability/execution-context';
+import { redactDiagnosticText } from './redaction';
 import { logger } from './logger';
 /**
  * Cloudflare API 工具 — URL 构建器 + 认证头
@@ -26,13 +29,27 @@ export const cf = {
 
 /** 带超时的 fetch 封装 — 默认 15s，防止挂起耗尽 Worker CPU 预算 */
 export async function fetchWithTimeout(url: string, init?: RequestInit, timeoutMs = 15000): Promise<Response> {
+    const journal = executionJournal();
+    if (journal) return journal.request(url, enforceReadOnlyNetwork(url, init), timeoutMs);
+    return fetchDirectWithTimeout(url, init, timeoutMs);
+}
+
+/** Executor transport only; calling this from ordinary business routes would bypass
+ * the journal. Keep every business caller on fetchWithTimeout. */
+export async function fetchDirectWithTimeout(url: string, init?: RequestInit, timeoutMs = 15000): Promise<Response> {
+    const deadline = Date.now() + timeoutMs;
+    init = enforceReadOnlyNetwork(url, init);
     const controller = new AbortController();
+    const forwardAbort = () => controller.abort();
+    if (init?.signal?.aborted) controller.abort();
+    else init?.signal?.addEventListener('abort', forwardAbort, { once: true });
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
         const res = await fetch(url, { ...init, signal: controller.signal });
-        return res;
+        return await boundReadOnlyResponse(res, deadline, url, init?.method);
     } finally {
         clearTimeout(timer);
+        init?.signal?.removeEventListener('abort', forwardAbort);
     }
 }
 
@@ -83,7 +100,7 @@ export async function readApiJson<T = any>(res: Response, context: string): Prom
             // 错误响应非 JSON（HTML 错误页/网关页），保留 HTTP 状态码作为唯一线索
             logger.warn('readApiJson: error response is not JSON', { context, status: res.status });
         }
-        throw new Error(context + ': ' + detail);
+        throw new Error(redactDiagnosticText(context + ': ' + detail));
     }
     try {
         return await res.json() as T;
@@ -94,12 +111,15 @@ export async function readApiJson<T = any>(res: Response, context: string): Prom
 
 /** 读取 CF API 的 `result` 字段 — 包装 readApiJson，省去每处的 `as any).result` */
 export async function readApiResult<T = any>(res: Response, context: string): Promise<T> {
-    const body = await readApiJson<{ result?: T }>(res, context);
+    const body = await readApiJson<{ success?: boolean; errors?: Array<{ message?: string }>; result?: T }>(res, context);
+    if (!body || body.success === false) throw new Error(redactDiagnosticText(context + ': ' + (body?.errors?.[0]?.message || '上游 API 拒绝操作')));
     return body.result as T;
 }
 
 /** 标准化错误码 — 便于前端区分错误类型 */
-export type ErrorCode = 'AUTH_FAILED' | 'KV_NOT_BOUND' | 'GITHUB_API_ERROR' | 'CF_API_ERROR' | 'VALIDATION_ERROR' | 'RATE_LIMITED';
+export type ErrorCode = 'AUTH_FAILED' | 'KV_NOT_BOUND' | 'GITHUB_API_ERROR' | 'CF_API_ERROR' | 'VALIDATION_ERROR' | 'RATE_LIMITED'
+    | 'UPSTREAM_REF_NOT_FOUND' | 'UPSTREAM_FILE_NOT_FOUND' | 'UPSTREAM_RATE_LIMIT' | 'UPSTREAM_FORBIDDEN'
+    | 'UPSTREAM_UNAVAILABLE' | 'UPSTREAM_TIMEOUT' | 'UPSTREAM_NETWORK' | 'UPSTREAM_INVALID_RESPONSE' | 'UPSTREAM_NOT_FILE';
 
 /** 安全解析 JSON，支持泛型类型推断 */
 export async function safeJson<T = any>(req: Request): Promise<T> {
@@ -109,7 +129,7 @@ export async function safeJson<T = any>(req: Request): Promise<T> {
 
 /** 统一 JSON 错误响应 */
 export function jsonError(msg: string, status = 500, code?: ErrorCode) {
-    const body = { success: false, msg, ...(code ? { code } : {}) };
+    const body = { success: false, msg: redactDiagnosticText(msg), ...(code ? { code } : {}) };
     return new Response(JSON.stringify(body), {
         status,
         headers: { 'Content-Type': 'application/json', 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY' }

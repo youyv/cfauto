@@ -32,6 +32,8 @@ export interface VariableEntry {
 
 // ===== 部署配置 =====
 export interface DeployConfig {
+    /** Diagnostic correlation only; not an idempotency key or persisted task state. */
+    lastTaskId?: string;
     /** Code-source selection used by the last successful full deployment. */
     sourceIdentity?: string;
     mode: 'latest' | 'fixed';
@@ -73,6 +75,8 @@ export interface AutoUpdateConfig {
  * 实际读写请统一走 account-store 的 getWorkerNames / setWorkerNames / addWorkerName。
  */
 export interface AccountEntry {
+    /** Coordinator-owned AAD revision; never trusted from a browser edit. */
+    credentialRevision?: number;
     alias: string;
     accountId: string;
     email: string;
@@ -91,7 +95,11 @@ export interface AccountEntry {
     dailyLimit?: number;
     defaultZoneName?: string;
     defaultZoneId?: string;
-    stats?: { total: number; max: number; error?: string };
+    /**
+     * 仅用于展示的历史统计信息；不是账号身份或权限数据。
+     * `accountId` 来自 `/api/stats` 读模型（展示用），回传保存时允许保留但不作为身份依据。
+     */
+    stats?: { total: number; max: number; error?: string; /** Retained legacy display metadata; never an authority identity. */ alias?: string; /** Display-only copy returned by /api/stats; never an authority identity. */ accountId?: string };
     workers_cmliu?: string[];
     workers_joey?: string[];
     workers_ech?: string[];
@@ -100,6 +108,7 @@ export interface AccountEntry {
 
 // ===== 部署日志条目 =====
 export interface JournalEntry {
+    taskId?: string;
     time: string;
     type: TemplateType;
     sha: string | null;
@@ -172,4 +181,4 @@ export interface DeployBody {
 export interface ZoneBody { accountId: string }
 export interface WorkerBody { accountId: string; workerName: string; deleteKv?: boolean }
 export interface SubdomainBody { accountId: string; newSubdomain: string }
-export interface Fix1101Body { type: string }
+export interface Fix1101Body { type: string; expectedTargets?: Array<{ accountId: string; workerName: string }> }

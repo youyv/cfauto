@@ -69,14 +69,101 @@ document.addEventListener('change', function (e) {
 });
 
 // ===== 通用动作 =====
+// Modal dialogs are stacked; the floating workbench intentionally stays nonmodal.
+const modalStack = [];
+let modalInertState = [];
+
+function dialogFocusables(el) {
+    return Array.from(el.querySelectorAll('a[href], button, input, select, textarea, [tabindex], summary'))
+        .filter(node => node.tabIndex >= 0 && !node.matches(':disabled') && !node.closest('[inert]')
+            && node.getClientRects().length > 0 && getComputedStyle(node).visibility !== 'hidden');
+}
+function focusDialog(el) {
+    // The first control is the close/cancel button, never a destructive confirm.
+    const target = dialogFocusables(el)[0] || el;
+    target.focus({ preventScroll: true });
+}
+function topModal() {
+    return modalStack.length ? modalStack[modalStack.length - 1].el : null;
+}
+function hasSweetAlertDialog() {
+    return typeof Swal !== 'undefined' && Swal.isVisible() && !Swal.getPopup().classList.contains('swal2-toast');
+}
+function refreshModalInert() {
+    // Restore exactly the original inert values, including pre-existing inert UI.
+    modalInertState.forEach(([el, inert]) => { el.inert = inert; });
+    modalInertState = [];
+    const top = topModal();
+    if (!top) return;
+    Array.from(document.body.children).forEach(el => {
+        // SweetAlert owns its own focus trap; never make its portal inert.
+        if (el === top || el.contains(top) || el.classList.contains('swal2-container')
+            || ['SCRIPT', 'STYLE', 'LINK'].includes(el.tagName)) return;
+        modalInertState.push([el, el.inert]);
+        el.inert = true;
+    });
+}
 function closeModal(id) {
     const el = $(id);
-    if (el) el.classList.add('hidden');
+    if (!el) return;
+    const index = modalStack.findIndex(entry => entry.el === el);
+    const wasTop = el === topModal();
+    const entry = index >= 0 ? modalStack.splice(index, 1)[0] : null;
+    el.classList.add('hidden');
+    if (entry) el.style.zIndex = entry.zIndex;
+    refreshModalInert();
+    if (!wasTop || hasSweetAlertDialog()) return;
+    const opener = entry.opener;
+    const top = topModal();
+    if (opener && opener.isConnected && !opener.matches(':disabled') && !opener.closest('[inert]')
+        && opener.getClientRects().length && getComputedStyle(opener).visibility !== 'hidden'
+        && (!top || top.contains(opener))) {
+        opener.focus({ preventScroll: true });
+    } else if (top) {
+        focusDialog(top);
+    } else {
+        // Account rows can be re-rendered or removed while a dialog is open.
+        const fallback = $('theme_btn');
+        if (fallback) fallback.focus({ preventScroll: true });
+    }
 }
 function openModal(id) {
     const el = $(id);
-    if (el) el.classList.remove('hidden');
+    if (!el) return;
+    el.classList.remove('hidden');
+    if (el.getAttribute('role') !== 'dialog') return;
+    const index = modalStack.findIndex(entry => entry.el === el);
+    // Reopening the same dialog must not replace its original return target.
+    const entry = index >= 0 ? modalStack.splice(index, 1)[0]
+        : { el, opener: document.activeElement, zIndex: el.style.zIndex };
+    modalStack.push(entry);
+    modalStack.forEach((item, i) => { item.el.style.zIndex = String(60 + i); });
+    refreshModalInert();
+    if (!hasSweetAlertDialog()) focusDialog(el);
 }
+document.addEventListener('keydown', e => {
+    const top = topModal();
+    if (!top || hasSweetAlertDialog() || e.isComposing) return;
+    // Let local search handling consume the first Escape before closing its dialog.
+    if (e.key === 'Escape' && e.target.matches('[data-escape-clear]') && e.target.value) return;
+    if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        closeModal(top.id);
+    } else if (e.key === 'Tab') {
+        const nodes = dialogFocusables(top);
+        const first = nodes[0] || top, last = nodes[nodes.length - 1] || top;
+        if (!nodes.length || !top.contains(document.activeElement) || document.activeElement === top
+            || (e.shiftKey && document.activeElement === first) || (!e.shiftKey && document.activeElement === last)) {
+            e.preventDefault();
+            (e.shiftKey ? last : first).focus();
+        }
+    }
+}, true);
+document.addEventListener('focusin', e => {
+    const top = topModal();
+    if (top && !hasSweetAlertDialog() && !top.contains(e.target)) focusDialog(top);
+});
 function clearWorkbenchLog() {
     const log = $('workbench_log');
     if (log) log.textContent = '';
@@ -99,7 +186,7 @@ window.fetch = function (url, init) {
     const method = String(init.method || 'GET').toUpperCase();
     if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
         const csrf = getCsrfToken();
-        const headers = Object.assign({}, init.headers);
+        const headers = init.headers && typeof init.headers.entries === 'function' ? Object.fromEntries(init.headers.entries()) : Array.isArray(init.headers) ? Object.fromEntries(init.headers) : Object.assign({}, init.headers);
         if (csrf) headers['X-CSRF-Token'] = csrf;
         // 请求体是 JSON 字符串时补 Content-Type（此前全靠服务端宽松解析）
         if (typeof init.body === 'string' && !headers['Content-Type'] && !headers['content-type']) {
@@ -115,8 +202,26 @@ window.fetch = function (url, init) {
  * 消除各处重复的 `if(!r.ok) throw new Error('HTTP '+r.status)` 并让后端的
  * `{success:false,msg}` 真正传达到用户面前。
  */
+const recentRequestTraces = [];
+const configProtocol = typeof frontendModules !== 'undefined' && frontendModules.createConfigProtocol
+    ? frontendModules.createConfigProtocol({ newKey: () => crypto.randomUUID(), baseUrl: () => location.href }) : null;
+const taskProtocol = typeof frontendModules !== 'undefined' && frontendModules.createTaskProtocol
+    ? frontendModules.createTaskProtocol({newKey: () => crypto.randomUUID(), baseUrl: () => location.href, enabled: () => !!configProtocol?.isEnabled()}) : null;
+function acceptConfigView(domain, value) { if (configProtocol) configProtocol.accept(domain, value); }
+function pinConfigView(domain) { if (configProtocol) configProtocol.pin(domain); }
+function releaseConfigView(domain) { if (configProtocol) configProtocol.release(domain); }
 async function apiFetch(url, init) {
+    try {
+    const prepared = configProtocol ? configProtocol.prepare(url, init) : { init, ticket: null };
+    const taskPrepared = taskProtocol ? taskProtocol.prepare(url, prepared.init) : {init: prepared.init, ticket: null};
+    init = taskPrepared.init;
     const r = await fetch(url, init);
+    const requestId = r.headers.get('X-Request-ID');
+    if (/^req_[a-f0-9]{24}$/.test(requestId || '')) {
+        // No query, request body, credentials or caller-controlled IDs in diagnostics.
+        recentRequestTraces.push({ id: requestId, method: (init && init.method) || 'GET', path: new URL(url, location.href).pathname, status: r.status });
+        if (recentRequestTraces.length > 25) recentRequestTraces.shift();
+    }
     const text = await r.text();
     let data = null;
     if (text) {
@@ -126,11 +231,20 @@ async function apiFetch(url, init) {
             throw new Error('服务端返回的不是合法 JSON');
         }
     }
+    if (taskProtocol) taskProtocol.finish(taskPrepared.ticket, r.status, data);
+    if (configProtocol) {
+        configProtocol.finish(prepared.ticket, r.status, data);
+        if (r.ok && !prepared.ticket) configProtocol.observe(url, data, r.headers);
+    }
     if (!r.ok) {
         const msg = (data && (data.msg || data.error)) || ('HTTP ' + r.status);
-        throw new Error(msg);
+        const error = new Error(redactForReport(msg));
+        error.status = r.status;
+        if (/^req_[a-f0-9]{24}$/.test(requestId || '')) error.message += ' [请求 ' + requestId + ']';
+        throw error;
     }
     return data;
+    } finally { renderPendingConfigSaves(); if (typeof renderPendingTaskSubmissions === 'function') renderPendingTaskSubmissions(); }
 }
 
 // ===== 时间 =====
@@ -181,7 +295,9 @@ function copyToClipboard(text, successMsg = '已复制到剪贴板') {
 
 // 登出：删除服务端会话 + 清 cookie + 回登录页
 async function logout() {
+    if (!await configDrafts.confirmDiscard()) return;
     try { await fetch('/api/logout', { method: 'POST' }); } catch (e) { console.error('[logout]', e); }
+    configDrafts.allowUnload = true; // 已确认放弃，避免再弹一次原生离开提示。
     location.reload();
 }
 
@@ -198,3 +314,27 @@ registerActions({
     clearWorkbenchLog: clearWorkbenchLog,
     regenBatchUuid: regenBatchUuid
 });
+/** Pending saves expose domain names only, never frozen bodies or credentials. */
+function renderPendingConfigSaves() {
+    const panel = $('config_pending_panel');
+    if (!panel || !configProtocol) return;
+    const pending = configProtocol.pending();
+    panel.hidden = pending.length === 0;
+    panel.replaceChildren();
+    if (!pending.length) return;
+    const title = document.createElement('strong'); title.textContent = '有配置保存尚待确认'; panel.appendChild(title);
+    pending.forEach(item => {
+        const row = document.createElement('div'); row.className = 'flex items-center gap-2 mt-1';
+        const label = document.createElement('span'); label.textContent = item.domain + (item.conflict ? '：版本冲突，请明确重新读取并合并；草稿保留。' : '：可重试原保存意图，当前新草稿不会被自动提交。'); row.appendChild(label);
+        if (!item.conflict) {
+            const button = document.createElement('button'); button.type = 'button'; button.className = 'border rounded px-2 py-1'; button.textContent = '重试原保存';
+            button.addEventListener('click', async () => {
+                button.disabled = true;
+                try { const retry = configProtocol.retry(item.domain); await apiFetch(retry.url, retry.init); await Swal.fire('原保存已确认', '仅确认了之前的意图；未覆盖当前表单草稿。继续编辑前请核对或重新读取。', 'success'); }
+                catch (e) { await Swal.fire('尚未确认', e.message, 'warning'); }
+                finally { renderPendingConfigSaves(); }
+            }); row.appendChild(button);
+        }
+        panel.appendChild(row);
+    });
+}

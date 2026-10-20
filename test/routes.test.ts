@@ -326,7 +326,7 @@ describe('rotateUUIDAndDeploy — 熔断作用域', () => {
 describe('handleCronJob', () => {
     function statsResponse(requests: number) {
         return new Response(JSON.stringify({
-            data: { viewer: { accounts: [{ workersInvocationsAdaptive: [{ sum: { requests } }] }] } }
+            data: { viewer: { accounts: [{ pagesFunctionsInvocationsAdaptiveGroups: [], workersInvocationsAdaptive: [{ sum: { requests } }] }] } }
         }), { status: 200 });
     }
 
@@ -390,6 +390,21 @@ describe('handleCronJob', () => {
         try {
             await handleCronJob(env);
             expect(stub.calls.find(c => c.method === 'PUT' && c.url.includes('/scripts/e1'))).toBeUndefined();
+        } finally { stub.restore(); }
+    });
+
+    it('统计缺少 Pages 数据集时禁止熔断，不能当零补齐', async () => {
+        const kv = mockKV({ [KV_KEYS.GLOBAL_CONFIG]: { enabled: true, interval: 1, lastCheck: 0, fuseThreshold: 50 } });
+        const env = mockEnv(kv);
+        await seedAccounts(env, [acct({ workers_cmliu: ['w1'], dailyLimit: 100 })]);
+        const stub = stubFetch([
+            { match: '/graphql', respond: () => Response.json({data:{viewer:{accounts:[{workersInvocationsAdaptive:[{sum:{requests:100}}]}]}}}) },
+            ...githubRoutes(), { match: '/bindings', respond: () => cfOk([]) }, scriptEndpoint(STUB_CODE),
+            { match: '/subdomain', respond: () => cfOk({}) }
+        ]);
+        try {
+            await handleCronJob(env);
+            expect(readKV(kv, KV_KEYS.accountVars('cmliu', AID_A))).toBeNull();
         } finally { stub.restore(); }
     });
 
@@ -540,8 +555,10 @@ describe('CRUD 路由', () => {
             'SESSION_forged': 'x'
         });
         const body: any = await res.json();
-        expect(body.restored).toBe(1);
+        expect(res.status).toBe(400);
+        expect(body.restored).toBe(0);
         expect(body.rejected).toBe(2);
+        expect(kv._puts).toBe(0);
         expect(await kv.get('SESSION_forged')).toBeNull();
     });
 
@@ -552,7 +569,8 @@ describe('CRUD 路由', () => {
         const body: any = await (await call('GET', '/api/backup', env)).json();
         expect(body._encryptionFingerprint).toMatch(/^[0-9a-f]{8}$/);
         const res = await call('POST', '/api/restore', mockEnv(kv, { ENCRYPTION_SECRET: 's2' }), body);
-        expect((await res.json() as any).warning).toContain('不同的加密密钥');
+        expect(res.status).toBe(400);
+        expect((await res.json() as any).msg).toContain('不同的加密密钥');
     });
 
     it('GET /api/backup 包含账号级变量覆盖键', async () => {

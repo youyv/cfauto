@@ -268,7 +268,7 @@ describe('fetchInternalStats', () => {
         const stub = stubFetch([{
             match: '/graphql',
             respond: () => new Response(JSON.stringify({
-                data: { viewer: { accounts: [{ workersInvocationsAdaptive: [{ sum: { requests: 200000 } }] }] } }
+                data: { viewer: { accounts: [{ pagesFunctionsInvocationsAdaptiveGroups: [], workersInvocationsAdaptive: [{ sum: { requests: 200000 } }] }] } }
             }), { status: 200 })
         }]);
         try {
@@ -280,7 +280,7 @@ describe('fetchInternalStats', () => {
         const stub = stubFetch([{
             match: '/graphql',
             respond: () => new Response(JSON.stringify({
-                data: { viewer: { accounts: [{ workersInvocationsAdaptive: [{ sum: { requests: 500000 } }] }] } }
+                data: { viewer: { accounts: [{ pagesFunctionsInvocationsAdaptiveGroups: [], workersInvocationsAdaptive: [{ sum: { requests: 500000 } }] }] } }
             }), { status: 200 })
         }]);
         try {

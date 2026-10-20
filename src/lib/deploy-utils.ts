@@ -1,3 +1,6 @@
+import { traceEvent } from './trace';
+import { redactDiagnosticText } from './redaction';
+import type { AppEnv } from '../config/env';
 import type { AccountCredentials } from "../config/env";
 import { cf, getAuthHeaders, fetchWithTimeout, readApiResult } from "./cloudflare-api";
 import { BINDING, TEMPLATES } from "../config/templates";
@@ -68,8 +71,9 @@ export async function uploadWorker(
     workerName: string, scriptContent: string,
     bindings: Array<Record<string, unknown>>,
     /** 模板类型：用于取该模板专属的兼容日期，缺省回落到默认常量 */
-    templateType?: string
+    templateType?: string, env?: AppEnv
 ): Promise<UploadResult> {
+    if (env) traceEvent(env, 'upload started', { workerName, templateType });
     const metadata = {
         main_module: "index.js",
         bindings,
@@ -84,7 +88,8 @@ export async function uploadWorker(
         method: "PUT", headers, body: formData
     }, 60000);
     const verdict = await readUploadVerdict(res);
-    return { ok: verdict.ok, res, error: verdict.error };
+    if (env) traceEvent(env, 'upload completed', { workerName, templateType, ok: verdict.ok, status: res.status });
+    return { ok: verdict.ok, res, error: verdict.error ? redactDiagnosticText(verdict.error) : verdict.error };
 }
 
 /** 归一化脚本文本：忽略 BOM、行尾与尾部空白差异，避免把格式差异误判成内容不一致 */
@@ -179,7 +184,11 @@ export async function deleteKvNamespaces(
             const delRes = await fetchWithTimeout(cf.kvNamespace(accountId, nsId), {
                 method: "DELETE", headers
             });
-            if (delRes.ok) { deleted = true; break; }
+            if (delRes.ok) {
+                try { await readApiResult(delRes, '删除 KV 命名空间'); deleted = true; }
+                catch (error) { logger.warn('KV namespace deletion unconfirmed', { module: 'deploy-utils', accountId, nsId }); }
+                break;
+            }
             // 409 = 命名空间仍被引用（CF 解绑异步），退避后重试；其他错误立即放弃
             if (delRes.status !== 409) break;
             await new Promise(r => setTimeout(r, baseDelayMs));

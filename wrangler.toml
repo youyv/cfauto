@@ -1,6 +1,7 @@
 # ============================================
 # Cloudflare Worker 部署配置文件
-# 修改下方配置后双击 deploy.bat 即可推送
+# 占位模板，不是当前生产 manager 的完整 DO/Secret/pin 配置
+# 当前生产代码升级必须遵循 docs/OPERATIONS.md；不能直接覆盖生产
 # ============================================
 
 # ---------- 项目名称 ----------
@@ -16,6 +17,7 @@ main = "dist/worker.js"
 # ---------- 兼容日期 ----------
 # 构建脚本同步固定兼容日期，不随当天日期变化
 compatibility_date = "2026-07-16"
+compatibility_flags = ["nodejs_als"]
 
 # workers_dev = false                                           # 禁用 *.workers.dev 默认域名
 # preview_urls = false                                       # 禁用预览 URL

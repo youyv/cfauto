@@ -95,7 +95,13 @@ for (const f of frontendJsFiles) {
     }
 }
 // 拼接后整体再解析一次：单文件合法但拼接后可能出现重复的顶层 const 声明
-const concatenated = frontendJsFiles.map(f => fs.readFileSync(path.join(ROOT, f), 'utf-8')).join('\n\n');
+let modulePrelude = '';
+try {
+    const modules = require('./scripts/frontend-modules.cjs').bundleFrontendModules(ROOT);
+    modulePrelude = modules.code + '\n';
+    console.log('  ✅ ES Module 显式依赖已打包：' + modules.inputs.length + ' 文件，无孤立模块');
+} catch (e) { errors.push('Frontend module graph: ' + e.message); }
+const concatenated = modulePrelude + frontendJsFiles.map(f => fs.readFileSync(path.join(ROOT, f), 'utf-8')).join('\n\n');
 try {
     new vm.Script(concatenated, { filename: 'concatenated-frontend.js' });
     console.log('  ✅ 所有前端 JS 单独与拼接后均可解析');
@@ -180,7 +186,7 @@ const dynamicIds = new Set([
     ...[...concatenated.matchAll(/id="([a-z0-9_]+)"/g)].map(m => m[1])
 ]);
 // 模板插值构造的 ID（如 'vars_' + t）无法静态判定，按前缀放行
-const dynamicPrefixes = ['upstream_', 'vars_', 'ver_', 'badge_', 'btn_deploy_', 'btn_fix1101_', 'auto_', 'in_workers_', 'bd_chk_'];
+const dynamicPrefixes = ['upstream_', 'vars_', 'ver_', 'badge_', 'btn_deploy_', 'btn_fix1101_', 'auto_', 'in_workers_', 'bd_chk_', 'compat_'];
 const danglingIds = [...referencedIds].filter(id =>
     !htmlIds.has(id) && !dynamicIds.has(id) && !dynamicPrefixes.some(p => id.startsWith(p)));
 if (danglingIds.length > 0) {
@@ -195,6 +201,10 @@ console.log('\n=== 5. API route coverage ===');
 const routesTS = ['src/routes/register.ts', 'src/routes/crud.ts', 'src/routes/crud-backup.ts', 'src/routes/crud-diag.ts']
     .map(f => fs.readFileSync(path.join(ROOT, f), 'utf-8')).join('\n');
 const expectedRoutes = [
+    'GET /api/reliability/recovery', 'POST /api/reliability/maintenance',
+    'GET /api/reliability/config', 'POST /api/reliability/config',
+    'GET /api/reliability/tasks', 'POST /api/reliability/tasks',
+    'GET /api/reliability/tasks/:id', 'POST /api/reliability/tasks/:id/cancel', 'POST /api/reliability/tasks/:id/wake',
     'GET /api/accounts', 'POST /api/accounts',
     'GET /api/settings', 'POST /api/settings',
     'GET /api/deploy_config',
@@ -209,11 +219,11 @@ const expectedRoutes = [
     'GET /api/stats', 'GET /api/diff',
     'POST /api/fix_1101',
     'GET /api/get_regions_data', 'POST /api/save_yxip',
-    'GET /api/verify_credentials', 'GET /api/deploy/preview',
+    'GET /api/verify_credentials', 'GET /api/deploy/preview', 'POST /api/deploy/preview',
     'GET /api/diag', 'GET /api/deploy_journal',
     'GET /api/accounts/export', 'POST /api/accounts/import',
-    'GET /api/backup', 'POST /api/restore',
-    'GET /api/init_data', 'GET /api/upstream', 'POST /api/upstream'
+    'GET /api/backup', 'POST /api/restore', 'POST /api/restore/preview', 'GET /api/restore/snapshot',
+    'GET /api/init_data', 'GET /api/upstream', 'POST /api/upstream', 'POST /api/upstream/validate'
 ];
 const missingRoutes = expectedRoutes.filter(r => !routesTS.includes("'" + r + "'") && !routesTS.includes('"' + r + '"'));
 if (missingRoutes.length > 0) {
@@ -230,7 +240,10 @@ for (const m of indexTS.matchAll(/pathname === '(\/[^']+)'/g)) registeredPaths.a
 const calledPaths = new Set(
     [...concatenated.matchAll(/['"`](\/api\/[a-z0-9_\/]+)/gi)].map(m => m[1])
 );
-const unknownCalls = [...calledPaths].filter(p => !registeredPaths.has(p));
+// A concatenated task URL produces the literal prefix /tasks/. Accept only a
+// prefix backed by a declared parameterized route; do not whitelist arbitrary URLs.
+const routeDynamicPrefixes=expectedRoutes.filter(r=>r.includes('/:id')).map(r=>r.split(' ')[1].split(':id')[0]);
+const unknownCalls = [...calledPaths].filter(p => !registeredPaths.has(p) && !routeDynamicPrefixes.includes(p));
 if (unknownCalls.length > 0) {
     console.log('  ❌ 前端调用了未注册的端点: ' + unknownCalls.join(', '));
     errors.push('Frontend calls unregistered endpoints: ' + unknownCalls.join(', '));
@@ -262,6 +275,7 @@ if (unservedAssets.length > 0) {
 }
 // CSP 检查：先剥掉注释，否则说明性注释里的字面量会误报
 const indexCode = indexTS.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+if (/cdn\.tailwindcss\.com/.test(indexCode)) errors.push('Production must use build-time local Tailwind CSS');
 if (/script-src[^;\n'"]*'unsafe-inline'/.test(indexCode)) {
     console.log('  ❌ 面板 CSP 仍包含 script-src \'unsafe-inline\'');
     errors.push("Panel CSP still allows script-src 'unsafe-inline'");
@@ -373,7 +387,13 @@ if (deadWindowExports.length > 0) {
 const cssText = fs.readFileSync(path.join(ROOT, 'frontend/css/style.css'), 'utf-8');
 const htmlIdList = [...html.matchAll(/id="([^"]+)"/g)].map(m => m[1]);
 // 模板插值构造的 id（vars_cmliu 等）在 JS 里以 'vars_' + t 出现，按前缀放行
+const ariaIdRefs = [...html.matchAll(/\baria-(?:controls|labelledby|describedby)="([^"]+)"/g)]
+    .flatMap(m => m[1].trim().split(/\s+/));
+const missingAriaIds = [...new Set(ariaIdRefs.filter(id => !htmlIdList.includes(id)))];
+if (missingAriaIds.length) errors.push('Missing ARIA ID references: ' + missingAriaIds.join(', '));
 const orphanHtmlIds = htmlIdList.filter(id => {
+    // Semantic tab/panel and description relationships are real ID consumers.
+    if (ariaIdRefs.includes(id)) return false;
     if (dynamicPrefixes.some(p => id.startsWith(p))) return false;
     if (new RegExp('[\'"`]' + id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[\'"`]').test(concatenated)) return false;
     if (cssText.includes('#' + id)) return false;
@@ -468,6 +488,20 @@ console.log('\n=== 9. Batch script sanity ===');
         console.log("  ✅ " + batFiles.length + " 个 .bat 的块结构与括号转义无解析陷阱");
     }
 }
+
+// ===== C8: package/document versions and exact artifact provenance =====
+try {
+    const { releaseVersionErrors, manifestErrors, hashInputs, collectSourceInputs } = require('./scripts/build-info.cjs');
+    const version = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
+    errors.push(...releaseVersionErrors(version, fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8'), fs.readFileSync(path.join(ROOT, 'CHANGELOG.md'), 'utf8')));
+    const generated = fs.readFileSync(path.join(ROOT, 'src/frontend-bundle.ts'), 'utf8');
+    const build = JSON.parse(generated.match(/^export const BUILD_INFO = (.*);$/m)[1]);
+    const asset = JSON.parse(generated.match(/^export const FRONTEND_ASSET_VERSION = (.*);$/m)[1]);
+    const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'dist/build-manifest.json'), 'utf8'));
+    errors.push(...manifestErrors(manifest, build, asset, fs.readFileSync(path.join(ROOT, 'dist/worker.js'))));
+    if (build.version !== version || build.sourceSha256 !== hashInputs(collectSourceInputs(ROOT))) errors.push('来源已改变但构建未更新，请重新执行 build');
+    console.log('  构建溯源校验完成（不验证 Git 推送或 Cloudflare 部署状态）');
+} catch (_) { errors.push('缺少或无法解析构建清单，请重新执行 build'); }
 
 // ===== SUMMARY =====
 console.log('\n' + '='.repeat(60));

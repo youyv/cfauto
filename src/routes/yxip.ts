@@ -6,6 +6,7 @@ import { TEMPLATES, KV_KEYS } from '../config/templates';
 import { cf, getAuthHeaders, json, jsonError, fetchWithTimeout, readApiResult } from '../lib/cloudflare-api';
 import { getJSON, putJSON } from "../lib/kv-utils";
 import { readAccounts, getWorkerNames, hasAccountCredentials } from "../lib/account-store";
+import { redactDiagnosticText } from '../lib/redaction';
 import { logger } from '../lib/logger';
 import type { AppEnv } from "../config/env";
 import type { VariableEntry } from '../lib/types';
@@ -85,7 +86,7 @@ export async function handleSaveYxip(env: AppEnv, reqData: YxipSaveRequest) {
             return json([{ name: "Joey 全局变量 (无 KV 模式)", success: true, msg: "✅ 变量 [yx] 已成功覆盖至全体记录供稍后部署使用", type: 'joey' }]);
         } catch (e: any) {
             logger.error('handleSaveYxip joey_var failed', e instanceof Error ? e : new Error(String(e)), { module: 'yxip' });
-            return json([{ name: "写入错误", success: false, msg: e.message }], 500);
+            return json([{ name: "写入错误", success: false, msg: redactDiagnosticText(e.message) }], 500);
         }
     }
 
@@ -132,6 +133,7 @@ export async function handleSaveYxip(env: AppEnv, reqData: YxipSaveRequest) {
                     });
 
                     if (putRes.ok) {
+                        await readApiResult(putRes, '写入优选节点');
                         logItem.success = true;
                         logItem.msg = `✅ 已更新对应命名空间的 ${t.yxipKey}`;
                     } else {
@@ -146,7 +148,7 @@ export async function handleSaveYxip(env: AppEnv, reqData: YxipSaveRequest) {
         if (logs.some(l => l.success)) {
             logger.audit('yxip saved', { type, accountId, workers: logs.filter(l => l.success).length });
         }
-        return json(logs);
+        return json(logs.map(l => ({ ...l, msg: redactDiagnosticText(l.msg) })));
     } catch (e: any) {
         logger.error('handleSaveYxip failed', e instanceof Error ? e : new Error(String(e)), { module: 'yxip' });
         return json([{ name: "执行异常", success: false, msg: e.message }], 500);

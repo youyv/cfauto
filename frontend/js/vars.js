@@ -56,12 +56,14 @@ function addVarRow(t, k, v, s) {
     const keyInput = document.createElement('input');
     keyInput.className = 'input-field w-1/4 key font-bold';
     keyInput.placeholder = 'Key';
+    keyInput.setAttribute('aria-label', '变量名称');
     if (k) keyInput.value = k;
     d.appendChild(keyInput);
 
     const valInput = document.createElement('input');
     valInput.className = 'input-field w-2/4 val';
     valInput.placeholder = 'Val';
+    valInput.setAttribute('aria-label', '变量值');
     // 留空 = 沿用上游默认值；真正要删除请点 × （与后端 mergeVariableBindings 语义一致）
     valInput.title = '留空表示不写入该绑定（沿用上游模板默认值）；要移除变量请点右侧 ×';
     if (v) valInput.value = v;
@@ -82,7 +84,7 @@ function addVarRow(t, k, v, s) {
     if (s) { secChk.checked = true; secHidden.value = '1'; }
     secLabel.appendChild(secChk);
     const secretIcon = document.createElement('span');
-    setUiIconText(secretIcon, '🔒', '');
+    setUiContent(secretIcon, 'lock', '');
     secLabel.title = '标记为 Secret 变量（加密存储）';
     secChk.setAttribute('aria-label', '标记为 Secret 变量');
     secLabel.appendChild(secretIcon);
@@ -110,8 +112,10 @@ function addVarRow(t, k, v, s) {
     }
 
     const delBtn = document.createElement('button');
+
+    delBtn.type = 'button';
     delBtn.className = 'text-gray-300 hover:text-red-500 px-1 font-bold';
-    delBtn.textContent = '\u00D7';
+    setUiContent(delBtn, 'x', '', { label: '删除该变量（部署时会从 Worker 移除）' });
     delBtn.title = '删除该变量（部署时会从 Worker 移除）';
     delBtn.addEventListener('click', function () { removeVarRow(delBtn, t); });
     d.appendChild(delBtn);
@@ -145,6 +149,7 @@ async function loadVars(t) {
     c.textContent = 'loading...';
     try {
         const v = await apiFetch('/api/settings?type=' + encodeURIComponent(t));
+        acceptConfigView('vars:' + t, v);
         const m = new Map();
         if (Array.isArray(v)) v.forEach(x => { if (x && x.key) m.set(x.key, x); });
         TEMPLATES[t].defaultVars.forEach(k => {
@@ -190,6 +195,7 @@ function selectSyncAccount(t) {
     v.forEach(a => {
         (a['workers_' + t] || []).forEach(wName => {
             const b = document.createElement('button');
+            b.type = 'button';
             b.className = 'w-full text-left bg-slate-50 p-2 mb-1 text-xs border rounded hover:bg-blue-50';
             const strong = document.createElement('b'); strong.textContent = a.alias;
             b.appendChild(strong);
@@ -233,7 +239,7 @@ async function previewDiff(t) {
         const d = await apiFetch('/api/diff?type=' + encodeURIComponent(t));
         if (d.status === 'up-to-date') {
             wbLog('✅ ' + d.message + ' (' + d.localSha + ')', 'text-green-400');
-        } else if (d.status === 'no_data') {
+        } else if (d.status === 'no_data' || d.status === 'custom_fixed') {
             wbLog('⚠️  ' + d.message, 'text-yellow-400');
         } else {
             wbLog('📋 ' + t + ' 版本对比: ' + d.localSha + ' → ' + d.remoteSha + ' (落后 ' + d.behindBy + ' 个提交)', 'text-white');
@@ -260,7 +266,8 @@ async function checkUpdate(t) {
         const fmt = (iso) => new Date(iso).toLocaleString([], { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
         const remoteDate = fmt(d.remote.date);
         const localDateStr = (d.local && d.local.date) ? fmt(d.local.date) : '未部署';
-        const isBehind = d.remote && (!d.local || d.remote.sha !== d.local.sha);
+        const isCustom = d.local?.kind === 'custom';
+        const isBehind = !isCustom && d.remote && (!d.local || d.remote.sha !== d.local.sha);
 
         el.textContent = '';
 
@@ -268,20 +275,21 @@ async function checkUpdate(t) {
         const upRow = document.createElement('div');
         upRow.className = 'flex justify-between items-center ' + (isBehind ? 'text-red-600 font-bold' : 'text-green-600');
         const upLeft = document.createElement('span');
-        setUiIconText(upLeft, isBehind ? '🚀' : '✅', ' 上游: ' + remoteDate);
+        setUiContent(upLeft, isBehind ? 'rocket' : 'circle-check', ' 上游: ' + remoteDate);
         upRow.appendChild(upLeft);
         const upRight = document.createElement('span');
         if (isBehind) {
             upRight.className = 'animate-pulse';
             upRight.textContent = 'New!';
         } else {
-            upRight.textContent = 'Latest';
+            upRight.textContent = isCustom ? '不与自定义源码比较' : 'Latest';
         }
         upRow.appendChild(upRight);
         if (isBehind) {
             const diffBtn = document.createElement('button');
+            diffBtn.type = 'button';
             diffBtn.className = 'text-blue-500 underline font-normal';
-            diffBtn.textContent = '🔍差异';
+            setUiContent(diffBtn, 'search', '差异');
             diffBtn.addEventListener('click', () => previewDiff(t));
             upRow.appendChild(diffBtn);
         }
@@ -292,10 +300,10 @@ async function checkUpdate(t) {
         const sameSha = d.local && d.remote && d.local.sha === d.remote.sha;
         localRow.className = 'flex justify-between ' + (sameSha ? 'text-gray-500' : 'text-orange-500 font-bold');
         const lLeft = document.createElement('span');
-        setUiIconText(lLeft, '💻', ' 本地: ' + localDateStr);
+        setUiContent(lLeft, 'monitor', (isCustom ? ' 自定义固定源码 '+String(d.local.digest || '').slice(0,12)+'：' : ' 本地: ') + localDateStr);
         localRow.appendChild(lLeft);
         const lRight = document.createElement('span');
-        setUiIconText(lRight, d.mode === 'fixed' ? '🔒' : '', d.mode === 'fixed' ? ' Locked' : '');
+        setUiContent(lRight, d.mode === 'fixed' ? 'lock' : '', d.mode === 'fixed' ? ' Locked' : '');
         localRow.appendChild(lRight);
         el.appendChild(localRow);
 
@@ -303,7 +311,7 @@ async function checkUpdate(t) {
         if (d.pending && d.pending.length > 0) {
             const pendRow = document.createElement('div');
             pendRow.className = 'text-orange-600 font-bold';
-            setUiIconText(pendRow, '⚠️', ' ' + d.pending.length + ' 个 Worker 部署失败，待重试');
+            setUiContent(pendRow, 'triangle-alert', ' ' + d.pending.length + ' 个 Worker 部署失败，待重试');
             pendRow.title = d.pending.join('\n');
             el.appendChild(pendRow);
         }
@@ -313,7 +321,7 @@ async function checkUpdate(t) {
         el.textContent = '';
         const ws = document.createElement('span');
         ws.className = 'text-red-400 text-[10px]';
-        setUiIconText(ws, '⚠️', ' ');
+        setUiContent(ws, 'triangle-alert', ' ');
         el.appendChild(ws);
         el.appendChild(document.createTextNode(reason));
     }
@@ -351,40 +359,63 @@ registerActions({
 
 // Source settings use the same API as cron and manual deployments.
 async function loadUpstream(t) {
-    const status = $('upstream_status_' + t);
-    const save = $('upstream_save_' + t);
-    if (!status || !save) return;
-    save.disabled = true;
+    const key = 'upstream_' + t, status = $('upstream_status_' + t);
+    if (!status || configDrafts.isBusy(key)) return;
+    configDrafts.setBusy(key, true);
     try {
+        if (!await configDrafts.confirmDiscard(key)) return;
         const d = await apiFetch('/api/upstream?type=' + encodeURIComponent(t));
+        acceptConfigView('upstream:' + t, d);
         applyUpstreamToUi(t, d);
-        save.disabled = false;
-    } catch (e) { status.textContent = '读取失败：' + e.message + '，请点击重新读取。'; }
+    } catch (e) {
+        configDrafts.loadFailed(key);
+        status.textContent = '读取失败：' + e.message + '，请点击重新读取。';
+    } finally { configDrafts.setBusy(key, false); }
 }
 function applyUpstreamToUi(t, d) {
     const path = $('upstream_path_' + t), branch = $('upstream_branch_' + t);
     path.value = d.path || ''; path.placeholder = d.defaultPath;
     branch.value = d.branch || ''; branch.placeholder = d.defaultBranch;
-    path.disabled = false; branch.disabled = false;
-    $('upstream_status_' + t).textContent = d.repository + ' · ' + (d.path ? '自定义代码源' : '自动探测默认文件');
+    $('upstream_status_' + t).textContent = d.repository + ' · 已保存：' + (d.path ? '自定义代码源' : '自动探测默认文件');
+    if ($('upstream_validation_' + t)) $('upstream_validation_' + t).textContent = '';
+    configDrafts.accept('upstream_' + t);
 }
 async function saveUpstream(t, reset) {
-    const button = $('upstream_save_' + t);
+    const key = 'upstream_' + t;
+    if (!configDrafts.isLoaded(key) || configDrafts.isBusy(key)) return;
     const path = reset ? '' : $('upstream_path_' + t).value.trim();
     const branch = reset ? '' : ($('upstream_branch_' + t).value.trim() || $('upstream_branch_' + t).placeholder);
     if (!reset && !path) { Swal.fire('请输入文件路径', '如需自动探测，请使用恢复默认。', 'info'); return; }
-    const answer = await Swal.fire({ title: reset ? '恢复默认代码源？' : '保存新的代码源？', text: '不会立即部署。已开启自动更新的模板将在下一轮拉取新代码源；固定版本模式仍需手动部署。请勿在部署进行中修改。', icon: 'warning', showCancelButton: true, confirmButtonText: '确认保存', cancelButtonText: '取消' });
-    if (!answer.isConfirmed) return;
-    button.disabled = true;
+    configDrafts.setBusy(key, true);
     try {
+        const answer = await Swal.fire({ title: reset ? '恢复默认代码源？' : '保存新的代码源？', text: (reset && configDrafts.isDirty(key) ? '这将替换当前未保存的编辑。' : '') + '不会立即部署。已开启自动更新的模板将在下一轮拉取新代码源；固定版本模式仍需手动部署。请勿在部署进行中修改。', icon: 'warning', showCancelButton: true, confirmButtonText: '确认保存', cancelButtonText: '取消' });
+        if (!answer.isConfirmed) return;
         const saved = await apiFetch('/api/upstream?type=' + encodeURIComponent(t), { method: 'POST', body: JSON.stringify({ path, branch }) });
-        applyUpstreamToUi(t, saved); // Do not immediately reread eventually-consistent KV.
+        applyUpstreamToUi(t, saved.domain ? { path, branch, defaultPath: $('upstream_path_' + t).placeholder, defaultBranch: $('upstream_branch_' + t).placeholder, repository: $('upstream_status_' + t).textContent.split(' · ')[0] } : saved); // The receipt confirms this submitted draft, never a later reread.
         checkDeployConfig(t); checkUpdate(t);
         Swal.fire({ icon: 'success', title: '代码源已保存', text: '下次预览、历史查询和部署将使用新的设置。', timer: 2500 });
     } catch (e) { Swal.fire('保存失败', e.message, 'error'); }
-    finally { button.disabled = false; }
+    finally { configDrafts.setBusy(key, false); }
 }
+async function validateUpstream(t) {
+    const key = 'upstream_' + t, result = $('upstream_validation_' + t);
+    if (!result || !configDrafts.isLoaded(key) || configDrafts.isBusy(key)) return;
+    const draft = { path: $('upstream_path_' + t).value.trim(), branch: $('upstream_branch_' + t).value.trim() || $('upstream_branch_' + t).placeholder };
+    configDrafts.setBusy(key, true);
+    result.textContent = '正在验证草稿（不会保存或部署）…';
+    try {
+        const data = await apiFetch('/api/upstream/validate?type=' + encodeURIComponent(t), { method: 'POST', body: JSON.stringify(draft) });
+        result.textContent = '验证通过（未保存）：' + data.repository + ' · ' + data.path + ' @ ' + data.branch + ' · SHA ' + data.sha;
+    } catch (e) { result.textContent = '验证失败：' + e.message; }
+    finally { configDrafts.setBusy(key, false); }
+}
+['input', 'change'].forEach(event => document.addEventListener(event, e => {
+    const match = /^upstream_(?:path|branch)_(cmliu|joey)$/.exec(e.target.id || '');
+    const result = match && $('upstream_validation_' + match[1]);
+    if (result && result.textContent) result.textContent = '';
+}));
 registerActions({
+    validateUpstream: validateUpstream,
     loadUpstream: loadUpstream,
     saveUpstream: saveUpstream
 });
