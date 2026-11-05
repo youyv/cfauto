@@ -1,0 +1,29 @@
+# 仅用于一个全新、空白的 KV 兼容模式面板。
+# 完整教程：docs/DEPLOYMENT.md
+# 第一步：复制为 wrangler.legacy.local.toml，然后只修改 account_id。
+# 此示例不能用于升级已有 SQLite DO 权威模式实例。
+
+name = "my-worker-panel"
+account_id = "REPLACE_WITH_YOUR_ACCOUNT_ID"
+main = "dist/worker.js"
+compatibility_date = "2026-07-16"
+compatibility_flags = ["nodejs_als"]
+workers_dev = true
+preview_urls = false
+
+[vars]
+CFAUTO_STORAGE_MODE = "legacy"
+
+# 先保持关闭；面板正常运行、保存自动化设置后，再按教程开启。
+[triggers]
+crons = []
+
+[observability]
+enabled = true
+
+[build]
+command = "node build.js"
+
+# 执行教程里的 kv namespace create --binding CONFIG_KV --update-config
+# 后，Wrangler 会在此文件写入真正的 [[kv_namespaces]] 绑定。
+# ACCESS_CODE / ENCRYPTION_SECRET 用 wrangler secret put 设置，不写进本文件。

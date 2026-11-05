@@ -60,12 +60,14 @@ function toggleYxipAccountSelect() {
     const btnRow = document.createElement('div');
     btnRow.className = 'col-span-full flex gap-2 mb-1';
     const selAll = document.createElement('button');
+    selAll.type = 'button';
     selAll.className = 'text-xs bg-slate-100 text-slate-700 px-2 py-1 rounded';
     selAll.textContent = '全选有效账号';
     selAll.addEventListener('click', () => {
         document.querySelectorAll('input[name=yxip_account]:not([disabled])').forEach(c => c.checked = true);
     });
     const selNone = document.createElement('button');
+    selNone.type = 'button';
     selNone.className = 'text-xs bg-gray-100 text-gray-500 px-2 py-1 rounded';
     selNone.textContent = '反选所有账号';
     selNone.addEventListener('click', () => {
@@ -123,7 +125,7 @@ async function fetchYxipRegions() {
             container.innerHTML = '';
             const err = document.createElement('div');
             err.className = 'col-span-full text-center py-4 text-red-500';
-            setUiIconText(err, '❌', ' 获取失败: ' + (data.msg || '未知错误'));
+            setUiContent(err, 'x', ' 获取失败: ' + (data.msg || '未知错误'));
             container.appendChild(err);
         }
     } catch (e) {
@@ -131,7 +133,7 @@ async function fetchYxipRegions() {
         container.innerHTML = '';
         const err = document.createElement('div');
         err.className = 'col-span-full text-center py-4 text-red-500';
-        setUiIconText(err, '❌', ' ' + e.message);
+        setUiContent(err, 'x', ' ' + e.message);
         container.appendChild(err);
     }
 }
@@ -152,6 +154,7 @@ function clearYxipSearch() {
     if (input) { input.value = ''; input.focus(); doYxipSearch(); }
 }
 document.addEventListener('keydown', function (e) {
+    if (e.isComposing) return;
     if (document.activeElement && document.activeElement.id === 'yxip_search') {
         if (e.key === 'Enter') { e.preventDefault(); doYxipSearch(); }
         else if (e.key === 'Escape') { clearYxipSearch(); }
@@ -175,14 +178,16 @@ function renderYxipRegions() {
     searchRow.className = 'col-span-full flex gap-1 items-center mb-1';
     const searchInput = document.createElement('input');
     searchInput.id = 'yxip_search';
+    searchInput.setAttribute('data-escape-clear', '');
     searchInput.placeholder = '搜索国家/代码...';
     searchInput.setAttribute('data-input-icon', 'search');
     searchInput.className = 'flex-1 text-xs border rounded px-2 py-1';
     searchInput.addEventListener('input', doYxipSearch);
     const clearBtn = document.createElement('button');
+    clearBtn.type = 'button';
     clearBtn.className = 'text-xs text-gray-400 hover:text-red-500 px-1';
     clearBtn.title = '清除 (Esc)';
-    clearBtn.textContent = '✕';
+    setUiContent(clearBtn, 'x', '', { label: '清空节点搜索' });
     clearBtn.title = '清空国家或地区搜索条件';
     clearBtn.addEventListener('click', clearYxipSearch);
     searchRow.appendChild(searchInput); searchRow.appendChild(clearBtn);
@@ -292,7 +297,7 @@ async function doYxipDeploy() {
     // 通过所有前置校验，正式进入部署流程 → 置锁
     _yxipDeploying = true;
     const btnIcon = $('yxip_btn_icon');
-    if (btnIcon) btnIcon.textContent = '⏳';
+    if (btnIcon) { btnIcon.replaceChildren(); mountUiIcon(btnIcon, 'loader-circle'); }
 
     try {
         closeModal('yxip_modal');
@@ -304,12 +309,14 @@ async function doYxipDeploy() {
                 method: 'POST',
                 body: JSON.stringify({ type: YXIP_TARGET_JOEY_VAR, rawContent })
             });
-            (Array.isArray(logs) ? logs : [{ success: false, msg: '返回格式异常' }])
-                .forEach(l => wbLog(l.msg, l.success ? 'text-green-300' : 'text-red-500'));
+            if (logs?.domain === 'vars:joey') wbLog('全局节点变量保存已确认；远端部署尚未完成。', 'text-yellow-300');
+            else if (Array.isArray(logs)) logs.forEach(l => wbLog(l.msg, l.success ? 'text-green-300' : 'text-red-500'));
+            else throw new Error('配置保存回执异常；停止连带部署');
 
             wbLog('🔄 开始触发变量专属重加载部署...', 'text-yellow-300');
             try {
                 const varsList = await apiFetch('/api/settings?type=joey');
+                if (!Array.isArray(varsList)) throw new Error('权威变量读取异常；停止部署');
                 const accIds = targetAccounts.map(a => a.accountId);
                 const deployLogs = await apiFetch('/api/deploy?type=joey', {
                     method: 'POST',
@@ -319,6 +326,7 @@ async function doYxipDeploy() {
                         targetAccountIds: accIds
                     })
                 });
+                if (deployLogs?.status === 'accepted' && trackAcceptedTask(deployLogs)) return;
                 (Array.isArray(deployLogs) ? deployLogs : []).forEach(l =>
                     wbLog('[' + (l.success ? '部署OK' : '报错') + '] ' + l.name + ': ' + l.msg, l.success ? 'text-green-300' : 'text-red-400'));
             } catch (e) {
@@ -332,6 +340,7 @@ async function doYxipDeploy() {
                         method: 'POST',
                         body: JSON.stringify({ type, accountId: acc.accountId, rawContent })
                     });
+                    if (deployLogs?.status === 'accepted' && trackAcceptedTask(deployLogs)) continue;
                     (Array.isArray(deployLogs) ? deployLogs : [{ success: false, msg: '返回格式异常' }])
                         .forEach(l => wbLog('   ' + l.msg, l.success ? 'text-green-300' : 'text-red-500'));
                 } catch (e) {
@@ -341,6 +350,10 @@ async function doYxipDeploy() {
             }
         }
 
+        if (typeof configProtocol !== 'undefined' && configProtocol?.isEnabled()) {
+            wbLog('接纳请求处理结束；以任务面板的逐步骤事实和终态为准，尚不能宣称节点已生效。', 'text-yellow-300');
+            return;
+        }
         wbLog('部署流程结束！', 'text-white font-bold');
 
         if (type === 'joey') {
@@ -355,7 +368,7 @@ async function doYxipDeploy() {
         wbLog('❌ 请求异常: ' + e.message, 'text-red-500');
         Swal.fire('部署异常', e.message, 'error');
     } finally {
-        if (btnIcon) btnIcon.textContent = '⚡';
+        if (btnIcon) { btnIcon.replaceChildren(); mountUiIcon(btnIcon, 'zap'); }
         _yxipDeploying = false;
     }
 }

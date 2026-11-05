@@ -1,3 +1,5 @@
+import {authorityHttp,legacyRecoveryInfo,reliabilityConfigured} from '../reliability/production-ingress';
+import { tracedEnv, traceEvent, traceResponse } from '../lib/trace';
 /**
  * 路由注册中心 — 唯一的路由注册入口。
  *
@@ -24,14 +26,18 @@ export type RouteHandler = (req: Request, env: AppEnv) => Promise<Response>;
 
 /** 路由错误边界 — 统一捕获未处理异常，输出结构化日志并返回 500 */
 export function withErrorBoundary(handler: RouteHandler, routeName: string): RouteHandler {
-    return async (req, env) => {
+    return async (req, originalEnv) => {
+        const env = originalEnv.traceContext ? { ...originalEnv } : tracedEnv(originalEnv, routeName);
+        traceEvent(env, 'request started');
         try {
-            return await handler(req, env);
+            const response = await (reliabilityConfigured(env)&&routeName.includes(' /api/')&&routeName!=='POST /api/login'?authorityHttp(req,env):handler(req, env));
+            traceEvent(env, 'request completed', { status: response.status });
+            return traceResponse(response, env);
         } catch (err: any) {
             // 主动抛出的 Response（safeJson 的 400、resolveCredentials 的 404）原样返回
-            if (err instanceof Response) return err;
-            logger.error('Route error: ' + routeName, err instanceof Error ? err : new Error(String(err)), { module: 'route', route: routeName });
-            return jsonError('Internal server error', 500);
+            if (err instanceof Response) return traceResponse(err, env);
+            logger.error('Route error: ' + routeName, err instanceof Error ? err : new Error(String(err)), { module: 'route', route: routeName, taskId: env.traceContext?.id });
+            return traceResponse(jsonError('Internal server error', 500), env);
         }
     };
 }
@@ -125,10 +131,11 @@ function registerBusinessRoutes(): void {
     route('GET /api/stats', (_req, env) => handleStats(env));
 
     route('POST /api/fix_1101', async (req, env) => {
-        const { type } = await safeJson<Fix1101Body>(req);
+        const { type, expectedTargets } = await safeJson<Fix1101Body>(req);
         const templateErr = requireTemplateType(type);
         if (templateErr) return templateErr;
-        return handleFix1101(env, type);
+        if (!Array.isArray(expectedTargets) || !expectedTargets.length) return jsonError('请先读取并确认修复目标清单', 400);
+        return handleFix1101(env, type, expectedTargets);
     });
 
     route('GET /api/get_regions_data', () => handleGetRegionsData());
@@ -137,13 +144,29 @@ function registerBusinessRoutes(): void {
         handleSaveYxip(env, await safeJson(req)));
 }
 
+function registerReliabilityRoutes():void {
+    route('GET /api/reliability/recovery',(req,env)=>reliabilityConfigured(env)?authorityHttp(req,env):Promise.resolve(legacyRecoveryInfo()));
+    route('POST /api/reliability/maintenance',(req,env)=>authorityHttp(req,env));
+    route('GET /api/reliability/config',(req,env)=>authorityHttp(req,env));
+    route('POST /api/reliability/config',(req,env)=>authorityHttp(req,env));
+    route('GET /api/reliability/tasks',(req,env)=>authorityHttp(req,env));
+    route('POST /api/reliability/tasks',(req,env)=>authorityHttp(req,env));
+    route('GET /api/reliability/tasks/:id',(req,env)=>authorityHttp(req,env));
+    route('POST /api/reliability/tasks/:id/cancel',(req,env)=>authorityHttp(req,env));
+    route('POST /api/reliability/tasks/:id/wake',(req,env)=>authorityHttp(req,env));
+}
+
 // 模块级注册，仅在 isolate 首次加载时执行一次
 registerCrudRoutes({ set: route });
 registerBusinessRoutes();
+registerReliabilityRoutes();
 
 /** 获取路由处理器 — 按 METHOD PATH 查找，未匹配返回 null */
 export function getRoute(method: string, pathname: string): RouteHandler | null {
-    return ROUTES.get(method + ' ' + pathname) || null;
+    const exact=ROUTES.get(method+' '+pathname);if(exact)return exact;
+    const task=/^\/api\/reliability\/tasks\/([a-zA-Z0-9_-]{1,100})(?:\/(cancel|wake))?$/.exec(pathname);
+    if(task)return ROUTES.get(method+' /api/reliability/tasks/:id'+(task[2]?'/'+task[2]:''))||null;
+    return null;
 }
 
 /** 已注册的路由键列表（诊断/测试用） */

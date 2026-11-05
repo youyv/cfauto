@@ -1,0 +1,162 @@
+{
+  "name": "reliability-local-harness",
+  "main": "worker.ts",
+  "compatibility_date": "2026-07-07",
+  "compatibility_flags": [
+    "nodejs_als"
+  ],
+  "workers_dev": false,
+  "vars": {
+    "LOCAL_HARNESS": "test-only",
+    "RELIABILITY_RPC_SECRET": "1111111111111111111111111111111111111111111111111111111111111111",
+    "RELIABILITY_IDEMPOTENCY_SECRET": "2222222222222222222222222222222222222222222222222222222222222222",
+    "RELIABILITY_EVIDENCE_SECRET": "3333333333333333333333333333333333333333333333333333333333333333",
+    "RELIABILITY_CREDENTIAL_KEYS": "{\"currentId\":\"credential\",\"keys\":{\"credential\":\"4444444444444444444444444444444444444444444444444444444444444444\"}}",
+    "RELIABILITY_SNAPSHOT_KEYS": "{\"currentId\":\"snapshot\",\"keys\":{\"snapshot\":\"5555555555555555555555555555555555555555555555555555555555555555\"}}",
+    "RELIABILITY_MANAGER_ACCOUNT": "ffffffffffffffffffffffffffffffff",
+    "RELIABILITY_MANAGER_WORKER": "local-manager",
+    "RELIABILITY_CONFIG_NAMESPACE": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "RELIABILITY_MAINTENANCE_KEYS": "{\"operators\":{\"ops\":{\"permissions\":[\"inspect\",\"maintain\",\"drain\"],\"secret\":\"6666666666666666666666666666666666666666666666666666666666666666\"},\"reader\":{\"permissions\":[\"inspect\"],\"secret\":\"7777777777777777777777777777777777777777777777777777777777777777\"}}}",
+    "ACCESS_CODE": "local-retained-access-code-only"
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "LOCAL_COORDINATOR",
+        "class_name": "LocalCoordinator"
+      },
+      {
+        "name": "LOCAL_ROLES",
+        "class_name": "LocalRoleCoordinator"
+      },
+      {
+        "name": "RELIABILITY_COORDINATOR",
+        "class_name": "ProductionCoordinator"
+      },
+      {
+        "name": "LOCAL_BUSINESS",
+        "class_name": "LocalBusinessCoordinator"
+      },
+      {
+        "name": "LOCAL_RESOURCES",
+        "class_name": "LocalResourceCoordinator"
+      },
+      {
+        "name": "LOCAL_LEDGER",
+        "class_name": "LocalLedgerCoordinator"
+      },
+      {
+        "name": "LOCAL_SCRIPT",
+        "class_name": "LocalScriptCoordinator"
+      },
+      {
+        "name": "LOCAL_AUTOMATION",
+        "class_name": "LocalAutomationCoordinator"
+      },
+      {
+        "name": "LOCAL_ARCHIVE",
+        "class_name": "LocalArchiveCoordinator"
+      },
+      {
+        "name": "LOCAL_PRODUCTION_ARCHIVE",
+        "class_name": "LocalProductionArchiveCoordinator"
+      },
+      {
+        "name": "LOCAL_INITIAL_PRODUCTION",
+        "class_name": "LocalInitialProductionCoordinator"
+      },
+      {
+        "name": "LOCAL_LARGE_SOURCE",
+        "class_name": "LocalLargeSourceCoordinator"
+      },
+      {
+        "name": "LOCAL_HUGE_SOURCE",
+        "class_name": "LocalHugeSourceCoordinator"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "local-v1",
+      "new_sqlite_classes": [
+        "LocalCoordinator"
+      ]
+    },
+    {
+      "tag": "local-roles-v1",
+      "new_sqlite_classes": [
+        "LocalRoleCoordinator"
+      ]
+    },
+    {
+      "tag": "local-production-shell-v1",
+      "new_sqlite_classes": [
+        "ProductionCoordinator"
+      ]
+    },
+    {
+      "tag": "local-business-v1",
+      "new_sqlite_classes": [
+        "LocalBusinessCoordinator"
+      ]
+    },
+    {
+      "tag": "local-resources-v1",
+      "new_sqlite_classes": [
+        "LocalResourceCoordinator"
+      ]
+    },
+    {
+      "tag": "local-ledger-v1",
+      "new_sqlite_classes": [
+        "LocalLedgerCoordinator"
+      ]
+    },
+    {
+      "tag": "local-script-v1",
+      "new_sqlite_classes": [
+        "LocalScriptCoordinator"
+      ]
+    },
+    {
+      "tag": "local-automation-v1",
+      "new_sqlite_classes": [
+        "LocalAutomationCoordinator"
+      ]
+    },
+    {
+      "tag": "local-archive-v1",
+      "new_sqlite_classes": [
+        "LocalArchiveCoordinator"
+      ]
+    },
+    {
+      "tag": "local-production-archive-v1",
+      "new_sqlite_classes": [
+        "LocalProductionArchiveCoordinator"
+      ]
+    },
+    {
+      "tag": "local-initial-production-v1",
+      "new_sqlite_classes": [
+        "LocalInitialProductionCoordinator"
+      ]
+    },
+    {
+      "tag": "local-large-source-v1",
+      "new_sqlite_classes": [
+        "LocalLargeSourceCoordinator"
+      ]
+    },
+    {
+      "tag": "local-huge-source-v1",
+      "new_sqlite_classes": [
+        "LocalHugeSourceCoordinator"
+      ]
+    }
+  ],
+  "dev": {
+    "ip": "127.0.0.1",
+    "port": 17892
+  }
+}

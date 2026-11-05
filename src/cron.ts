@@ -1,3 +1,4 @@
+import { tracedEnv, traceEvent } from './lib/trace';
 /**
  * 定时任务 — 自动检查更新 + 熔断轮换 + KV 回收
  */
@@ -5,7 +6,7 @@
 import { KV_KEYS, autoUpdateTypes, fuseRotatableTypes, autoFlagKey } from './config/templates';
 import { getJSON, putJSON } from './lib/kv-utils';
 import { readAccounts } from './lib/account-store';
-import { fetchInternalStats } from './lib/stats';
+import { fetchInternalStats, statForAccount, isFuseTriggered } from './lib/stats';
 import { checkAndDeployUpdate, rotateUUIDAndDeploy } from './lib/auto-update';
 import { runKvGc, readLiveAccountIds, GC_INTERVAL_MS } from './lib/kv-gc';
 import { logger } from './lib/logger';
@@ -55,17 +56,7 @@ async function maybeRunKvGc(env: AppEnv): Promise<void> {
     }
 }
 
-/** 熔断判定 — 纯函数，导出供测试覆盖边界（0 阈值、缺 stats、limit 兜底） */
-export function isFuseTriggered(
-    stat: { total: number; max: number; error?: string } | undefined,
-    threshold: number
-): boolean {
-    if (threshold <= 0) return false;
-    if (!stat || stat.error) return false;
-    const limit = stat.max || 100000;
-    if (limit <= 0) return false;
-    return (stat.total / limit) * 100 >= threshold;
-}
+export { isFuseTriggered } from './lib/stats';
 
 /**
  * cron 入口。
@@ -75,9 +66,12 @@ export function isFuseTriggered(
  * 时，`if (!config.enabled) return` 之类的提前退出会连带跳过回收 —— 而那恰恰是最需要
  * 回收的场景（关掉了自动更新，仍在手动部署与增删账号）。
  */
-export async function handleCronJob(env: AppEnv) {
+export async function handleCronJob(originalEnv: AppEnv) {
+    const env = tracedEnv(originalEnv, 'cron');
+    traceEvent(env, 'cron started');
     await runAutoUpdate(env);
     await maybeRunKvGc(env);
+    traceEvent(env, 'cron completed');
 }
 
 async function runAutoUpdate(env: AppEnv) {
@@ -118,7 +112,7 @@ async function runAutoUpdate(env: AppEnv) {
             const rotatable = fuseRotatableTypes().filter(t => isTypeEnabled(config, t));
             for (const acc of accounts) {
                 try {
-                    const stat = statsData.find(s => s.alias === acc.alias);
+                    const stat = statForAccount(statsData, acc.accountId);
                     if (!isFuseTriggered(stat, fuseThreshold)) continue;
                     for (const ft of rotatable) {
                         await rotateUUIDAndDeploy(env, ft, [acc.accountId]);

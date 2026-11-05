@@ -1,23 +1,52 @@
     <canvas id="starfield"></canvas>
     <div class="max-w-7xl mx-auto space-y-4 dashboard-shell">
       
+      <section id="config_pending_panel" class="rounded border border-amber-300 bg-amber-50 p-3 text-sm" role="status" aria-live="polite" hidden></section>
       <header class="bg-white px-4 py-3 md:px-6 md:py-4 rounded shadow flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-          <div class="flex-none">
+          <div class="flex-none build-heading">
               <h1 class="text-xl font-bold text-slate-800 flex items-center gap-2">Worker 部署中控 <span class="text-xs bg-purple-600 text-white px-2 py-0.5 rounded ml-2">V{{VERSION}}</span></h1>
               <div class="text-[10px] text-gray-400 mt-1">WORKER CONTROL CENTER · 多账号部署与运行管理</div>
+              <details class="build-info">
+                <summary aria-label="查看本次构建信息">{{BUILD_LABEL}}</summary>
+                <div class="build-info-body">
+                  <p>构建标识：<code>{{BUILD_ID}}</code></p>
+                  <p>输入指纹：<code>{{BUILD_SOURCE}}</code></p>
+                  <p>Git：{{BUILD_STATE}}。仅标识本次响应所用构建，不代表已推送或已部署；线上核验请与 CI 构建清单比对。</p>
+                </div>
+              </details>
           </div>
           
                <div class="control-quick-actions text-xs" role="group" aria-label="快捷操作">
-               <button data-act="toggleTheme" class="theme-toggle" id="theme_btn" title="切换主题"><span data-ui-icon="sun">☀️</span></button>
-               <button data-act="logout" class="bg-red-100 text-red-700 border border-red-300 px-2 py-1 rounded hover:bg-red-200 font-bold" title="退出登录"><span data-ui-icon="log-out">🚪</span></button>
+               <button type="button" data-act="toggleTheme" class="theme-toggle" id="theme_btn" title="切换主题"><span data-ui-icon="sun">☀️</span></button>
+               <button type="button" data-act="logout" class="bg-red-100 text-red-700 border border-red-300 px-2 py-1 rounded hover:bg-red-200 font-bold" title="退出登录"><span data-ui-icon="log-out">🚪</span></button>
                <div class="w-px h-4 bg-gray-300 mx-0"></div>
-               <button data-act="openWorkbench" class="bg-indigo-100 text-indigo-700 border border-indigo-300 px-2 py-1 rounded hover:bg-indigo-200 font-bold"><span data-ui-icon="clipboard-list">📋</span><span>工作台</span></button>
-               <button data-act="openBatchDeployModal" class="bg-indigo-600 text-white px-2 py-1 rounded hover:bg-indigo-700 font-bold"><span data-ui-icon="layers">✨</span><span>批量部署</span></button>
-               <button data-act="openYxipGuarded" class="bg-yellow-500 text-white px-2 py-1 rounded hover:bg-yellow-600 font-bold shadow-sm"><span data-ui-icon="zap">⚡</span><span>落地节点</span></button>
+               <button type="button" id="task_toggle" data-act="toggleTaskPanel" class="task-toggle" aria-controls="task_panel" aria-expanded="false" aria-label="展开任务列表" title="展开任务列表"><span data-ui-icon="list"></span><span id="task_badge" class="task-toggle-dot" aria-hidden="true" hidden></span></button>
+               <button type="button" data-act="openWorkbench" class="bg-indigo-100 text-indigo-700 border border-indigo-300 px-2 py-1 rounded hover:bg-indigo-200 font-bold"><span data-ui-icon="clipboard-list">📋</span><span>工作台</span></button>
+               <button type="button" data-act="openBatchDeployModal" class="bg-indigo-600 text-white px-2 py-1 rounded hover:bg-indigo-700 font-bold"><span data-ui-icon="layers">✨</span><span>批量部署</span></button>
+               <button type="button" data-act="openYxipGuarded" class="bg-yellow-500 text-white px-2 py-1 rounded hover:bg-yellow-600 font-bold shadow-sm"><span data-ui-icon="zap">⚡</span><span>落地节点</span></button>
                </div>
+          <section id="task_panel" class="task-panel" aria-labelledby="task_panel_title" hidden>
+            <div class="task-panel-heading">
+              <div><h2 id="task_panel_title"><span data-ui-icon="list"></span>任务列表</h2><p>任务保存在服务器，关闭页面不会取消。</p></div>
+              <div class="task-panel-actions">
+                <button type="button" class="task-action" data-act="showTaskCatalog" title="刷新任务列表并重新连接"><span data-ui-icon="refresh-cw"></span><span>重新连接</span></button>
+                <button type="button" class="task-action task-close" data-act="closeTaskPanel" aria-label="收起任务列表" title="收起任务列表"><span data-ui-icon="x"></span></button>
+              </div>
+            </div>
+            <p class="task-panel-note">接纳不等于完成；结果未知的外部写不会自动重试。</p>
+            <div id="task_pending" class="task-pending" role="status" aria-live="polite"></div>
+            <div class="task-panel-grid">
+              <div class="task-catalog">
+                <div id="task_list" role="list" aria-label="已接纳的业务任务"></div>
+                <button id="task_more" type="button" class="task-action task-more" data-act="moreTasks" disabled>下一页</button>
+              </div>
+              <div id="task_detail" class="task-detail" role="status" aria-live="polite">选择一条任务查看详情。</div>
+            </div>
+          </section>
           <div class="control-toolbar text-xs">
                <details class="automation-drawer">
-                 <summary><span data-ui-icon="clock">⏱</span><span>自动任务设置</span><span class="automation-summary-hint">更新频率 · 熔断 · 告警</span><span class="automation-chevron" data-ui-icon="chevron-down">⌄</span></summary>
+                 <summary><span data-ui-icon="clock">⏱</span><span>自动任务设置</span><span id="auto_config_status" class="config-save-status" role="status" aria-live="polite" aria-atomic="true" aria-label="自动任务配置保存状态">读取中…</span><span id="auto_runtime_summary" class="automation-summary-hint" role="status" aria-live="polite" aria-atomic="true" aria-label="自动任务已保存运行设置">尚未读取运行状态</span><span class="automation-chevron" data-ui-icon="chevron-down">⌄</span></summary>
+                 <p id="auto_runtime_details" class="automation-runtime-details">读取配置后显示已保存的运行设置。</p>
                  <div class="automation-content">
                <div class="control-schedule" role="group" aria-label="自动更新设置">
                <h2 class="control-section-title">自动更新<span>设置检查频率与参与项目</span></h2>
@@ -25,34 +54,34 @@
                <div class="flex items-center gap-1">
                   <label for="auto_update_toggle">启用自动更新</label>
                   <div class="relative inline-block w-8 align-middle select-none">
-                      <input type="checkbox" id="auto_update_toggle" data-act-change="updateAutoToggleLabel" class="tgl-input"/>
+                      <input type="checkbox" id="auto_update_toggle" data-act-change="updateAutoToggleLabel" class="tgl-input" disabled/>
                       <label for="auto_update_toggle" class="tgl-switch"></label>
                   </div>
                   <span id="auto_toggle_label" class="text-[10px] font-bold text-gray-400">关</span>
                </div>
 
                <div class="flex items-center gap-1">
-                  <label for="auto_update_interval">检查间隔</label><input type="number" id="auto_update_interval" value="30" min="1" max="1440" class="w-9 text-center border rounded py-0.5 text-[10px]"><span class="text-[10px]">分</span>
+                  <label for="auto_update_interval">检查间隔</label><input type="number" id="auto_update_interval" value="30" min="1" max="1440" class="w-9 text-center border rounded py-0.5 text-[10px]" disabled><span class="text-[10px]">分</span>
                </div>
                <div class="w-px h-4 bg-gray-300 mx-0"></div>
                <div class="flex items-center gap-1">
                   <span class="text-[10px] font-bold text-purple-600">CMliu</span>
                   <div class="relative inline-block w-7 align-middle select-none" style="transform:scale(0.85)">
-                      <input type="checkbox" id="auto_cmliu_toggle" aria-label="自动更新 CMliu" class="tgl-input"/>
+                      <input type="checkbox" id="auto_cmliu_toggle" aria-label="自动更新 CMliu" class="tgl-input" disabled/>
                       <label for="auto_cmliu_toggle" class="tgl-switch"></label>
                   </div>
                </div>
                <div class="flex items-center gap-1">
                   <span class="text-[10px] font-bold text-orange-500">Joey</span>
                   <div class="relative inline-block w-7 align-middle select-none" style="transform:scale(0.85)">
-                      <input type="checkbox" id="auto_joey_toggle" aria-label="自动更新 Joey" class="tgl-input"/>
+                      <input type="checkbox" id="auto_joey_toggle" aria-label="自动更新 Joey" class="tgl-input" disabled/>
                       <label for="auto_joey_toggle" class="tgl-switch"></label>
                   </div>
                </div>
                <div class="flex items-center gap-1">
                   <span class="text-[10px] font-bold text-blue-500">ECH</span>
                   <div class="relative inline-block w-7 align-middle select-none" style="transform:scale(0.85)">
-                      <input type="checkbox" id="auto_ech_toggle" aria-label="自动更新 ECH" class="tgl-input"/>
+                      <input type="checkbox" id="auto_ech_toggle" aria-label="自动更新 ECH" class="tgl-input" disabled/>
                       <label for="auto_ech_toggle" class="tgl-switch"></label>
                   </div>
                </div>
@@ -61,16 +90,16 @@
                <h2 class="control-section-title">安全与通知<span>设置用量保护与告警接收地址</span></h2>
                <div class="flex items-center gap-1">
                   <label for="fuse_threshold">熔断阈值 (%)</label>
-                  <input type="number" id="fuse_threshold" value="0" min="0" max="100" placeholder="0" class="w-7 text-center border border-red-300 bg-red-50 rounded py-0.5 text-[10px] font-bold text-red-600">
+                  <input type="number" id="fuse_threshold" value="0" min="0" max="100" placeholder="0" class="w-7 text-center border border-red-300 bg-red-50 rounded py-0.5 text-[10px] font-bold text-red-600" disabled>
                </div>
                <div class="control-webhook flex items-center gap-1">
                   <label for="fuse_webhook" class="text-[10px] text-orange-600 font-bold">告警</label>
-                  <input type="text" id="fuse_webhook" placeholder="https://…（可选告警 Webhook）" class="text-[10px] border rounded px-1 py-0.5 w-32">
+                  <input type="text" id="fuse_webhook" placeholder="https://…（可选告警 Webhook）" class="text-[10px] border rounded px-1 py-0.5 w-32" disabled>
                </div>
                </div>
                  </div>
                  <div class="automation-footer"><span>修改后请保存，定时执行还需配置 Cloudflare Cron。</span>
-               <button title="保存自动任务配置" data-act="saveAutoConfig" class="bg-gray-100 text-gray-700 border border-gray-300 px-2 py-1 rounded hover:bg-gray-200 font-bold ml-1"><span data-ui-icon="save">💾</span><span>保存设置</span></button>
+               <button type="button" title="保存自动任务配置" data-act="saveAutoConfig" disabled class="bg-gray-100 text-gray-700 border border-gray-300 px-2 py-1 rounded hover:bg-gray-200 font-bold ml-1"><span data-ui-icon="save">💾</span><span>保存设置</span></button>
                  </div>
                </details>
           </div>
@@ -82,8 +111,8 @@
               <div class="flex justify-between items-center mb-3">
                    <h2 class="font-bold text-gray-700 text-sm"><span data-ui-icon="radio">📡</span> 账号列表</h2>
                    <div class="flex gap-2">
-                       <button data-act="loadStats" id="btn_stats" class="text-[10px] bg-indigo-50 text-indigo-600 px-2 py-1 rounded font-bold hover:bg-indigo-100"><span data-ui-icon="refresh-cw">🔄</span> 刷新用量</button>
-                       <button data-act="resetFormForAdd" class="text-[10px] bg-blue-50 text-blue-600 px-2 py-1 rounded"><span data-ui-icon="plus">➕</span> 添加账号</button>
+                       <button type="button" data-act="loadStats" id="btn_stats" class="text-[10px] bg-indigo-50 text-indigo-600 px-2 py-1 rounded font-bold hover:bg-indigo-100"><span data-ui-icon="refresh-cw">🔄</span> 刷新用量</button>
+                       <button type="button" data-act="resetFormForAdd" class="text-[10px] bg-blue-50 text-blue-600 px-2 py-1 rounded"><span data-ui-icon="plus">➕</span> 添加账号</button>
                    </div>
               </div>
               
@@ -127,7 +156,7 @@
                     </select>
                     <input type="hidden" id="in_zone_name">
                     <input type="hidden" id="in_zone_id">
-                    <button data-act="fetchZonesForAccount" class="bg-purple-600 text-white px-2 py-1 rounded hover:bg-purple-700 flex-none w-20"><span data-ui-icon="cloud">☁️</span> 读取</button>
+                    <button type="button" data-act="fetchZonesForAccount" class="bg-purple-600 text-white px-2 py-1 rounded hover:bg-purple-700 flex-none w-20"><span data-ui-icon="cloud">☁️</span> 读取</button>
                  </div>
 
                  <div class="grid grid-cols-3 gap-2">
@@ -136,9 +165,9 @@
                     <input id="in_workers_ech" data-input-icon="box" data-icon-tone="ech" placeholder="ECH Worker (选填)" class="input-field bg-green-50">
                  </div>
                  <div class="flex gap-2 pt-2">
-                    <button data-act="saveAccount" id="btn_save_acc" class="flex-1 bg-slate-700 text-white py-1.5 rounded font-bold"><span data-ui-icon="save">💾</span> 保存账号</button>
-                    <button data-act="deleteFromEdit" id="btn_del_edit" class="hidden flex-none bg-red-100 text-red-600 px-3 py-1.5 rounded"><span data-ui-icon="trash-2">🗑️</span></button>
-                    <button data-act="cancelEdit" class="flex-none bg-gray-200 text-gray-600 px-3 py-1.5 rounded"><span data-ui-icon="x">❌</span></button>
+                    <button type="button" data-act="saveAccount" id="btn_save_acc" class="flex-1 bg-slate-700 text-white py-1.5 rounded font-bold"><span data-ui-icon="save">💾</span> 保存账号</button>
+                    <button type="button" data-act="deleteFromEdit" id="btn_del_edit" class="hidden flex-none bg-red-100 text-red-600 px-3 py-1.5 rounded"><span data-ui-icon="trash-2">🗑️</span></button>
+                    <button type="button" data-act="cancelEdit" class="flex-none bg-gray-200 text-gray-600 px-3 py-1.5 rounded"><span data-ui-icon="x">❌</span></button>
                  </div>
               </div>
               
@@ -155,31 +184,34 @@
   
         <div class="lg:col-span-5 space-y-4">
             <!-- 项目切换标签页：三个项目不再纵向堆叠，避免互相挤压与嵌套滚动 -->
-            <div class="bg-white rounded shadow flex text-xs font-bold overflow-hidden">
-                <button data-act="switchProjectTab" data-args='["cmliu"]' data-tab-btn="cmliu" class="project-tab-btn flex-1 py-2"><span data-ui-icon="box">🔴</span> CMliu</button>
-                <button data-act="switchProjectTab" data-args='["joey"]' data-tab-btn="joey" class="project-tab-btn flex-1 py-2"><span data-ui-icon="box">🔵</span> Joey</button>
-                <button data-act="switchProjectTab" data-args='["ech"]' data-tab-btn="ech" class="project-tab-btn flex-1 py-2"><span data-ui-icon="box">🟢</span> ECH</button>
+            <div class="bg-white rounded shadow flex text-xs font-bold overflow-hidden" role="tablist" aria-label="部署项目" aria-orientation="horizontal">
+                <button type="button" data-act="switchProjectTab" data-args='["cmliu"]' data-tab-btn="cmliu" id="project_tab_cmliu" role="tab" aria-controls="project_panel_cmliu" aria-selected="true" tabindex="0" class="project-tab-btn flex-1 py-2"><span data-ui-icon="box">🔴</span> CMliu</button>
+                <button type="button" data-act="switchProjectTab" data-args='["joey"]' data-tab-btn="joey" id="project_tab_joey" role="tab" aria-controls="project_panel_joey" aria-selected="false" tabindex="-1" class="project-tab-btn flex-1 py-2"><span data-ui-icon="box">🔵</span> Joey</button>
+                <button type="button" data-act="switchProjectTab" data-args='["ech"]' data-tab-btn="ech" id="project_tab_ech" role="tab" aria-controls="project_panel_ech" aria-selected="false" tabindex="-1" class="project-tab-btn flex-1 py-2"><span data-ui-icon="box">🟢</span> ECH</button>
             </div>
-            <div class="bg-white rounded shadow border-t-4 border-red-500 project-card project-panel" data-tab-panel="cmliu">
+            <div class="bg-white rounded shadow border-t-4 border-red-500 project-card project-panel" data-tab-panel="cmliu" id="project_panel_cmliu" role="tabpanel" aria-labelledby="project_tab_cmliu" tabindex="0">
                 <div class="bg-red-50 px-4 py-2 flex justify-between items-center border-b border-red-100">
                     <div class="flex items-center gap-2"><span class="text-sm font-bold text-red-700"><span data-ui-icon="box">🔴</span> CMliu 配置</span><span id="badge_cmliu" class="text-[9px] px-1.5 py-0.5 rounded text-white bg-gray-400">Loading</span></div>
-                    <button data-act="openVersionHistory" data-args='["cmliu"]' class="text-[10px] bg-white border border-red-200 text-red-600 px-2 py-0.5 rounded hover:bg-red-50"><span data-ui-icon="history">📜</span> 历史/收藏</button>
+                    <button type="button" data-act="openVersionHistory" data-args='["cmliu"]' class="text-[10px] bg-white border border-red-200 text-red-600 px-2 py-0.5 rounded hover:bg-red-50"><span data-ui-icon="history">📜</span> 历史/收藏</button>
                 </div>
                 <div class="px-3 pt-2 text-[10px] text-gray-400 project-hints" data-hints="cmliu"></div>
+                <div class="px-3 py-2 flex flex-wrap items-center gap-2 border-b border-gray-100 text-[11px] text-gray-600"><label for="compat_cmliu" class="font-bold">兼容日期</label><input type="date" id="compat_cmliu" class="text-xs border rounded px-2 py-0.5" min="2021-11-01" aria-label="CMliu 上游 Worker 兼容日期"><button type="button" data-act="saveCompatibilityDate" data-args='["cmliu"]' class="text-xs bg-red-600 hover:bg-red-700 text-white px-2 py-0.5 rounded">保存</button><span id="compat_cmliu_status" class="text-[10px] text-gray-400" role="status" aria-live="polite" aria-atomic="true"></span><span class="ml-auto text-[10px] text-gray-400">部署、更新与 1101 修复按此日期冻结到任务计划</span></div>
                 <div class="p-3">
                     <details class="upstream-card">
-                        <summary>上游代码源 <span>文件与分支设置</span></summary>
+                        <summary>上游代码源 <span>文件与分支设置</span><span id="upstream_dirty_cmliu" class="config-save-status" role="status" aria-live="polite" aria-atomic="true" aria-label="CMliu 上游配置保存状态">读取中…</span></summary>
                         <div class="upstream-content">
-                            <p class="upstream-status" id="upstream_status_cmliu" role="status">正在读取上游设置…</p>
+                            <p class="upstream-status" id="upstream_status_cmliu" role="status" aria-live="polite" aria-atomic="true" aria-label="CMliu 上游读取状态">正在读取上游设置…</p>
                             <label for="upstream_path_cmliu">仓库内文件路径</label>
                             <input id="upstream_path_cmliu" class="input-field" placeholder="例如 src/worker.js" autocomplete="off" spellcheck="false" disabled>
                             <label for="upstream_branch_cmliu">分支 / 标签</label>
                             <input id="upstream_branch_cmliu" class="input-field" placeholder="例如 main" autocomplete="off" spellcheck="false" disabled>
+                            <p id="upstream_validation_cmliu" class="upstream-status" role="status" aria-live="polite" aria-atomic="true" aria-label="CMliu 上游草稿验证结果"></p>
                             <p class="upstream-help">留空并恢复默认时使用自动探测。指定文件后不会自动切换到其他文件；设置同时用于预览、历史、手动部署与自动更新。</p>
                             <div class="upstream-actions">
-                                <button id="upstream_save_cmliu" data-act="saveUpstream" data-args='["cmliu"]' class="source-primary" disabled>保存代码源</button>
-                                <button data-act="saveUpstream" data-args='["cmliu",true]' class="source-secondary">恢复默认</button>
-                                <button data-act="loadUpstream" data-args='["cmliu"]' class="source-secondary">重新读取</button>
+                                <button type="button" data-act="validateUpstream" data-args='["cmliu"]' class="source-secondary" disabled>验证草稿（不保存）</button>
+                                <button type="button" id="upstream_save_cmliu" data-act="saveUpstream" data-args='["cmliu"]' class="source-primary" disabled>保存代码源</button>
+                                <button type="button" data-act="saveUpstream" data-args='["cmliu",true]' disabled class="source-secondary">恢复默认</button>
+                                <button type="button" data-act="loadUpstream" data-args='["cmliu"]' class="source-secondary">重新读取</button>
                             </div>
                         </div>
                     </details>
@@ -189,37 +221,40 @@
                         <div id="vars_cmliu" class="p-2 space-y-1 max-h-[200px] overflow-y-auto"></div>
                     </details>
                     <div class="flex gap-2 mb-2">
-                        <button data-act="addVarRow" data-args='["cmliu"]' class="flex-1 bg-dashed border text-gray-400 text-xs py-1 rounded hover:text-gray-600"><span data-ui-icon="plus">➕</span> 变量</button>
-                        <button data-act="selectSyncAccount" data-args='["cmliu"]' class="flex-none bg-orange-50 text-orange-600 border border-orange-200 text-xs px-2 py-1 rounded"><span data-ui-icon="refresh-cw">🔄</span> 同步</button>
+                        <button type="button" data-act="addVarRow" data-args='["cmliu"]' class="flex-1 bg-dashed border text-gray-400 text-xs py-1 rounded hover:text-gray-600"><span data-ui-icon="plus">➕</span> 变量</button>
+                        <button type="button" data-act="selectSyncAccount" data-args='["cmliu"]' class="flex-none bg-orange-50 text-orange-600 border border-orange-200 text-xs px-2 py-1 rounded"><span data-ui-icon="refresh-cw">🔄</span> 同步</button>
                     </div>
                     <div class="flex gap-2">
-                        <button data-act="refreshUUID" data-args='["cmliu"]' class="flex-1 bg-gray-100 text-gray-600 text-xs py-1.5 rounded"><span data-ui-icon="shuffle">🎲</span> 刷 UUID</button>
-                        <button data-act="previewDeploy" data-args='["cmliu"]' class="flex-1 bg-slate-100 text-slate-600 text-xs py-1.5 rounded hover:bg-slate-200" title="预览本次部署将影响的账号与 Worker"><span data-ui-icon="search">🔍</span> 预览</button><button data-act="deploy" data-args='["cmliu"]' id="btn_deploy_cmliu" class="flex-[2] bg-red-600 text-white text-xs py-1.5 rounded font-bold hover:bg-red-700"><span data-ui-icon="rocket">🚀</span> 部署更新</button>
+                        <button type="button" data-act="refreshUUID" data-args='["cmliu"]' class="flex-1 bg-gray-100 text-gray-600 text-xs py-1.5 rounded"><span data-ui-icon="shuffle">🎲</span> 刷 UUID</button>
+                        <button type="button" data-act="previewDeploy" data-args='["cmliu"]' class="flex-1 bg-slate-100 text-slate-600 text-xs py-1.5 rounded hover:bg-slate-200" title="预览本次部署将影响的账号与 Worker"><span data-ui-icon="search">🔍</span> 预览</button><button type="button" data-act="deploy" data-args='["cmliu"]' id="btn_deploy_cmliu" class="flex-[2] bg-red-600 text-white text-xs py-1.5 rounded font-bold hover:bg-red-700"><span data-ui-icon="rocket">🚀</span> 部署更新</button>
                     </div>
-                    <button data-act="fix1101" data-args='["cmliu"]' id="btn_fix1101_cmliu" class="w-full mt-2 bg-orange-500 text-white text-xs py-1.5 rounded font-bold hover:bg-orange-600"><span data-ui-icon="wrench">🔧</span> 一键修复 1101</button>
+                    <button type="button" data-act="fix1101" data-args='["cmliu"]' id="btn_fix1101_cmliu" class="w-full mt-2 bg-orange-500 text-white text-xs py-1.5 rounded font-bold hover:bg-orange-600"><span data-ui-icon="wrench">🔧</span> 一键修复 1101</button>
                 </div>
             </div>
 
-            <div class="bg-white rounded shadow border-t-4 border-blue-500 project-card project-panel hidden" data-tab-panel="joey">
+            <div class="bg-white rounded shadow border-t-4 border-blue-500 project-card project-panel hidden" data-tab-panel="joey" id="project_panel_joey" role="tabpanel" aria-labelledby="project_tab_joey" tabindex="0" hidden>
                 <div class="bg-blue-50 px-4 py-2 flex justify-between items-center border-b border-blue-100">
                     <div class="flex items-center gap-2"><span class="text-sm font-bold text-blue-700"><span data-ui-icon="box">🔵</span> Joey 配置</span><span id="badge_joey" class="text-[9px] px-1.5 py-0.5 rounded text-white bg-gray-400">Loading</span></div>
-                    <button data-act="openVersionHistory" data-args='["joey"]' class="text-[10px] bg-white border border-blue-200 text-blue-600 px-2 py-0.5 rounded hover:bg-blue-50"><span data-ui-icon="history">📜</span> 历史/收藏</button>
+                    <button type="button" data-act="openVersionHistory" data-args='["joey"]' class="text-[10px] bg-white border border-blue-200 text-blue-600 px-2 py-0.5 rounded hover:bg-blue-50"><span data-ui-icon="history">📜</span> 历史/收藏</button>
                 </div>
                 <div class="px-3 pt-2 text-[10px] text-gray-400 project-hints" data-hints="joey"></div>
+                <div class="px-3 py-2 flex flex-wrap items-center gap-2 border-b border-gray-100 text-[11px] text-gray-600"><label for="compat_joey" class="font-bold">兼容日期</label><input type="date" id="compat_joey" class="text-xs border rounded px-2 py-0.5" min="2021-11-01" aria-label="Joey 上游 Worker 兼容日期"><button type="button" data-act="saveCompatibilityDate" data-args='["joey"]' class="text-xs bg-blue-600 hover:bg-blue-700 text-white px-2 py-0.5 rounded">保存</button><span id="compat_joey_status" class="text-[10px] text-gray-400" role="status" aria-live="polite" aria-atomic="true"></span><span class="ml-auto text-[10px] text-gray-400">部署、更新与 1101 修复按此日期冻结到任务计划</span></div>
                 <div class="p-3">
                     <details class="upstream-card">
-                        <summary>上游代码源 <span>文件与分支设置</span></summary>
+                        <summary>上游代码源 <span>文件与分支设置</span><span id="upstream_dirty_joey" class="config-save-status" role="status" aria-live="polite" aria-atomic="true" aria-label="Joey 上游配置保存状态">读取中…</span></summary>
                         <div class="upstream-content">
-                            <p class="upstream-status" id="upstream_status_joey" role="status">正在读取上游设置…</p>
+                            <p class="upstream-status" id="upstream_status_joey" role="status" aria-live="polite" aria-atomic="true" aria-label="Joey 上游读取状态">正在读取上游设置…</p>
                             <label for="upstream_path_joey">仓库内文件路径</label>
                             <input id="upstream_path_joey" class="input-field" placeholder="例如 src/worker.js" autocomplete="off" spellcheck="false" disabled>
                             <label for="upstream_branch_joey">分支 / 标签</label>
                             <input id="upstream_branch_joey" class="input-field" placeholder="例如 main" autocomplete="off" spellcheck="false" disabled>
+                            <p id="upstream_validation_joey" class="upstream-status" role="status" aria-live="polite" aria-atomic="true" aria-label="Joey 上游草稿验证结果"></p>
                             <p class="upstream-help">留空并恢复默认时使用自动探测。指定文件后不会自动切换到其他文件；设置同时用于预览、历史、手动部署与自动更新。</p>
                             <div class="upstream-actions">
-                                <button id="upstream_save_joey" data-act="saveUpstream" data-args='["joey"]' class="source-primary" disabled>保存代码源</button>
-                                <button data-act="saveUpstream" data-args='["joey",true]' class="source-secondary">恢复默认</button>
-                                <button data-act="loadUpstream" data-args='["joey"]' class="source-secondary">重新读取</button>
+                                <button type="button" data-act="validateUpstream" data-args='["joey"]' class="source-secondary" disabled>验证草稿（不保存）</button>
+                                <button type="button" id="upstream_save_joey" data-act="saveUpstream" data-args='["joey"]' class="source-primary" disabled>保存代码源</button>
+                                <button type="button" data-act="saveUpstream" data-args='["joey",true]' disabled class="source-secondary">恢复默认</button>
+                                <button type="button" data-act="loadUpstream" data-args='["joey"]' class="source-secondary">重新读取</button>
                             </div>
                         </div>
                     </details>
@@ -229,33 +264,34 @@
                         <div id="vars_joey" class="p-2 space-y-1 max-h-[200px] overflow-y-auto"></div>
                     </details>
                     <div class="flex gap-2 mb-2">
-                        <button data-act="addVarRow" data-args='["joey"]' class="flex-1 bg-dashed border text-gray-400 text-xs py-1 rounded hover:text-gray-600"><span data-ui-icon="plus">➕</span> 变量</button>
-                        <button data-act="selectSyncAccount" data-args='["joey"]' class="flex-none bg-orange-50 text-orange-600 border border-orange-200 text-xs px-2 py-1 rounded"><span data-ui-icon="refresh-cw">🔄</span> 同步</button>
+                        <button type="button" data-act="addVarRow" data-args='["joey"]' class="flex-1 bg-dashed border text-gray-400 text-xs py-1 rounded hover:text-gray-600"><span data-ui-icon="plus">➕</span> 变量</button>
+                        <button type="button" data-act="selectSyncAccount" data-args='["joey"]' class="flex-none bg-orange-50 text-orange-600 border border-orange-200 text-xs px-2 py-1 rounded"><span data-ui-icon="refresh-cw">🔄</span> 同步</button>
                     </div>
                     <div class="flex gap-2">
-                        <button data-act="refreshUUID" data-args='["joey"]' class="flex-1 bg-gray-100 text-gray-600 text-xs py-1.5 rounded"><span data-ui-icon="shuffle">🎲</span> 刷 UUID</button>
-                        <button data-act="previewDeploy" data-args='["joey"]' class="flex-1 bg-slate-100 text-slate-600 text-xs py-1.5 rounded hover:bg-slate-200" title="预览本次部署将影响的账号与 Worker"><span data-ui-icon="search">🔍</span> 预览</button><button data-act="deploy" data-args='["joey"]' id="btn_deploy_joey" class="flex-[2] bg-blue-600 text-white text-xs py-1.5 rounded font-bold hover:bg-blue-700"><span data-ui-icon="rocket">🚀</span> 部署更新</button>
+                        <button type="button" data-act="refreshUUID" data-args='["joey"]' class="flex-1 bg-gray-100 text-gray-600 text-xs py-1.5 rounded"><span data-ui-icon="shuffle">🎲</span> 刷 UUID</button>
+                        <button type="button" data-act="previewDeploy" data-args='["joey"]' class="flex-1 bg-slate-100 text-slate-600 text-xs py-1.5 rounded hover:bg-slate-200" title="预览本次部署将影响的账号与 Worker"><span data-ui-icon="search">🔍</span> 预览</button><button type="button" data-act="deploy" data-args='["joey"]' id="btn_deploy_joey" class="flex-[2] bg-blue-600 text-white text-xs py-1.5 rounded font-bold hover:bg-blue-700"><span data-ui-icon="rocket">🚀</span> 部署更新</button>
                     </div>
                 </div>
             </div>
 
-            <div class="bg-white rounded shadow border-t-4 border-green-500 project-card project-panel hidden" data-tab-panel="ech">
+            <div class="bg-white rounded shadow border-t-4 border-green-500 project-card project-panel hidden" data-tab-panel="ech" id="project_panel_ech" role="tabpanel" aria-labelledby="project_tab_ech" tabindex="0" hidden>
                 <div class="bg-green-50 px-4 py-2 flex justify-between items-center border-b border-green-100">
                     <div class="flex items-center gap-2"><span class="text-sm font-bold text-green-700"><span data-ui-icon="box">🟢</span> ECH 配置</span><span id="badge_ech" class="text-[9px] px-1.5 py-0.5 rounded text-white bg-gray-400">Loading</span></div>
-                    <button data-act="openVersionHistory" data-args='["ech"]' class="text-[10px] bg-white border border-green-200 text-green-600 px-2 py-0.5 rounded hover:bg-green-50"><span data-ui-icon="history">📜</span> 历史/收藏</button>
+                    <button type="button" data-act="openVersionHistory" data-args='["ech"]' class="text-[10px] bg-white border border-green-200 text-green-600 px-2 py-0.5 rounded hover:bg-green-50"><span data-ui-icon="history">📜</span> 历史/收藏</button>
                 </div>
                 <div class="px-3 pt-2 text-[10px] text-gray-400 project-hints" data-hints="ech"></div>
+                <div class="px-3 py-2 flex flex-wrap items-center gap-2 border-b border-gray-100 text-[11px] text-gray-600"><label for="compat_ech" class="font-bold">兼容日期</label><input type="date" id="compat_ech" class="text-xs border rounded px-2 py-0.5" min="2021-11-01" aria-label="ECH 上游 Worker 兼容日期"><button type="button" data-act="saveCompatibilityDate" data-args='["ech"]' class="text-xs bg-green-600 hover:bg-green-700 text-white px-2 py-0.5 rounded">保存</button><span id="compat_ech_status" class="text-[10px] text-gray-400" role="status" aria-live="polite" aria-atomic="true"></span><span class="ml-auto text-[10px] text-gray-400">部署、更新与 1101 修复按此日期冻结到任务计划</span></div>
                 <div class="p-3">
                     <div id="ver_ech" class="text-[10px] font-mono text-gray-500 mb-2 border-b border-gray-100 pb-2 space-y-1">Checking...</div>
                     <div class="mb-2 p-2 bg-slate-50 border rounded text-xs"><div id="ech_proxy_selector_container" class="mb-2"></div><div id="vars_ech" class="space-y-1"></div></div>
                     <div class="mb-2 p-2 bg-slate-50 border border-dashed border-green-300 rounded text-xs">
                         <div class="flex items-center gap-2 mb-1">
                             <div class="relative inline-block w-8 align-middle select-none">
-                                <input type="checkbox" id="ech_token_enabled" data-act-change="toggleEchToken" class="toggle-checkbox absolute block w-4 h-4 rounded-full bg-white border-4 appearance-none cursor-pointer border-gray-300"/>
+                                <input type="checkbox" id="ech_token_enabled" aria-describedby="ech_token_status" aria-label="Token 鉴权" data-act-change="toggleEchToken" class="toggle-checkbox absolute block w-4 h-4 rounded-full bg-white border-4 appearance-none cursor-pointer border-gray-300"/>
                                 <label for="ech_token_enabled" class="toggle-label block overflow-hidden h-4 rounded-full bg-gray-300 cursor-pointer"></label>
                             </div>
                             <span class="font-bold text-green-700"><span data-ui-icon="key-round">🔑</span> Token 鉴权</span>
-                            <span id="ech_token_status" class="text-gray-400 text-[10px]">(关闭 - 不填入)</span>
+                            <span id="ech_token_status" class="text-[10px]" role="status" aria-live="polite" aria-atomic="true" aria-label="ECH Token 注入状态">(关闭 - 不填入)</span>
                         </div>
                         <input id="ech_token_input" type="text" placeholder="填写 Token 后开启开关才会生效" class="input-field w-full opacity-50 cursor-not-allowed" disabled/>
                         <div class="flex items-center gap-2 mt-2 pt-2 border-t border-green-200">
@@ -264,11 +300,11 @@
                         </div>
                     </div>
                     <div class="flex gap-2 mb-2">
-                        <button data-act="addVarRow" data-args='["ech"]' class="flex-1 bg-dashed border text-gray-400 text-xs py-1 rounded hover:text-gray-600"><span data-ui-icon="plus">➕</span> 变量</button>
-                        <button data-act="selectSyncAccount" data-args='["ech"]' class="flex-none bg-orange-50 text-orange-600 border border-orange-200 text-xs px-2 py-1 rounded"><span data-ui-icon="refresh-cw">🔄</span> 同步</button>
+                        <button type="button" data-act="addVarRow" data-args='["ech"]' class="flex-1 bg-dashed border text-gray-400 text-xs py-1 rounded hover:text-gray-600"><span data-ui-icon="plus">➕</span> 变量</button>
+                        <button type="button" data-act="selectSyncAccount" data-args='["ech"]' class="flex-none bg-orange-50 text-orange-600 border border-orange-200 text-xs px-2 py-1 rounded"><span data-ui-icon="refresh-cw">🔄</span> 同步</button>
                     </div>
                     <div class="flex gap-2">
-                        <button data-act="previewDeploy" data-args='["ech"]' class="flex-1 bg-slate-100 text-slate-600 text-xs py-1.5 rounded hover:bg-slate-200" title="预览本次部署将影响的账号与 Worker"><span data-ui-icon="search">🔍</span> 预览</button><button data-act="deploy" data-args='["ech"]' id="btn_deploy_ech" class="flex-[2] bg-green-600 text-white text-xs py-1.5 rounded font-bold hover:bg-green-700"><span data-ui-icon="rocket">🚀</span> 部署配置</button>
+                        <button type="button" data-act="previewDeploy" data-args='["ech"]' class="flex-1 bg-slate-100 text-slate-600 text-xs py-1.5 rounded hover:bg-slate-200" title="预览本次部署将影响的账号与 Worker"><span data-ui-icon="search">🔍</span> 预览</button><button type="button" data-act="deploy" data-args='["ech"]' id="btn_deploy_ech" class="flex-[2] bg-green-600 text-white text-xs py-1.5 rounded font-bold hover:bg-green-700"><span data-ui-icon="rocket">🚀</span> 部署配置</button>
                     </div>
                 </div>
             </div>
@@ -276,20 +312,20 @@
       </div>
     </div>
 
-    <div id="batch_deploy_modal" class="hidden fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50">
+    <div id="batch_deploy_modal" role="dialog" aria-modal="true" aria-label="批量部署" tabindex="-1" class="hidden fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50">
         <div class="bg-white rounded-lg w-[600px] shadow-2xl overflow-hidden animate-fade-in">
             <div class="bg-indigo-600 p-3 flex justify-between items-center text-white">
                 <h3 class="font-bold text-sm"><span data-ui-icon="layers">✨</span> 批量部署</h3>
-                <button data-act="closeModal" data-args='["batch_deploy_modal"]' class="hover:text-gray-200"><span data-ui-icon="x">×</span></button>
+                <button type="button" data-act="closeModal" data-args='["batch_deploy_modal"]' class="hover:text-gray-200"><span data-ui-icon="x">×</span></button>
             </div>
             <div class="p-4 text-xs space-y-3">
                 <div class="grid grid-cols-2 gap-3">
-                    <div><label class="block text-gray-500 mb-1">Worker 名称</label><input id="bd_name" class="input-field font-bold text-indigo-700" placeholder="例如: new-proxy-01"></div>
-                    <div><label class="block text-gray-500 mb-1">选择模板</label><select id="bd_template" data-select-icons data-act-change="toggleBatchInputs" class="input-field bg-gray-50"><option value="cmliu" data-option-icon="box" data-option-tone="cmliu">CMliu (EdgeTunnel)</option><option value="joey" data-option-icon="box" data-option-tone="joey">Joey (相信光)</option><option value="ech" data-option-icon="box" data-option-tone="ech">ECH (WebSocket)</option></select></div>
+                    <div><label for="bd_name" class="block text-gray-500 mb-1">Worker 名称</label><input id="bd_name" class="input-field font-bold text-indigo-700" placeholder="例如: new-proxy-01"></div>
+                    <div><label for="bd_template" class="block text-gray-500 mb-1">选择模板</label><select id="bd_template" data-select-icons data-act-change="toggleBatchInputs" class="input-field bg-gray-50"><option value="cmliu" data-option-icon="box" data-option-tone="cmliu">CMliu (EdgeTunnel)</option><option value="joey" data-option-icon="box" data-option-tone="joey">Joey (相信光)</option><option value="ech" data-option-icon="box" data-option-tone="ech">ECH (WebSocket)</option></select></div>
                 </div>
                 
                 <div class="grid grid-cols-2 gap-3 items-end">
-                    <div><label class="block text-gray-500 mb-1">KV 空间名称</label><input id="bd_kv_name" class="input-field" placeholder="自动创建/使用同名 KV"></div>
+                    <div><label for="bd_kv_name" class="block text-gray-500 mb-1">KV 空间名称</label><input id="bd_kv_name" class="input-field" placeholder="自动创建/使用同名 KV"></div>
                     <div class="flex flex-col gap-2 pb-1">
                          <div class="flex items-center gap-2">
                             <input type="checkbox" id="bd_enable_kv" class="w-4 h-4 text-indigo-600 border-gray-300 rounded" checked>
@@ -308,7 +344,7 @@
                          <label for="bd_disable_workers_dev" class="font-bold text-gray-700"><span data-ui-icon="ban">🚫</span> 禁用默认 *.workers.dev 域名</label>
                     </div>
                     <div class="border-t pt-2">
-                        <label class="block text-purple-700 font-bold mb-1"><span data-ui-icon="globe">🌐</span> 自定义域名 (自动绑定)</label>
+                        <label for="bd_domain_prefix" class="block text-purple-700 font-bold mb-1"><span data-ui-icon="globe">🌐</span> 自定义域名 (自动绑定)</label>
                         <div class="flex gap-1 items-center">
                             <input id="bd_domain_prefix" class="input-field w-1/3" placeholder="仅输入前缀">
                             <span class="text-gray-400">.</span>
@@ -318,14 +354,14 @@
                 </div>
 
                 <div id="bd_config_cmliu" class="bg-red-50 p-2 rounded border border-red-100">
-                    <label class="block text-red-700 font-bold mb-1">设置 ADMIN 密码</label>
+                    <label for="bd_admin_pass" class="block text-red-700 font-bold mb-1">设置 ADMIN 密码</label>
                     <input id="bd_admin_pass" class="input-field bg-white" placeholder="登录后台的密码">
                 </div>
                 <div id="bd_config_joey" class="hidden bg-blue-50 p-2 rounded border border-blue-100">
-                    <label class="block text-blue-700 font-bold mb-1">设置用户 UUID (u)</label>
+                    <label for="bd_uuid" class="block text-blue-700 font-bold mb-1">设置用户 UUID (u)</label>
                     <div class="flex gap-2">
                         <input id="bd_uuid" class="input-field bg-white font-mono" placeholder="UUID">
-                        <button data-act="regenBatchUuid" class="bg-blue-600 text-white px-2 rounded"><span data-ui-icon="shuffle">🎲</span></button>
+                        <button type="button" data-act="regenBatchUuid" class="bg-blue-600 text-white px-2 rounded"><span data-ui-icon="shuffle">🎲</span></button>
                     </div>
                 </div>
                 <div>
@@ -333,18 +369,19 @@
                     <div id="bd_account_list" class="max-h-[100px] overflow-y-auto border rounded p-2 bg-gray-50 grid grid-cols-2 gap-2"></div>
                 </div>
                 <div class="pt-2 border-t flex justify-end gap-2">
-                    <button data-act="closeModal" data-args='["batch_deploy_modal"]' class="px-3 py-1.5 bg-gray-100 text-gray-600 rounded">取消</button>
-                    <button data-act="doBatchDeploy" id="btn_do_batch" class="px-3 py-1.5 bg-indigo-600 text-white rounded font-bold hover:bg-indigo-700"><span data-ui-icon="rocket">🚀</span> 开始部署</button>
+                    <button type="button" data-act="closeModal" data-args='["batch_deploy_modal"]' class="px-3 py-1.5 bg-gray-100 text-gray-600 rounded">取消</button>
+                    <button type="button" data-act="previewBatchDeploy" id="btn_preview_batch" class="px-3 py-1.5 bg-gray-100 text-gray-600 rounded">预览差异</button>
+                    <button type="button" data-act="doBatchDeploy" id="btn_do_batch" class="px-3 py-1.5 bg-indigo-600 text-white rounded font-bold hover:bg-indigo-700"><span data-ui-icon="rocket">🚀</span> 开始部署</button>
                 </div>
             </div>
         </div>
     </div>
 
-    <div id="yxip_modal" class="hidden fixed inset-0 bg-black bg-opacity-60 flex justify-center items-start pt-[5vh] z-[60] overflow-y-auto">
+    <div id="yxip_modal" role="dialog" aria-modal="true" aria-label="反代落地部署 (YXIP)" tabindex="-1" class="hidden fixed inset-0 bg-black bg-opacity-60 flex justify-center items-start pt-[5vh] z-[60] overflow-y-auto">
         <div class="bg-white rounded-lg shadow-2xl flex flex-col w-[90%] max-w-[800px] my-[5vh]">
             <div class="bg-gradient-to-r from-yellow-500 to-yellow-600 p-4 rounded-t-lg flex justify-between items-center text-white shadow-sm">
                 <h3 class="font-bold text-lg flex items-center gap-2"><span data-ui-icon="zap">⚡</span> 反代落地部署 (YXIP)</h3>
-                <button data-act="closeModal" data-args='["yxip_modal"]' class="hover:bg-white/20 px-2 py-0.5 rounded transition-colors text-xl"><span data-ui-icon="x">×</span></button>
+                <button type="button" data-act="closeModal" data-args='["yxip_modal"]' class="hover:bg-white/20 px-2 py-0.5 rounded transition-colors text-xl"><span data-ui-icon="x">×</span></button>
             </div>
             
             <div class="p-5 overflow-y-auto">
@@ -377,8 +414,8 @@
                     </h4>
                     
                     <div class="flex gap-2 mb-3">
-                        <button data-act="yxipSelectAll" class="px-3 py-1 bg-gray-100 border text-gray-700 shadow-sm hover:bg-gray-200 rounded text-sm transition-colors">全选</button>
-                        <button data-act="yxipSelectNone" class="px-3 py-1 bg-gray-100 border text-gray-700 shadow-sm hover:bg-gray-200 rounded text-sm transition-colors">反选</button>
+                        <button type="button" data-act="yxipSelectAll" class="px-3 py-1 bg-gray-100 border text-gray-700 shadow-sm hover:bg-gray-200 rounded text-sm transition-colors">全选</button>
+                        <button type="button" data-act="yxipSelectNone" class="px-3 py-1 bg-gray-100 border text-gray-700 shadow-sm hover:bg-gray-200 rounded text-sm transition-colors">反选</button>
                     </div>
                     
                     <div id="yxip_regions" class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2 text-sm max-h-[250px] overflow-y-auto p-2 border rounded bg-gray-50 shadow-inner">
@@ -387,8 +424,8 @@
                 </div>
 
                 <div class="mt-6 flex justify-end gap-3 pt-4 border-t border-gray-100">
-                    <button data-act="closeModal" data-args='["yxip_modal"]' class="px-4 py-2 bg-gray-100 text-gray-600 rounded font-bold hover:bg-gray-200 transition-colors">取消</button>
-                    <button data-act="doYxipDeploy" class="px-6 py-2 bg-gradient-to-r from-yellow-500 to-yellow-600 text-white rounded font-bold hover:from-yellow-600 hover:to-yellow-700 shadow-md transition-all flex items-center gap-2">
+                    <button type="button" data-act="closeModal" data-args='["yxip_modal"]' class="px-4 py-2 bg-gray-100 text-gray-600 rounded font-bold hover:bg-gray-200 transition-colors">取消</button>
+                    <button type="button" data-act="doYxipDeploy" class="px-6 py-2 bg-gradient-to-r from-yellow-500 to-yellow-600 text-white rounded font-bold hover:from-yellow-600 hover:to-yellow-700 shadow-md transition-all flex items-center gap-2">
                         <span id="yxip_btn_icon"><span data-ui-icon="zap">⚡</span></span> 开始提取与部署
                     </button>
                 </div>
@@ -396,23 +433,23 @@
         </div>
     </div>
 
-    <div id="account_manage_modal" class="hidden fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50">
+    <div id="account_manage_modal" role="dialog" aria-modal="true" aria-labelledby="manage_modal_title" tabindex="-1" class="hidden fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50">
         <div class="bg-white rounded-lg w-[650px] shadow-2xl max-h-[85vh] flex flex-col">
             <div class="bg-slate-700 p-3 flex justify-between items-center text-white">
                 <h3 class="font-bold text-sm" id="manage_modal_title"><span data-ui-icon="folder-open">📂</span> 账号管理</h3>
-                <button data-act="closeModal" data-args='["account_manage_modal"]' class="hover:text-gray-200"><span data-ui-icon="x">×</span></button>
+                <button type="button" data-act="closeModal" data-args='["account_manage_modal"]' class="hover:text-gray-200"><span data-ui-icon="x">×</span></button>
             </div>
             <div class="p-2 border-b bg-gray-50 text-[10px] text-gray-500 space-y-1">
                 <div><span data-ui-icon="triangle-alert">⚠️</span> 警告：删除逻辑为 [解绑 Worker -> 删除 Worker -> 删除 KV]。</div>
                 <div class="flex items-center gap-2 bg-indigo-50 p-1.5 rounded border border-indigo-100">
                     <span class="text-indigo-700 font-bold flex-none"><span data-ui-icon="globe">🌐</span> 子域名:</span>
-                    <span id="manage_subdomain_display" class="font-mono text-indigo-600 text-[11px]">加载中...</span>
+                    <span id="manage_subdomain_display" role="status" aria-live="polite" aria-atomic="true" aria-label="账号子域名读取状态" class="font-mono text-indigo-600 text-[11px]">加载中...</span>
                     <span class="text-gray-400">.workers.dev</span>
-                    <button data-act="promptChangeSubdomain" class="ml-auto flex-none bg-indigo-600 text-white px-2 py-0.5 rounded hover:bg-indigo-700 font-bold"><span data-ui-icon="pencil">✏️</span> 修改</button>
+                    <button type="button" data-act="promptChangeSubdomain" class="ml-auto flex-none bg-indigo-600 text-white px-2 py-0.5 rounded hover:bg-indigo-700 font-bold"><span data-ui-icon="pencil">✏️</span> 修改</button>
                 </div>
             </div>
             <div class="flex-1 overflow-y-auto p-4">
-                <div id="manage_loading" class="text-center py-4 text-gray-400">正在加载 Workers 列表...</div>
+                <div id="manage_loading" role="status" aria-live="polite" aria-atomic="true" aria-label="Worker 清单读取状态" class="text-center py-4 text-gray-400">正在加载 Workers 列表...</div>
                 <table class="w-full compact-table hidden" id="manage_table">
                     <thead><tr><th>Worker 名称</th><th>创建时间</th><th>修改时间</th><th class="text-right">操作</th></tr></thead>
                     <tbody id="manage_list_body"></tbody>
@@ -421,20 +458,20 @@
         </div>
     </div>
 
-    <div id="history_modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
+    <div id="history_modal" role="dialog" aria-modal="true" aria-label="版本管理" tabindex="-1" class="hidden fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
         <div class="bg-white rounded-lg w-[450px] shadow-xl max-h-[85vh] flex flex-col overflow-hidden">
             <div class="p-3 border-b bg-gray-50 flex justify-between items-center">
                 <h3 class="text-sm font-bold text-gray-700"><span data-ui-icon="history">📜</span> 版本管理</h3>
                 <div class="flex gap-2">
-                    <button data-act="openFavoritesPanel" class="text-xs bg-orange-100 text-orange-600 px-2 py-1 rounded font-bold border border-orange-200 hover:bg-orange-200"><span data-ui-icon="star">⭐</span> 查看收藏</button>
-                    <button data-act="closeModal" data-args='["history_modal"]' class="text-gray-400 hover:text-gray-600 text-lg"><span data-ui-icon="x">×</span></button>
+                    <button type="button" data-act="openFavoritesPanel" class="text-xs bg-orange-100 text-orange-600 px-2 py-1 rounded font-bold border border-orange-200 hover:bg-orange-200"><span data-ui-icon="star">⭐</span> 查看收藏</button>
+                    <button type="button" data-act="closeModal" data-args='["history_modal"]' class="text-gray-400 hover:text-gray-600 text-lg"><span data-ui-icon="x">×</span></button>
                 </div>
             </div>
             
             <div id="fav_panel_view" class="hidden flex-col h-full bg-orange-50">
                 <div class="p-2 border-b border-orange-200 flex justify-between items-center">
                     <span class="text-xs font-bold text-orange-800"><span data-ui-icon="star">⭐</span> 我的收藏版本</span>
-                    <button data-act="closeFavoritesPanel" class="text-[10px] bg-white border px-2 py-0.5 rounded">返回历史</button>
+                    <button type="button" data-act="closeFavoritesPanel" class="text-[10px] bg-white border px-2 py-0.5 rounded">返回历史</button>
                 </div>
                 <div id="fav_full_list" class="flex-1 overflow-y-auto p-2 space-y-1"></div>
             </div>
@@ -456,29 +493,39 @@
         </div>
     </div>
 
-    <div id="sync_select_modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
+    <div id="sync_select_modal" role="dialog" aria-modal="true" aria-label="选择同步源" tabindex="-1" class="hidden fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
         <div class="bg-white rounded-lg p-4 w-80 shadow-xl max-h-[80vh] flex flex-col">
             <h3 class="text-sm font-bold mb-3 text-gray-700"><span data-ui-icon="download">📥</span> 选择同步源</h3>
             <div id="sync_list" class="space-y-1 overflow-y-auto flex-1 mb-3"></div>
-            <button data-act="closeModal" data-args='["sync_select_modal"]' class="w-full bg-gray-200 text-gray-600 text-xs py-1.5 rounded">取消</button>
+            <button type="button" data-act="closeModal" data-args='["sync_select_modal"]' class="w-full bg-gray-200 text-gray-600 text-xs py-1.5 rounded">取消</button>
         </div>
     </div>
 
-    <div id="workbench_modal" class="hidden fixed inset-0 z-50" style="pointer-events:none">
+    <div id="workbench_modal" role="region" aria-label="工作台" class="hidden fixed inset-0 z-50" style="pointer-events:none">
         <div id="workbench_panel" class="bg-slate-900 rounded-xl shadow-2xl flex flex-col border border-slate-700" style="pointer-events:auto;position:fixed;top:8vh;left:50%;transform:translateX(-50%);width:700px;max-width:90vw;min-height:200px;height:auto;max-height:80vh;resize:vertical;overflow:hidden">
-            <div id="workbench_drag" title="拖动标题栏可移动工作台" class="flex justify-between items-center px-4 py-2 border-b border-slate-700 cursor-move select-none" >
+            <div id="workbench_drag" role="group" aria-label="移动工作台" aria-describedby="workbench_move_help" tabindex="0" title="拖动标题栏，或聚焦后用方向键移动工作台" class="flex justify-between items-center px-4 py-2 border-b border-slate-700 cursor-move select-none" >
                 <h3 class="text-sm font-bold text-green-400 flex items-center gap-2"><span data-ui-icon="clipboard-list">📋</span> 工作台</h3>
                 <div class="flex gap-2">
-                    <button data-act="showDeployJournal" class="text-[10px] text-slate-400 hover:text-white border border-slate-600 px-2 py-0.5 rounded" title="查看最近部署记录"><span data-ui-icon="history">📜</span> 部署日志</button>
-                    <button data-act="runDiagnostics" class="text-[10px] text-slate-400 hover:text-white border border-slate-600 px-2 py-0.5 rounded" title="检查 KV 绑定与关键配置"><span data-ui-icon="stethoscope">🩺</span> 诊断</button>
-                    <button data-act="viewTemplateCode" class="text-[10px] text-slate-400 hover:text-white border border-slate-600 px-2 py-0.5 rounded" title="查看上游模板源码摘要"><span data-ui-icon="file-text">📄</span> 源码</button>
-                    <button data-act="copyDiagnosticReport" class="text-[10px] text-slate-400 hover:text-white border border-slate-600 px-2 py-0.5 rounded" title="复制已脱敏的系统诊断报告"><span data-ui-icon="clipboard-list">📋</span> 复制诊断</button>
-                    <button data-act="reportIssue" class="text-[10px] text-amber-400 hover:text-amber-200 border border-amber-600/60 px-2 py-0.5 rounded" title="一键提交故障 Issue"><span data-ui-icon="bug">🐛</span> 报障</button>
-                    <button data-act="clearWorkbenchLog" class="text-[10px] text-slate-500 hover:text-slate-300 border border-slate-600 px-2 py-0.5 rounded"><span data-ui-icon="trash-2">🗑️</span> 清空</button>
-                    <button data-act="closeWorkbench" class="text-slate-400 hover:text-white text-lg leading-none">&times;</button>
+                    <button type="button" data-act="showDeployJournal" class="text-[10px] text-slate-400 hover:text-white border border-slate-600 px-2 py-0.5 rounded" title="查看最近部署记录"><span data-ui-icon="history">📜</span> 部署日志</button>
+                    <button type="button" data-act="runDiagnostics" class="text-[10px] text-slate-400 hover:text-white border border-slate-600 px-2 py-0.5 rounded" title="检查 KV 绑定与关键配置"><span data-ui-icon="stethoscope">🩺</span> 诊断</button>
+                    <button type="button" data-act="viewTemplateCode" class="text-[10px] text-slate-400 hover:text-white border border-slate-600 px-2 py-0.5 rounded" title="查看上游模板源码摘要"><span data-ui-icon="file-text">📄</span> 源码</button>
+                    <button type="button" data-act="copyDiagnosticReport" class="text-[10px] text-slate-400 hover:text-white border border-slate-600 px-2 py-0.5 rounded" title="复制已脱敏的系统诊断报告"><span data-ui-icon="clipboard-list">📋</span> 复制诊断</button>
+                    <button type="button" data-act="reportIssue" class="text-[10px] text-amber-400 hover:text-amber-200 border border-amber-600/60 px-2 py-0.5 rounded" title="一键提交故障 Issue"><span data-ui-icon="bug">🐛</span> 报障</button>
+                    <button type="button" data-act="clearWorkbenchLog" class="text-[10px] text-slate-500 hover:text-slate-300 border border-slate-600 px-2 py-0.5 rounded"><span data-ui-icon="trash-2">🗑️</span> 清空</button>
+                    <button type="button" data-act="closeWorkbench" class="text-slate-400 hover:text-white text-lg leading-none"><span data-ui-icon="x">×</span></button>
                 </div>
             </div>
-            <div id="workbench_log" class="flex-1 overflow-y-auto p-3 text-xs font-mono text-green-400 space-y-0.5">
+            <details class="px-4 py-1 text-xs text-slate-300">
+                <summary class="cursor-pointer">移动工作台（也可点击按钮，无需拖动）</summary>
+                <div class="flex flex-wrap gap-2 py-1" role="group" aria-label="工作台位置">
+                    <button type="button" data-act="moveWorkbenchLeft" class="border border-slate-500 rounded px-3 py-1" aria-label="工作台向左移动 10 像素">向左</button>
+                    <button type="button" data-act="moveWorkbenchRight" class="border border-slate-500 rounded px-3 py-1" aria-label="工作台向右移动 10 像素">向右</button>
+                    <button type="button" data-act="moveWorkbenchUp" class="border border-slate-500 rounded px-3 py-1" aria-label="工作台向上移动 10 像素">向上</button>
+                    <button type="button" data-act="moveWorkbenchDown" class="border border-slate-500 rounded px-3 py-1" aria-label="工作台向下移动 10 像素">向下</button>
+                </div>
+            </details>
+            <p id="workbench_move_help" class="sr-only">聚焦标题栏后，方向键每次移动 10 像素。Tab 进入工具按钮和日志，工作台不会限制焦点。</p>
+            <div id="workbench_log" role="log" aria-label="工作台日志" aria-live="polite" aria-atomic="false" aria-relevant="additions" tabindex="0" class="flex-1 overflow-y-auto p-3 text-xs font-mono text-green-400 space-y-0.5">
                 <div class="text-slate-600">// 等待操作...</div>
             </div>
         </div>

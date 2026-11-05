@@ -1,3 +1,6 @@
+import { executionNow, executionUUID } from '../reliability/execution-context';
+import { traceEvent } from './trace';
+import { redactDiagnosticText } from './redaction';
 /**
  * 自动更新核心逻辑 — cron 和 routes 共享
  */
@@ -56,6 +59,7 @@ export async function prepareDeployCode(
     targetSha: string | null, customCode: string | null,
     variables: VariableEntry[] | null, echTokenEnabled: boolean
 ): Promise<DeployCodeResult | DeployLogEntry[]> {
+    traceEvent(env, 'source resolution started', { type });
     const sourceIdentity = await upstreamIdentity(env, type);
     const isLatestMode = !targetSha || targetSha === 'latest';
     const shaForFetch = isLatestMode ? null : targetSha;
@@ -80,13 +84,14 @@ export async function prepareDeployCode(
         } catch (e: any) { return [{ name: "网络错误", success: false, msg: e.message }]; }
     }
 
+    traceEvent(env, 'source resolved', { type, sha: deployedSha, sourceIdentity, customCodeHash });
     scriptContent = applyTemplateTransform(type, scriptContent, variables, { echTokenEnabled });
     return { scriptContent, deployedSha, customCodeHash, isLatestMode, sourceIdentity };
 }
 
 /** [提取] 部署到单个 Worker */
 async function deploySingleWorker(
-    acc: AccountEntry, wName: string, type: TemplateType,
+    env: AppEnv, acc: AccountEntry, wName: string, type: TemplateType,
     scriptContent: string, deployedSha: string | null,
     variables: VariableEntry[],
     deletedVariables: string[], echDisableWorkersDev: boolean
@@ -109,7 +114,7 @@ async function deploySingleWorker(
         const currentBindings = variables
             ? mergeVariableBindings(rawBindings, variables, deletedVariables)
             : rawBindings;
-        const { ok, error: uploadError } = await uploadWorker(acc, wName, scriptContent, currentBindings, type);
+        const { ok, error: uploadError } = await uploadWorker(acc, wName, scriptContent, currentBindings, type, env);
         if (ok) {
             logItem.success = true;
             const msgs = ['✅ Ver: ' + (deployedSha ? deployedSha.substring(0, 7) : 'Unknown')];
@@ -178,7 +183,7 @@ export async function finalizeDeploy(
     // 账本只在「全量 + 全部成功」时前进
     const advances = allSucceeded && scope === 'full';
     const mode = isLatestMode ? 'latest' : 'fixed';
-    const nowIso = new Date().toISOString();
+    const nowIso = new Date(executionNow()).toISOString();
 
     // 两处 KV 读取互不依赖 → 并行；commitDate 的网络请求也提前发起，
     // 避免它串行排在「读 deployConfig」之后（此前三者是完全串行的 N+1）。
@@ -192,8 +197,9 @@ export async function finalizeDeploy(
     try {
         const journalEntry: JournalEntry = {
             time: nowIso, type, sha: deployedSha,
+            ...(env.traceContext ? { taskId: env.traceContext.id } : {}),
             accounts: logs.filter(l => l.success).length, total: logs.length,
-            summary: logs.map(l => l.name + ': ' + (l.success ? 'OK' : l.msg)).join('; ').substring(0, JOURNAL_SUMMARY_MAX)
+            summary: redactDiagnosticText(logs.map(l => l.name + ': ' + (l.success ? 'OK' : l.msg)).join('; ')).substring(0, JOURNAL_SUMMARY_MAX)
         };
         if (customCodeHash) journalEntry.customSha = customCodeHash;
         if (failedLogs.length > 0) journalEntry.failed = failedLogs.map(l => l.name);
@@ -201,7 +207,7 @@ export async function finalizeDeploy(
         // 写入侧就按「条数 + 保留天数 + 单条体积」裁剪，不再只截条数：
         // failed 数组此前无上限，一次 200 个目标全失败就会写进一个巨大的数组，
         // 100 条这种记录足以把单个 KV 值推到数百 KB。cron 的 GC 只是兜底。
-        const { kept } = pruneJournal(existing, Date.now());
+        const { kept } = pruneJournal(existing, executionNow());
         await putJSON(env.CONFIG_KV, KV_KEYS.DEPLOY_JOURNAL, kept);
     } catch (e) { logger.warn("deploy journal write failed", { error: (e as Error).message }); }
 
@@ -235,6 +241,8 @@ export async function finalizeDeploy(
                 pendingTargets: mergeSubsetPending(prev, logs)
             };
 
+    traceEvent(env, 'deployment completed', { type, succeeded: logs.filter(l => l.success).length, total: logs.length, scope });
+    if (env.traceContext) dp.lastTaskId = env.traceContext.id;
     if (advances) {
         dp.commitDate = commitDate || undefined;
         logger.audit('deploy completed', { type, sha: deployedSha, targets: logs.length });
@@ -328,7 +336,7 @@ export async function coreDeployLogic(env: AppEnv, opts: DeployOptions): Promise
 
         const logs = await pooledMap(targets, ({ acc, wName }) =>
             deploySingleWorker(
-                acc, wName, type, scriptContent, deployedSha,
+                env, acc, wName, type, scriptContent, deployedSha,
                 varsByAccount.get(acc.accountId) || variables,
                 deletedVariables, echDisableWorkersDev
             )
@@ -368,13 +376,14 @@ export async function resolveAccountVariables(
         ));
         return out;
     }
-    await Promise.all(accounts.map(async (a) => {
+    // A KV transport failure must still reject the batch, not silently discard account overrides.
+    await pooledMap(accounts, async (a) => {
         const override = await getJSON<VariableEntry[] | null>(env.CONFIG_KV, KV_KEYS.accountVars(type, a.accountId), null);
         if (!override || !Array.isArray(override) || override.length === 0) return;
         // Legacy snapshots must not override unrelated global variables.
         const uuidField = TEMPLATES[type].uuidField;
         out.set(a.accountId, mergeVarLists(globalVars, override.filter(v => v.key === uuidField)));
-    }));
+    });
     return out;
 }
 
@@ -392,14 +401,12 @@ export async function fetchGithubVersion(env: AppEnv, type: TemplateType): Promi
         readAccounts(env),
     ]);
     const hasDeployed = hasAnyWorker(accounts, type);
-    if (!hasDeployed && deployConfig.currentSha) {
-        await putJSON(env.CONFIG_KV, KV_KEYS.deployConfig(type), { mode: 'latest' });
-    }
+    // A GET may observe no workers, but must never reset retained deployment authority.
     const sourceMatches = (deployConfig.sourceIdentity || '') === await upstreamIdentity(env, type);
     const localSha = hasDeployed && sourceMatches ? (deployConfig.currentSha || null) : null;
     const localTime = hasDeployed ? (deployConfig.deployTime || null) : null;
     let commitDate = deployConfig.commitDate || null;
-    // 无 commitDate 时通过 GitHub API 查询本地 SHA 的日期（自动回填 KV）
+    // 无 commitDate 时只查询本地 SHA 的日期；只用于响应，不绕过 CAS 回填配置。
     if (!commitDate && localSha) {
         try {
             const { repoApiBase } = getGithubUrls(type);
@@ -409,12 +416,9 @@ export async function fetchGithubVersion(env: AppEnv, type: TemplateType): Promi
             if (sr.ok) {
                 const sd: any = await sr.json();
                 commitDate = sd.commit?.committer?.date || null;
-                if (commitDate) {
-                    deployConfig.commitDate = commitDate;
-                    await putJSON(env.CONFIG_KV, KV_KEYS.deployConfig(type), deployConfig);
-                }
+                // Persisting this observation requires a separate authoritative transaction.
             }
-        } catch (e) { logger.warn('fetchGithubVersion commit date backfill failed', { error: (e as Error).message, module: 'auto-update' }); }
+        } catch (e) { logger.warn('fetchGithubVersion commit date lookup failed', { error: (e as Error).message, module: 'auto-update' }); }
     }
 
     const ghData = await fetchGithubCommits(type, env, { perPage: 1, cacheBust: true });
@@ -464,6 +468,7 @@ export async function checkAndDeployUpdate(env: AppEnv, type: TemplateType) {
         const plan = resolveUpdatePlan(version, deployConfig.pendingSha);
         if (!plan.shouldDeploy) return;
 
+        traceEvent(env, 'update plan', { type, reason: plan.reason, parentTaskId: deployConfig.lastTaskId });
         if (plan.reason === 'retry-pending') {
             logger.info('cron: retrying previously failed deploy targets', { module: 'auto-update', type, count: plan.targetKeys?.length || 0 });
         }
@@ -494,7 +499,7 @@ export async function rotateUUIDAndDeploy(env: AppEnv, type: TemplateType, accou
     for (const accountId of accountIds) {
         const accKey = KV_KEYS.accountVars(type, accountId);
         const base = await getJSON<VariableEntry[]>(env.CONFIG_KV, accKey, globalVars);
-        const rotated = rotateUuidField(base.filter(v => v.key === uuidField), uuidField, crypto.randomUUID());
+        const rotated = rotateUuidField(base.filter(v => v.key === uuidField), uuidField, executionUUID());
         await putJSON(env.CONFIG_KV, accKey, rotated);
         logger.audit('fuse uuid rotated', { type, accountId, field: uuidField });
         await coreDeployLogic(env, {

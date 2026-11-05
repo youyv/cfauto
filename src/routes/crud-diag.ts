@@ -1,3 +1,4 @@
+import { handleDeployPreview } from '../lib/deploy-preview';
 /**
  * CRUD 路由 — 诊断端点 / 部署预览 / 操作日志
  *
@@ -48,7 +49,11 @@ ROUTES.set('GET /api/verify_credentials', async (_req, env) => {
             const headers = getAuthHeaders(acc);
             // 用 /accounts/{aid}：支持 Global API Key，且同时验证 accountId 归属
             const res = await fetchWithTimeout(cf.account(acc.accountId), { method: 'GET', headers });
-            if (res.ok) return { alias: acc.alias, ok: true, status: res.status };
+            if (res.ok) {
+                // Headers are sufficient here; do not leave unused bodies occupying connections.
+                await res.body?.cancel();
+                return { alias: acc.alias, ok: true, status: res.status };
+            }
             // 解析 CF 真实错误消息（9103 = 凭据无效，7003 = accountId 不存在/无权限）
             let msg = 'HTTP ' + res.status;
             try {
@@ -62,6 +67,8 @@ ROUTES.set('GET /api/verify_credentials', async (_req, env) => {
     return json(results);
 });
 
+ROUTES.set('POST /api/deploy/preview', handleDeployPreview);
+
 ROUTES.set('GET /api/deploy/preview', async (req, env) => {
     const type = new URL(req.url).searchParams.get('type') || '';
     const err = requireTemplateType(type, true);
@@ -74,6 +81,7 @@ ROUTES.set('GET /api/deploy/preview', async (req, env) => {
         accounts: accounts.filter((a) => getWorkerNames(a, type).length > 0).length,
         workers: targetWorkers.length,
         details: targetWorkers,
+        targets: accounts.flatMap(a => getWorkerNames(a, type).map(workerName => ({ accountId: a.accountId, alias: a.alias, workerName }))),
         ...(missingKey.length > 0 ? { warning: '以下账号密钥缺失，部署会失败: ' + missingKey.join(', ') } : {})
     });
 });

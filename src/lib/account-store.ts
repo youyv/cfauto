@@ -1,3 +1,5 @@
+import { readCredentialAccounts, writeCredentialAccounts } from '../reliability/credential-accounts';
+import { ReliabilityError } from '../reliability/protocol';
 /**
  * 统一账号存储层 — 透明加解密凭据字段（见 SECRET_FIELDS）
  * 
@@ -5,14 +7,15 @@
  * 读 = 自动解密(30s KV缓存)，写 = 自动加密，杜绝遗漏。
  *
  * ⚠️ 并发安全: Cloudflare KV 是最终一致性存储。当前读→改→写模式在并发场景下可能
- *    丢失写入（后写覆盖先写）。由于 Worker 中控是单用户管理面板，并发写入概率极低，
- *    暂不引入乐观锁（需额外 KV 键存储版本号）。多用户场景需升级方案。
+ *    丢失写入（后写覆盖先写）。有界读取不能解决该问题，也不能用 KV 版本字段模拟原子锁；
+ *    用户配置与 Cron 的一致性协调仍按 B1/B2 独立方案处理。
  */
 import { KV_KEYS } from '../config/templates';
 import { decryptKey, encryptKey, VERSION_PREFIX } from './crypto-utils';
 import { getJSON, putJSON } from './kv-utils';
 import { deleteAccountVarsFor } from './kv-gc';
 import { logger } from './logger';
+import { pooledMap } from './concurrency';
 import type { AccountEntry } from './types';
 import type { AppEnv } from '../config/env';
 
@@ -33,9 +36,12 @@ const CLEARED_BY_AUTH_MODE: Record<string, string> = {
 /** 读取账号列表（自动解密 globalKey） */
 export async function readAccounts(env: AppEnv): Promise<AccountEntry[]> {
     const accounts = await getJSON<AccountEntry[]>(env.CONFIG_KV, KV_KEYS.ACCOUNTS, []);
-    await Promise.all(accounts.map(async (a) => {
+    if (!Array.isArray(accounts)) throw new Error('账号配置格式无效');
+    if (env.reliabilityCredentials) return readCredentialAccounts(accounts, env.reliabilityCredentials.ring);
+    // Limit pending WebCrypto work as well as remote reads; keep account order and fail-closed handling.
+    await pooledMap(accounts, async (a) => {
         for (const f of SECRET_FIELDS) a[f] = await decryptAccountSecret(env, a[f], a.alias);
-    }));
+    });
     return accounts;
 }
 
@@ -47,6 +53,7 @@ export async function readAccounts(env: AppEnv): Promise<AccountEntry[]> {
  */
 async function decryptAccountSecret(env: AppEnv, value: string | undefined, alias: string): Promise<string> {
     if (!value) return '';
+    if (/^v[0-9]+:/.test(value) && !value.startsWith(VERSION_PREFIX)) throw new ReliabilityError('INVALID', 400);
     const decrypted = await decryptKey(env, value);
     if (decrypted === value && value.startsWith(VERSION_PREFIX)) {
         logger.warn('readAccounts: decryptKey returned raw ciphertext, clearing', { alias });
@@ -87,8 +94,8 @@ export async function writeAccounts(env: AppEnv, accounts: AccountEntry[]): Prom
     // 读取现有密文列表，用于保留未修改（空/掩码）的 key
     const existing = await getJSON<AccountEntry[]>(env.CONFIG_KV, KV_KEYS.ACCOUNTS, []);
     // 克隆数组避免原地修改调用者持有的引用
-    const cloned = accounts.map(a => ({ ...a }));
-    await Promise.all(cloned.map(async (a) => {
+    const cloned = env.reliabilityCredentials ? await writeCredentialAccounts(accounts, existing, env.reliabilityCredentials) : accounts.map(a => ({ ...a }));
+    if (!env.reliabilityCredentials) await Promise.all(cloned.map(async (a) => {
         // 匹配旧密文：优先 accountId；编辑时若 accountId 被修改，用 alias+email 兜底，防止凭据丢失
         const old = existing.find(e => e.accountId === a.accountId)
                  || existing.find(e => e.alias === a.alias && e.email === a.email);

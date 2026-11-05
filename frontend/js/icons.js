@@ -1,5 +1,5 @@
 // ===== 本地 Lucide 图标（形状与映射由 build.js 从 vendor/lucide 注入） =====
-// 原始文字保留在隐藏节点中：异步按钮的 textContent 快照/恢复不会丢失图标。
+// 静态标记保留隐藏源文字；按钮正文不再按符号扫描，用户文字始终原样保留。
 // 仅装饰静态标记与操作按钮，不扫描日志、输入、源码或账号/提交信息。
 function decorateUiIcons(root) {
     const selector = 'button, [data-ui-icon]';
@@ -10,33 +10,15 @@ function decorateUiIcons(root) {
         if (target.closest('svg, .ui-icon-source')) continue;
         if (target.hasAttribute('data-ui-icon')) {
             mountUiIcon(target, target.getAttribute('data-ui-icon'));
-            continue;
         }
-        const walker = document.createTreeWalker(target, NodeFilter.SHOW_TEXT);
-        const nodes = [];
-        while (walker.nextNode()) {
-            if (!walker.currentNode.parentElement.closest('[data-ui-icon], svg, .ui-icon-source')) nodes.push(walker.currentNode);
-        }
-        for (const node of nodes) {
-            const parts = node.data.split(UI_ICON_PATTERN);
-            if (parts.length === 1) continue;
-            const fragment = document.createDocumentFragment();
-            for (const part of parts) {
-                if (!UI_ICON_MAP[part]) { fragment.appendChild(document.createTextNode(part)); continue; }
-                const span = document.createElement('span');
-                span.setAttribute('data-ui-icon', UI_ICON_MAP[part]);
-                span.textContent = part;
-                mountUiIcon(span, UI_ICON_MAP[part]);
-                fragment.appendChild(span);
-            }
-            node.replaceWith(fragment);
-        }
-        ensureButtonDescription(target);
+        if (target.matches('button')) ensureButtonDescription(target);
     }
 }
 
 const UI_ICON_LABELS = {
     toggleTheme: '切换主题', logout: '退出登录', openWorkbench: '打开工作台',
+    toggleTaskPanel: '展开或收起任务列表', closeTaskPanel: '收起任务列表',
+    showTaskCatalog: '刷新任务列表并重新连接', moreTasks: '读取下一页任务',
     saveAutoConfig: '保存自动任务配置', deleteFromEdit: '删除账号', cancelEdit: '取消编辑',
     closeModal: '关闭窗口', closeWorkbench: '关闭工作台',
     openBatchDeployModal: '打开批量部署面板', openYxipGuarded: '打开反代落地配置',
@@ -55,12 +37,12 @@ const UI_ICON_LABELS = {
     batchDeleteAccounts: '删除选中的账号配置', clearSearch: '清空账号搜索条件',
     saveUpstream: '保存上游仓库的文件路径与分支设置', loadUpstream: '重新读取上游配置'
 };
-const UI_ICON_PATTERN = new RegExp('(' + Object.keys(UI_ICON_MAP).join('|') + ')', 'gu');
 
 function mountUiIcon(span, name) {
-    if (span.querySelector('svg') || !UI_ICON_PATHS[name]) return;
+    if (span.querySelector('svg') || !Object.hasOwn(UI_ICON_PATHS, name)) return;
     const source = span.textContent;
     span.classList.add('ui-icon');
+    span.setAttribute('data-ui-icon', name);
     span.setAttribute('aria-hidden', 'true');
     if (source === '★') span.classList.add('ui-icon-filled');
     if (source === '🔴') span.classList.add('ui-icon-cmliu');
@@ -96,6 +78,43 @@ function initUiIcons() {
     uiIconObserver.observe(document.body, { childList: true, characterData: true, subtree: true });
 }
 
+/** Explicit icon names only. text is always a text node, never HTML or symbol markup. */
+function setUiContent(element, name, text, options = {}) {
+    element.replaceChildren();
+    if (name && Object.hasOwn(UI_ICON_PATHS, name)) {
+        const icon = document.createElement('span');
+        icon.setAttribute('data-ui-icon', name);
+        if (options.filled) icon.classList.add('ui-icon-filled');
+        if (['cmliu', 'joey', 'ech'].includes(options.tone)) icon.classList.add('ui-icon-' + options.tone);
+        mountUiIcon(icon, name);
+        element.appendChild(icon);
+    }
+    element.appendChild(document.createTextNode(text));
+    if (options.label) element.setAttribute('aria-label', options.label);
+    if (element.matches('button')) ensureButtonDescription(element);
+}
+
+/** Preserve actual nodes (including SVG/listeners), not lossy text or untrusted HTML snapshots. */
+function beginButtonBusy(button, text) {
+    if (!button) return () => {};
+    const nodes = [...button.childNodes];
+    const disabled = button.disabled;
+    const busy = button.getAttribute('aria-busy');
+    let restored = false;
+    setUiContent(button, 'loader-circle', text);
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    return () => {
+        if (restored) return;
+        restored = true;
+        button.replaceChildren(...nodes);
+        button.disabled = disabled;
+        if (busy === null) button.removeAttribute('aria-busy');
+        else button.setAttribute('aria-busy', busy);
+        ensureButtonDescription(button);
+    };
+}
+
 // Explicit prefix helper for status headings: the remaining text may contain user data.
 function setUiIconText(element, symbol, text) {
     element.textContent = '';
@@ -114,7 +133,9 @@ function setUiIconText(element, symbol, text) {
  */
 const generatedButtonTitles = new WeakMap();
 function ensureButtonDescription(button) {
-    const text = button.textContent.replace(UI_ICON_PATTERN, '').trim();
+    const content = button.cloneNode(true);
+    content.querySelectorAll('[data-ui-icon], [aria-hidden="true"], svg, .ui-icon-source').forEach(node => node.remove());
+    const text = content.textContent.trim();
     const explicitTitle = button.title && button.title !== generatedButtonTitles.get(button);
     const description = explicitTitle ? button.title
         : UI_ICON_LABELS[button.getAttribute('data-act')] || button.getAttribute('aria-label') || text;

@@ -48,29 +48,29 @@ function _getTableHeader() {
     if (!_tableHeaderCache) {
         _tableHeaderCache =
             '<tr><td colspan="7" class="p-1"><details class="account-tools-drawer">' +
-            '<summary class="account-tools-toggle"><span data-ui-icon="list">📝</span><span>账号工具</span><span class="account-tools-hint">批量 · 迁移 · 备份</span><span class="account-tools-chevron" data-ui-icon="chevron-down">▼</span></summary>' +
+            '<summary class="account-tools-toggle"><span data-ui-icon="list">📝</span><span>账号工具</span><span class="account-tools-hint">批量 · 迁移 · 备份</span><span class="account-tools-chevron" data-ui-icon="chevron-down"><span data-ui-icon="chevron-down">▼</span></span></summary>' +
             '<div class="account-toolbar account-tools-content">' +
             '<section class="account-tool-group"><div class="account-tool-heading"><strong>批量操作</strong><span id="batch_count" class="account-tool-count"></span></div>' +
             '<p class="account-tool-description">管理账号选择，或验证全部账号凭据。</p>' +
             '<div class="account-tool-actions"><div class="account-selection-actions">' +
-            '<button data-act="selectAllAccounts" class="account-tool-button">全选</button>' +
-            '<button data-act="deselectAllAccounts" class="account-tool-button">取消选择</button></div>' +
-            '<button data-act="verifyAllCredentials" class="account-tool-button" title="验证全部账号的 API Key 或 API Token">🔑 验证凭据</button>' +
-            '<button data-act="batchDeleteAccounts" id="btn_batch_del" class="account-tool-button account-tool-danger"><span data-ui-icon="trash-2">🗑️</span> 删除所选</button></div></section>' +
+            '<button type="button" data-act="selectAllAccounts" class="account-tool-button">全选</button>' +
+            '<button type="button" data-act="deselectAllAccounts" class="account-tool-button">取消选择</button></div>' +
+            '<button type="button" data-act="verifyAllCredentials" class="account-tool-button" title="验证全部账号的 API Key 或 API Token"><span data-ui-icon="key-round">🔑</span> 验证凭据</button>' +
+            '<button type="button" data-act="batchDeleteAccounts" id="btn_batch_del" class="account-tool-button account-tool-danger"><span data-ui-icon="trash-2">🗑️</span> 删除所选</button></div></section>' +
             '<div class="account-data-groups"><section class="account-tool-group"><div class="account-tool-heading"><strong>账号迁移</strong><span class="account-tool-tag">仅账号</span></div>' +
             '<p class="account-tool-description">导入时新增或合并账号，不恢复其他配置。</p>' +
-            '<div class="account-tool-actions"><button data-act="exportAccounts" class="account-tool-button">📤 导出账号</button>' +
-            '<button data-act="importAccounts" class="account-tool-button">📥 导入账号</button></div></section>' +
+            '<div class="account-tool-actions"><button type="button" data-act="exportAccounts" class="account-tool-button"><span data-ui-icon="upload">📤</span> 导出账号</button>' +
+            '<button type="button" data-act="importAccounts" class="account-tool-button"><span data-ui-icon="download">📥</span> 导入账号</button></div></section>' +
             '<section class="account-tool-group"><div class="account-tool-heading"><strong>中控备份</strong><span class="account-tool-tag">完整配置</span></div>' +
             '<p class="account-tool-description">备份账号及中控配置；恢复会覆盖对应配置。</p>' +
-            '<div class="account-tool-actions"><button data-act="backupAll" class="account-tool-button">💾 下载备份</button>' +
-            '<button data-act="restoreBackup" class="account-tool-button account-tool-caution" title="恢复前需确认，备份中的配置会覆盖现有对应项">📥 恢复备份</button></div></section></div>' +
+            '<div class="account-tool-actions"><button type="button" data-act="backupAll" class="account-tool-button"><span data-ui-icon="save">💾</span> 下载备份</button>' +
+            '<button type="button" data-act="restoreBackup" class="account-tool-button account-tool-caution" title="恢复前需确认，备份中的配置会覆盖现有对应项"><span data-ui-icon="download">📥</span> 恢复备份</button><button type="button" data-act="downloadRestoreSnapshot" class="account-tool-button" title="下载此标签页最近一次恢复尝试的维护快照（保留 7 天）">恢复前快照</button></div></section></div>' +
             '<p class="account-tools-note"><span data-ui-icon="lock">🔒</span> 账号凭据为加密数据，迁移时需使用相同的加密密钥。</p>' +
             '</div></details></td></tr>' +
             '<tr><td colspan="7" class="p-1"><div class="account-search-row flex gap-1 items-center">' +
-            '<input id="account_search" data-input-icon="search" placeholder="搜索账号/别名/邮箱/域名..." class="flex-1 text-xs border rounded px-2 py-1">' +
-            '<button data-act="clearSearch" class="text-xs text-gray-400 hover:text-red-500 px-1" title="清除搜索 (Esc)">✕</button>' +
-            '<button data-act="doSearch" class="text-xs bg-blue-500 text-white px-2 py-0.5 rounded" title="搜索 (Enter)">搜索</button>' +
+            '<input aria-label="搜索账号" id="account_search" data-input-icon="search" placeholder="搜索账号/别名/邮箱/域名..." class="flex-1 text-xs border rounded px-2 py-1">' +
+            '<button type="button" data-act="clearSearch" class="text-xs text-gray-400 hover:text-red-500 px-1" title="清除搜索 (Esc)"><span data-ui-icon="x">✕</span></button>' +
+            '<button type="button" data-act="doSearch" class="text-xs bg-blue-500 text-white px-2 py-0.5 rounded" title="搜索 (Enter)">搜索</button>' +
             '<span id="search_count" class="text-[10px] text-gray-400"></span></div></td></tr>';
     }
     return accountToolsOpen
@@ -118,6 +118,7 @@ function renderTable() {
         const tdChk = document.createElement('td'); tdChk.className = 'w-6';
         const chk = document.createElement('input');
         chk.type = 'checkbox'; chk.className = 'acct-chk'; chk.value = originalIndex;
+        chk.setAttribute('aria-label', '选择账号：' + a.alias);
         chk.addEventListener('change', updateBatchToolbar);
         tdChk.appendChild(chk); tr.appendChild(tdChk);
 
@@ -128,7 +129,7 @@ function renderTable() {
             const warn = document.createElement('span');
             warn.className = 'text-red-500 ml-1 cursor-help';
             warn.title = '未配置凭据（Global API Key 或 API Token），或解密失败，请编辑账号重新填写';
-            setUiIconText(warn, '⚠️', '');
+            setUiContent(warn, 'triangle-alert', '');
             warn.setAttribute('role', 'img');
             warn.setAttribute('aria-label', warn.title);
             tdAlias.appendChild(warn);
@@ -137,7 +138,7 @@ function renderTable() {
             const mode = document.createElement('span');
             mode.className = 'text-gray-400 ml-1 text-[10px] cursor-help';
             mode.title = (a.apiToken && a.authMode !== 'key') ? '使用 API Token 认证' : '使用 Global API Key 认证';
-            setUiIconText(mode, (a.apiToken && a.authMode !== 'key') ? '🔑' : '🔐', '');
+            setUiContent(mode, (a.apiToken && a.authMode !== 'key') ? 'key-round' : 'shield-check', '');
             mode.setAttribute('role', 'img');
             mode.setAttribute('aria-label', mode.title);
             tdAlias.appendChild(mode);
@@ -168,7 +169,7 @@ function renderTable() {
         if (a.stats && a.stats.error) {
             const s = document.createElement('span');
             s.className = 'text-red-500 cursor-help'; s.title = a.stats.error;
-            setUiIconText(s, '⚠️', ' 0'); tdStats.appendChild(s);
+            setUiContent(s, 'triangle-alert', ' 0'); tdStats.appendChild(s);
         } else {
             tdStats.textContent = (a.stats && a.stats.total) || 0;
         }
@@ -191,19 +192,24 @@ function renderTable() {
         const actions = document.createElement('div'); actions.className = 'account-actions-content';
         tdBtn.appendChild(actions);
         const btnMgr = document.createElement('button');
+        btnMgr.type = 'button';
         btnMgr.className = 'text-purple-600 mr-2 text-xs font-bold hover:bg-purple-50 px-1 rounded';
-        btnMgr.textContent = '📂 管理';
+        setUiContent(btnMgr, 'folder-open', ' 管理');
         btnMgr.addEventListener('click', () => openAccountManage(originalIndex));
         actions.appendChild(btnMgr);
 
         const btnEdit = document.createElement('button');
-        btnEdit.className = 'text-blue-500 mr-2 text-xs'; btnEdit.textContent = '✎';
+
+        btnEdit.type = 'button';
+        btnEdit.className = 'text-blue-500 mr-2 text-xs'; setUiContent(btnEdit, 'pencil', '', { label: '编辑账号' });
         btnEdit.title = '编辑';
         btnEdit.addEventListener('click', () => editAccount(originalIndex));
         actions.appendChild(btnEdit);
 
         const btnDel = document.createElement('button');
-        btnDel.className = 'text-red-500 text-xs'; btnDel.textContent = '×';
+
+        btnDel.type = 'button';
+        btnDel.className = 'text-red-500 text-xs'; setUiContent(btnDel, 'x', '', { label: '删除账号' });
         btnDel.title = '删除';
         btnDel.addEventListener('click', () => delAccount(originalIndex));
         actions.appendChild(btnDel);
@@ -219,6 +225,7 @@ function renderTable() {
 async function loadAccounts() {
     try {
         const d = await apiFetch('/api/accounts');
+        acceptConfigView('accounts', d);
         if (!Array.isArray(d)) throw new Error('返回格式异常');
         state.accounts = d;
         state.accounts.forEach(a => a.stats = a.stats || { total: 0, max: a.dailyLimit || 100000 });
@@ -231,6 +238,16 @@ async function loadAccounts() {
 
 /** Account ID 格式：32 位十六进制（与后端 validateAccountsPayload 一致） */
 const ACCOUNT_ID_RE = /^[0-9a-f]{32}$/i;
+
+/**
+ * 账号配置保存载荷：只保留权威配置允许的历史统计字段，剥离 /api/stats 返回的
+ * `accountId` 等展示字段（原样回传会被判 400 INVALID）。保存与批量/单个删除都走这里。
+ */
+function accountSavePayload(accounts) {
+    if (typeof frontendModules !== 'undefined' && frontendModules.accountSavePayload) return frontendModules.accountSavePayload(accounts);
+    // build.js 总会打包 modules；此兜底只用于旧测试夹/无模块环境。
+    return (accounts || []).map(({ stats, ...rest }) => rest);
+}
 
 async function saveAccount() {
     const alias = ($('in_alias').value || '').trim();
@@ -293,10 +310,9 @@ async function saveAccount() {
     }
 
     const btn = $('btn_save_acc');
-    const origText = btn ? btn.textContent : '';
-    if (btn) { btn.disabled = true; btn.innerText = '⏳ 保存中...'; }
+    const restoreButton = beginButtonBusy(btn, ' 保存中...');
     try {
-        await apiFetch('/api/accounts', { method: 'POST', body: JSON.stringify(state.accounts) });
+        await apiFetch('/api/accounts', { method: 'POST', body: JSON.stringify(accountSavePayload(state.accounts)) });
         // 保存成功后从服务端回读（拿到脱敏后的 key 与规范化数据）
         await loadAccounts();
         $('account_form').classList.add('hidden');
@@ -307,11 +323,12 @@ async function saveAccount() {
         console.error('[saveAccount]', e);
         Swal.fire('保存失败', e.message, 'error');
     } finally {
-        if (btn) { btn.disabled = false; btn.innerText = origText; }
+        restoreButton();
     }
 }
 
 function editAccount(i) {
+    pinConfigView('accounts');
     state.editingIndex = i;
     const a = state.accounts[i];
     if (!a) return;
@@ -349,28 +366,57 @@ function editAccount(i) {
     $('account_form').classList.remove('hidden');
 }
 
-async function delAccount(i) {
-    const target = state.accounts[i];
-    if (!target) return;
-    const confirmed = await Swal.fire({
-        title: '删除账号配置？',
-        text: '将从中控移除「' + target.alias + '」（不影响 Cloudflare 上的 Worker）',
-        icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: '确认删除'
-    });
-    if (!confirmed.isConfirmed) return;
-    const backup = JSON.parse(JSON.stringify(state.accounts));
-    state.accounts.splice(i, 1);
-    try {
-        await apiFetch('/api/accounts', { method: 'POST', body: JSON.stringify(state.accounts) });
-        renderTable();
-    } catch (e) {
-        state.accounts = backup; renderTable();
-        console.error('[delAccount]', e);
-        Swal.fire('删除失败', e.message, 'error');
-    }
+// Compare configuration, not transient usage statistics. This is a local UI guard, not KV concurrency control.
+function accountRemovalSnapshot() {
+    return JSON.stringify(state.accounts.map(({ stats, ...config }) => config));
 }
+let accountRemovalBusy = false;
+async function confirmAccountRemoval(indices) {
+    if (accountRemovalBusy) return;
+    const selected = new Set(indices.filter(i => Number.isInteger(i) && i >= 0 && state.accounts[i]));
+    if (!selected.size) return;
+    const snapshot = accountRemovalSnapshot();
+    const targets = [...selected].map(i => ({ alias: state.accounts[i].alias, accountId: state.accounts[i].accountId }));
+    accountRemovalBusy = true;
+    let changedDuringRequest = false;
+    try {
+        await Swal.fire({
+            title: '移除账号配置？',
+            html: '<p>将从中控移除以下 ' + targets.length + ' 个账号的配置与凭据，不删除 Cloudflare 账号、Worker 或 KV 命名空间。</p>' +
+                '<ul class="text-left text-sm max-h-40 overflow-y-auto">' + targets.map(a => '<li>' + safeHtml(a.alias || '(未命名)') + ' — ' + safeHtml(a.accountId || '(无 ID)') + '</li>').join('') + '</ul>' +
+                '<p>服务端会尝试清理被移除账号的账号级变量覆盖；失败由后续回收兜底，不代表所有关联配置均已清理。请先保存需要的备份。</p>',
+            icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: '确认移除',
+            input: 'text', inputLabel: '输入“移除”确认账号配置移除',
+            inputAttributes: { autocomplete: 'off', spellcheck: 'false' }, focusConfirm: false,
+            showLoaderOnConfirm: true, allowOutsideClick: () => !Swal.isLoading(), allowEscapeKey: () => !Swal.isLoading(),
+            preConfirm: async value => {
+                if (value !== '移除') { Swal.showValidationMessage('请精确输入“移除”'); return false; }
+                if (accountRemovalSnapshot() !== snapshot) {
+                    Swal.showValidationMessage('账号列表已变化，请取消后重新选择并确认'); return false;
+                }
+                const remaining = state.accounts.filter((_, i) => !selected.has(i));
+                try {
+                    await apiFetch('/api/accounts', { method: 'POST', body: JSON.stringify(accountSavePayload(remaining)) });
+                } catch (e) {
+                    Swal.showValidationMessage(safeHtml(e.message || '移除失败，请核对服务器状态后重试')); return false;
+                }
+                // Never roll back or overwrite a newer local edit while this request was in flight.
+                if (accountRemovalSnapshot() === snapshot) {
+                    state.accounts = state.accounts.filter((_, i) => !selected.has(i));
+                    renderTable();
+                } else {
+                    changedDuringRequest = true;
+                }
+                return true;
+            }
+        });
+        if (changedDuringRequest) await Swal.fire({ icon: 'warning', title: '移除请求已完成', text: '请求期间本地账号列表已变化，未覆盖当前列表。请重新加载并核对服务器状态后再操作。' });
+    } finally { accountRemovalBusy = false; }
+}
+async function delAccount(i) { await confirmAccountRemoval([i]); }
 
 function resetFormForAdd() {
+    pinConfigView('accounts');
     state.editingIndex = -1;
     // 排除 radio：给 radio 赋空字符串会把 value 清掉，鉴权方式就再也读不出来了
     document.querySelectorAll('#account_form input:not([type="radio"])').forEach(i => i.value = '');
@@ -405,6 +451,7 @@ function setAuthMode(mode) {
     toggleAuthFields();
 }
 function cancelEdit() {
+    releaseConfigView('accounts');
     $('account_form').classList.add('hidden');
     state.editingIndex = -1;
 }
@@ -417,10 +464,7 @@ async function deleteFromEdit() {
 async function loadStats() {
     const b = $('btn_stats');
     if (!b) return;
-    const originalText = b.textContent;
-    const loadingText = '🔄 刷新中...';
-    b.disabled = true;
-    b.textContent = loadingText;
+    const restoreButton = beginButtonBusy(b, ' 刷新中...');
     try {
         const d = await apiFetch('/api/stats');
         if (!Array.isArray(d)) throw new Error('返回格式异常');
@@ -428,7 +472,8 @@ async function loadStats() {
         state.accounts.forEach(a => {
             const s = d.find(x => x.alias === a.alias);
             if (s) {
-                a.stats = s;
+                // 只保留展示所需字段：/api/stats 的 accountId 等不是账号配置数据。
+                a.stats = { total: s.total, max: s.max, ...(s.error ? { error: s.error } : {}) };
                 if (s.error) errs.push(safeHtml(a.alias) + ': ' + safeHtml(s.error));
             } else {
                 a.stats = { total: 0, max: a.dailyLimit || 100000, error: '未匹配到账号' };
@@ -447,8 +492,7 @@ async function loadStats() {
     } catch (e) {
         Swal.fire('用量查询失败', e.message, 'error');
     } finally {
-        b.disabled = false;
-        b.textContent = originalText;
+        restoreButton();
     }
 }
 
@@ -535,20 +579,7 @@ function updateBatchToolbar() {
 async function batchDeleteAccounts() {
     const selected = Array.from(document.querySelectorAll('.acct-chk:checked')).map(c => parseInt(c.value, 10)).filter(n => Number.isInteger(n) && n >= 0);
     if (selected.length === 0) return Swal.fire('提示', '请先选择账号', 'info');
-    const result = await Swal.fire({ title: '批量删除', text: '确定删除 ' + selected.length + ' 个账号？', icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: '确认删除' });
-    if (!result.isConfirmed) return;
-    const backup = JSON.parse(JSON.stringify(state.accounts));   // 失败可回滚
-    // 从后往前删，避免下标漂移
-    selected.sort((a, b) => b - a).forEach(i => state.accounts.splice(i, 1));
-    try {
-        await apiFetch('/api/accounts', { method: 'POST', body: JSON.stringify(state.accounts) });
-        renderTable();
-        Swal.fire('已删除', selected.length + ' 个账号已删除', 'success');
-    } catch (e) {
-        state.accounts = backup; renderTable();
-        console.error('[batchDeleteAccounts]', e);
-        Swal.fire('批量删除失败', e.message, 'error');
-    }
+    await confirmAccountRemoval(selected);
 }
 
 // ===== 自动更新配置 =====
@@ -569,11 +600,13 @@ function updateAutoToggleLabel() {
 async function loadGlobalConfig() {
     try {
         const c = await apiFetch('/api/auto_config');
+        acceptConfigView('autoConfig', c);
         applyAutoConfigToUi(c || {});
-    } catch (e) { console.error('[loadGlobalConfig]', e); }
+    } catch (e) { configDrafts.loadFailed('auto'); console.error('[loadGlobalConfig]', e); }
 }
 
 async function saveAutoConfig() {
+    if (!configDrafts.isLoaded('auto') || configDrafts.isBusy('auto')) return;
     const interval = parseInt($('auto_update_interval').value, 10);
     const fuse = parseInt($('fuse_threshold').value, 10) || 0;
     const webhook = ($('fuse_webhook').value || '').trim();
@@ -597,13 +630,16 @@ async function saveAutoConfig() {
         payload['auto' + t.charAt(0).toUpperCase() + t.slice(1)] = el ? el.checked : true;
     });
 
+    configDrafts.setBusy('auto', true);
     try {
-        await apiFetch('/api/auto_config', { method: 'POST', body: JSON.stringify(payload) });
+        const saved = await apiFetch('/api/auto_config', { method: 'POST', body: JSON.stringify(payload) });
+        // 使用写入响应，而不是马上重读最终一致的 KV。兼容旧服务端的 success-only 响应。
+        applyAutoConfigToUi(saved.config || payload);
         Swal.fire({ icon: 'success', title: '已保存', timer: 1200, showConfirmButton: false });
     } catch (e) {
         console.error('[saveAutoConfig]', e);
         Swal.fire('保存失败', e.message, 'error');
-    }
+    } finally { configDrafts.setBusy('auto', false); }
 }
 
 registerActions({

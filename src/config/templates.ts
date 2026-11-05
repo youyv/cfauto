@@ -65,7 +65,7 @@ export const TEMPLATES: Record<string, {
         filePattern: "少年你相信光吗",
         repoUrl: "https://github.com/byJoey/cfnew",
         subPath: "/{UUID}",
-        compatibilityDate: '2024-02-20',
+        compatibilityDate: '2026-01-20',
         defaultVars: ["u"],
         uuidField: "u",
         description: "Joey (自动修复) - KV 可选",
@@ -162,7 +162,7 @@ const ACCOUNT_VARS_KEY_RE = /^VARS_([A-Za-z0-9_-]+)_ACC_([A-Za-z0-9]{1,64})$/;
  */
 export function parseAccountVarsKey(key: string): { type: string; accountId: string } | null {
     const m = ACCOUNT_VARS_KEY_RE.exec(key);
-    if (!m || !TEMPLATES[m[1]]) return null;
+    if (!m || !Object.hasOwn(TEMPLATES, m[1])) return null;
     return { type: m[1], accountId: m[2] };
 }
 
@@ -185,3 +185,37 @@ export const MANIFEST = {
 
 /** 模板类型 — 编译时约束，防止拼写错误 */
 export type TemplateType = keyof typeof TEMPLATES;
+
+/**
+ * 兼容日期可编辑配置（authority 配置域 `template:<type>`）。
+ *
+ * 默认值来自 TEMPLATES[t].compatibilityDate（上游仓库验证过的值）；面板保存的覆盖值
+ * 在部署/修复/更新时随任务计划一起冻结，不再把日期写死在执行器里。
+ * Cloudflare 只接受 2021-11-01 之后且不晚于当天的日期。
+ */
+export const MIN_COMPATIBILITY_DATE = '2021-11-01';
+export const COMPATIBILITY_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+export interface TemplateSettings { compatibilityDate: string }
+export function todayCompatibilityDate(): string { return new Date().toISOString().slice(0, 10); }
+export function isValidCompatibilityDate(value: unknown, today = todayCompatibilityDate()): value is string {
+    if (typeof value !== 'string' || !COMPATIBILITY_DATE_RE.test(value) || value < MIN_COMPATIBILITY_DATE || value > today) return false;
+    const time = Date.parse(value + 'T00:00:00Z');
+    return Number.isFinite(time) && new Date(time).toISOString().slice(0, 10) === value;
+}
+export function defaultTemplateSettings(template: string): TemplateSettings | null {
+    const date = Object.hasOwn(TEMPLATES, template) ? TEMPLATES[template].compatibilityDate : null;
+    return date ? { compatibilityDate: date } : null;
+}
+export function normalizeTemplateSettings(value: unknown, today?: string): TemplateSettings | null {
+    if (!value || typeof value !== 'object' || Array.isArray(value) || Object.getPrototypeOf(value) !== Object.prototype) return null;
+    const keys = Object.keys(value);
+    if (keys.length !== 1 || keys[0] !== 'compatibilityDate') return null;
+    const date = (value as Record<string, unknown>).compatibilityDate;
+    return isValidCompatibilityDate(date, today) ? { compatibilityDate: date } : null;
+}
+/** 已保存的配置值 → 生效设置；未保存（null）回退模板默认值，损坏值返回 null 由调用方拒绝。 */
+export function readTemplateSettings(template: string, value: unknown, today?: string): TemplateSettings | null {
+    if (value === null || value === undefined) return defaultTemplateSettings(template);
+    if (!Object.hasOwn(TEMPLATES, template)) return null;
+    return normalizeTemplateSettings(value, today);
+}

@@ -66,7 +66,7 @@ export function readKV<T = any>(kv: MockKV, key: string): T | null {
 }
 
 export function mockEnv(kv: MockKV, extra: Partial<AppEnv> = {}): AppEnv {
-    return { CONFIG_KV: kv, ACCESS_CODE: 'test-secret', ...extra } as AppEnv;
+    return { CFAUTO_STORAGE_MODE:'legacy', CONFIG_KV: kv, ACCESS_CODE: 'test-secret', ...extra } as AppEnv;
 }
 
 export function jsonReq(method: string, url: string, body?: unknown, headers: Record<string, string> = {}): Request {

@@ -5,7 +5,7 @@
  * 与逐键读写的 CRUD 没有共享逻辑，混在一个 400 行的文件里难以维护。
  */
 
-import { KV_KEYS, TEMPLATES, isAccountVarsKey } from '../config/templates';
+import { KV_KEYS, isAccountVarsKey } from '../config/templates';
 import { json, jsonError, safeJson } from '../lib/cloudflare-api';
 import { listAllKeys } from "../lib/kv-utils";
 import { readAccounts, writeAccounts, SECRET_FIELDS } from "../lib/account-store";
@@ -14,27 +14,8 @@ import { validateAccountsPayload, MAX_ACCOUNTS } from '../lib/validate';
 import { logger } from '../lib/logger';
 import type { RouteRegistrar } from "./register";
 import type { AccountEntry } from '../lib/types';
-
-/** 备份/恢复覆盖的 KV 键（模板无关的固定键 + 每模板三键） */
-export function backupKeys(): string[] {
-    const templateTypes = Object.keys(TEMPLATES);
-    return [
-        KV_KEYS.ACCOUNTS, KV_KEYS.GLOBAL_CONFIG, KV_KEYS.DEPLOY_JOURNAL,
-        ...templateTypes.flatMap(t => [KV_KEYS.vars(t), KV_KEYS.deployConfig(t), KV_KEYS.favorites(t), KV_KEYS.upstream(t)])
-    ];
-}
-
-/**
- * 恢复白名单判定：精确匹配固定键 / 已知模板键 / 合法的账号级变量键。
- *
- * 必须精确匹配而非 startsWith —— 前缀匹配会放行 `VARS_cmliuX`、
- * `ACCOUNTS_UNIFIED_STORAGE_EVIL` 等注入键。导出供单元测试直接覆盖。
- */
-export function isRestorableKey(k: string): boolean {
-    if (!k || k.startsWith('_')) return false;
-    if (backupKeys().includes(k)) return true;
-    return isAccountVarsKey(k);
-}
+import { backupKeys, backupMetadata, readBackupBody, preflightBackup, SNAPSHOT_PREFIX, SNAPSHOT_TTL, SNAPSHOT_ID_RE } from '../lib/backup-policy';
+export { backupKeys, isRestorableKey } from '../lib/backup-policy';
 
 export function registerBackupRoutes(ROUTES: { set: RouteRegistrar }) {
 
@@ -137,10 +118,7 @@ ROUTES.set('POST /api/accounts/import', async (req, env) => {
 // --- 数据备份恢复 ---
 ROUTES.set('GET /api/backup', async (_req, env) => {
     const keys = backupKeys();
-    const backup: Record<string, any> = {
-        _time: new Date().toISOString(),
-        _encryptionFingerprint: await secretFingerprint(env).catch(() => null)
-    };
+    const backup: Record<string, any> = await backupMetadata(env);
     for (const k of keys) {
         // 备份保留原始格式：JSON 解析失败时回退到原始字符串（不用 getJSON 是因为需要保留损坏数据）
         const raw = await env.CONFIG_KV.get(k);
@@ -148,7 +126,7 @@ ROUTES.set('GET /api/backup', async (_req, env) => {
         catch (e) {
             // 非 JSON 值（历史遗留明文）原样备份，并记录以便排查
             backup[k] = raw;
-            logger.warn('backup: KV 值非 JSON，按原始字符串备份', { key: k, error: (e as Error).message });
+            logger.warn('backup: KV 值非 JSON，按原始字符串备份', { key: k });
         }
     }
     // 账号级变量覆盖（VARS_<type>_ACC_<id>）数量不定，用 list 枚举。
@@ -162,45 +140,59 @@ ROUTES.set('GET /api/backup', async (_req, env) => {
             try { backup[name] = JSON.parse(raw || 'null'); } catch { backup[name] = raw; }
         }
         if (!complete) backup._warning = '账号级变量键过多，备份可能不完整（已达 list 翻页上限）';
-    } catch (e) { logger.warn('backup: 账号级变量枚举失败', { error: (e as Error).message }); }
+    } catch { backup._warning = '账号级变量枚举失败，备份不完整，请重试'; logger.warn('backup: 账号级变量枚举失败'); }
 
     return new Response(JSON.stringify(backup, null, 2), {
-        headers: { 'Content-Type': 'application/json', 'Content-Disposition': 'attachment; filename="worker-backup.json"' }
+        headers: { 'Content-Type': 'application/json', 'Content-Disposition': 'attachment; filename="worker-backup.json"', 'Cache-Control': 'no-store' }
     });
 });
 
-/** 恢复白名单判定：精确匹配固定键 / 已知模板键 / 合法的账号级变量键 */
+/** Read-only preview. The execution route repeats the same validation; a preview is not a lock. */
+ROUTES.set('POST /api/restore/preview', async (req, env) => {
+    const { preview } = await preflightBackup(await readBackupBody(req), env);
+    return json({ success: preview.valid, preview, msg: preview.errors.join('；') }, { status: preview.valid ? 200 : 400, headers: { 'Cache-Control': 'no-store' } });
+});
+
+ROUTES.set('GET /api/restore/snapshot', async (req, env) => {
+    const id = new URL(req.url).searchParams.get('id') || '';
+    if (!SNAPSHOT_ID_RE.test(id)) return jsonError('快照 ID 无效', 400, 'VALIDATION_ERROR');
+    const raw = await env.CONFIG_KV.get(SNAPSHOT_PREFIX + id);
+    if (!raw) return jsonError('快照尚未可见、未生成或已过期；KV 存在传播延迟，请稍后重试', 404, 'VALIDATION_ERROR');
+    return new Response(raw, { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store',
+        'Content-Disposition': 'attachment; filename="restore-snapshot-' + id + '.json"' } });
+});
+
 ROUTES.set('POST /api/restore', async (req, env) => {
-    try {
-        const backup = await safeJson<Record<string, unknown>>(req);
-        if (!backup || typeof backup !== 'object' || Array.isArray(backup)) {
-            return jsonError('恢复失败：备份文件必须是 JSON 对象', 400, 'VALIDATION_ERROR');
-        }
-        let restored = 0, rejected = 0;
-        const rejectedKeys: string[] = [];
-        for (const [k, v] of Object.entries(backup)) {
-            if (k.startsWith('_')) continue;
-            if (!isRestorableKey(k)) {
-                rejected++;
-                if (rejectedKeys.length < 10) rejectedKeys.push(k);
-                continue;
-            }
-            if (v === null || v === undefined) continue;
-            await env.CONFIG_KV.put(k, typeof v === 'string' ? v : JSON.stringify(v));
-            restored++;
-        }
-        logger.audit('data restored', { restored, rejected });
-        const fp = (backup as any)._encryptionFingerprint;
-        const localFp = await secretFingerprint(env).catch(() => null);
-        const warning = fp && localFp && fp !== localFp
-            ? '备份来自不同的加密密钥，恢复后账号 API Key 需重新填写'
-            : undefined;
-        return json({ success: true, restored, rejected, ...(rejectedKeys.length ? { rejectedKeys } : {}), ...(warning ? { warning } : {}) });
-    } catch (e: any) {
-        if (e instanceof Response) return e;
-        logger.error('restore failed', e instanceof Error ? e : new Error(String(e)), { module: 'crud-backup' });
-        return jsonError('恢复失败：备份数据异常');
+    const { preview, entries } = await preflightBackup(await readBackupBody(req), env);
+    if (!preview.valid) return json({ success: false, restored: 0, rejected: preview.counts.unsupported,
+        preview, msg: preview.errors.join('；') }, 400);
+    if (!entries.length) return json({ success: true, restored: 0, results: [], preview });
+    // The UI generates a fresh UUID per attempt, so it can retrieve the snapshot even if the response is lost.
+    const snapshotId = req.headers.get('X-Restore-Snapshot-ID') || crypto.randomUUID();
+    if (!SNAPSHOT_ID_RE.test(snapshotId)) return jsonError('快照 ID 无效', 400, 'VALIDATION_ERROR');
+    // Collision protection only, NOT a KV mutex or an idempotency guarantee.
+    if (await env.CONFIG_KV.get(SNAPSHOT_PREFIX + snapshotId)) return jsonError('快照 ID 已使用，请重新预检后再试', 409, 'VALIDATION_ERROR');
+    const snapshot = JSON.stringify({ _format: 'worker-pro-recovery@1', ...(await backupMetadata(env)), snapshotId,
+        expiresAt: new Date(Date.now() + SNAPSHOT_TTL * 1000).toISOString(),
+        instruction: '维护快照，不是普通备份。put 保存旧值原始字节文本；delete 为原先不存在的键。暂停自动任务/其他写入并核对逐项结果后，在受控维护中恢复，不要直接导入。',
+        put: entries.filter(e => e.before !== null).map(e => ({ key: e.key, value: e.before })),
+        delete: entries.filter(e => e.before === null).map(e => e.key) });
+    if (new TextEncoder().encode(snapshot).byteLength > 10 * 1024 * 1024) return jsonError('恢复前快照超过 10 MiB，请按键拆分；尚未写入', 413, 'VALIDATION_ERROR');
+    try { await env.CONFIG_KV.put(SNAPSHOT_PREFIX + snapshotId, snapshot, { expirationTtl: SNAPSHOT_TTL }); }
+    catch { return jsonError('无法保存恢复前快照，未写入任何配置', 503); }
+    const results: Array<{ key: string; status: 'written' | 'unknown' | 'notAttempted' }> = [];
+    let stopped = false;
+    for (const e of entries) {
+        if (stopped) { results.push({ key: e.key, status: 'notAttempted' }); continue; }
+        try { await env.CONFIG_KV.put(e.key, e.raw); results.push({ key: e.key, status: 'written' }); }
+        catch { stopped = true; results.push({ key: e.key, status: 'unknown' }); }
     }
+    const restored = results.filter(r => r.status === 'written').length;
+    logger.audit('data restore attempted', { snapshotId, restored, stopped, total: entries.length });
+    return json({ success: !stopped, restored, rejected: 0, snapshotId, results,
+        msg: stopped ? '写入异常，已停止后续项；异常键可能已写入，请核对后恢复，勿直接重试整批' : '恢复完成',
+        warning: 'KV 不是事务；并发写入未隔离。快照保留 7 天，建议立即下载；不会自动回滚。' },
+        { status: stopped ? 207 : 200, headers: { 'Cache-Control': 'no-store' } });
 });
 
 }

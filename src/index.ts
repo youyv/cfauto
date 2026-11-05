@@ -1,14 +1,17 @@
+import {authorityHttp,authorityScheduled,reliabilityConfigured} from './reliability/production-ingress';
+export {ProductionCoordinator} from './reliability/production-coordinator';
 /**
  * Worker 智能中控 — 前后端分离版 入口
  * ${FRONTEND_VERSION}
  */
 
-import { requireAccessCode, requireCookie, checkCsrf, sessionKey } from './middleware/auth';
+import { authenticateRequest, sessionKey } from './middleware/auth';
 import { jsonError } from './lib/cloudflare-api';
 import { getRoute } from './routes/register';
 import { handleCronJob } from './cron';
 import { TEMPLATES, ECH_PROXIES, MANIFEST } from './config/templates';
-import { FRONTEND_HTML, FRONTEND_CSS, FRONTEND_JS, FRONTEND_VERSION, FRONTEND_ASSET_VERSION, FRONTEND_SWEETALERT2 } from './frontend-bundle';
+import { BUILD_INFO, FRONTEND_HTML, FRONTEND_CSS, FRONTEND_JS, FRONTEND_VERSION, FRONTEND_ASSET_VERSION, FRONTEND_SWEETALERT2 } from './frontend-bundle';
+import { tracedEnv, traceEvent, traceResponse } from './lib/trace';
 import { logger } from './lib/logger';
 import type { AppEnv } from "./config/env";
 
@@ -26,17 +29,17 @@ const HTML_CACHE = 'no-store, must-revalidate';
  *
  * 前端 JS/CSS 已拆成外部资源（/app.js、/app.css），HTML 里也不再有内联 onclick
  * （改为 data-act + 事件委托），因此 script-src 去掉了 'unsafe-inline'。
- * style-src 仍保留 'unsafe-inline'：Tailwind CDN 运行时会注入 <style>，
- * 且代码里有若干 element.style 直接赋值。
+ * Tailwind 在构建时生成本地 CSS；style-src 仍保留 'unsafe-inline'，
+ * 因为 SweetAlert2 与界面代码需要样式注入及 element.style 赋值。
  * SweetAlert2 构建时内联失败才需要放行 jsdelivr，按实际情况动态拼接。
  */
 function panelCsp(): string {
-    const scriptSrc = ["'self'", 'https://cdn.tailwindcss.com'];
+    const scriptSrc = ["'self'"];
     if (!FRONTEND_SWEETALERT2) scriptSrc.push('https://cdn.jsdelivr.net');
     return [
         "default-src 'self'",
         'script-src ' + scriptSrc.join(' '),
-        "style-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com",
+        "style-src 'self' 'unsafe-inline'",
         "img-src 'self' data: https://www.cloudflare.com",
         "connect-src 'self'",
         "font-src 'self' data:",
@@ -61,6 +64,7 @@ const SECURITY_HEADERS: Record<string, string> = {
 export default {
     // === 定时任务：自动更新 & 熔断轮换 ===
     async scheduled(_event: ScheduledEvent, env: AppEnv, ctx: ExecutionContext) {
+        if(reliabilityConfigured(env)){ctx.waitUntil(authorityScheduled(_event,env).catch(e=>{logger.error('scheduled: authority Cron refused',e instanceof Error?e:new Error('NOT_READY'),{module:'scheduled'});throw e;}));return;}
         if (env.CONFIG_KV) {
             // cron 内部已兜底 lastCheck；此处再兜一层，避免 KV 读取等异常变成 unhandled rejection
             ctx.waitUntil(handleCronJob(env).catch(e => {
@@ -71,7 +75,10 @@ export default {
 
     // === HTTP 请求入口 ===
     // 请求流程：公开路由 → 登录 → 认证 → CSRF → 路由分发 → 回退主页
-    async fetch(request: Request, env: AppEnv, _ctx: ExecutionContext): Promise<Response> {
+    async fetch(request: Request, originalEnv: AppEnv, _ctx: ExecutionContext): Promise<Response> {
+        const isApi = new URL(request.url).pathname.startsWith('/api/');
+        const env = isApi ? tracedEnv(originalEnv, request.method + ' ' + new URL(request.url).pathname) : originalEnv;
+        const run = async (): Promise<Response> => {
         try {
             // KV 未绑定时拒绝所有请求
             if (!env.CONFIG_KV) {
@@ -79,6 +86,8 @@ export default {
             }
 
             const url = new URL(request.url);
+            // Independent signatures, never a browser cookie/RPC-key upgrade.
+            if(url.pathname === '/api/reliability/maintenance')return authorityHttp(request,env);
 
             // [公开] PWA manifest，无需认证
             if (url.pathname === '/manifest.json') {
@@ -109,13 +118,12 @@ export default {
                 });
             }
 
-            // [认证] 中间件链 — 任一检查不通过即返回对应错误（checkCsrf 需读 KV，为异步）
-            const accessCodeCheck = requireAccessCode(env);
-            if (accessCodeCheck) return accessCodeCheck;
-            const csrfCheck = await checkCsrf(request, url, env);
-            if (csrfCheck) return csrfCheck;
-            const cookieCheck = await requireCookie(request, env);
-            if (cookieCheck) return cookieCheck;
+            // The authority gateway authenticates its own browser requests once.
+            // Keep maintenance on its independent signature path above.
+            if (reliabilityConfigured(env) && url.pathname.startsWith('/api/')) return authorityHttp(request, env);
+
+            const auth = await authenticateRequest(request, env);
+            if (auth) return auth;
 
             // [静态资源] 前端 JS / CSS 拆分为独立可缓存资源。
             // 此前整个面板（HTML+CSS+JS+内联 SweetAlert2，约 290KB）每次刷新都全量重传，
@@ -147,9 +155,15 @@ export default {
         } catch (err: any) {
             // 保留 Response 对象（如 safeJson 的 400、resolveCredentials 的 404）
             if (err instanceof Response) return err;
-            logger.error('Unhandled error', err instanceof Error ? err : new Error(String(err)), { module: 'index' });
+            logger.error('Unhandled error', err instanceof Error ? err : new Error(String(err)), { module: 'index', taskId: env.traceContext?.id });
             return jsonError('Internal server error', 500);
         }
+        };
+        if (!isApi) return run();
+        traceEvent(env, 'http entry');
+        const response = await run();
+        traceEvent(env, 'http completed', { status: response.status });
+        return traceResponse(response, env);
     }
 };
 
@@ -181,6 +195,7 @@ function bootstrapScript(): string {
         'window.ECH_PROXIES=' + JSON.stringify(ECH_PROXIES) + ';' +
         // 版本号供「诊断报告」使用；由服务端注入，不经过前端静态资源
         'window.APP_VERSION=' + JSON.stringify(FRONTEND_VERSION) + ';' +
+        'window.APP_BUILD_INFO=' + JSON.stringify(BUILD_INFO) + ';' +
         'var TEMPLATES=window.TEMPLATES,ECH_PROXIES=window.ECH_PROXIES;\n';
     return _bootstrapCache;
 }
@@ -236,7 +251,6 @@ function mainHtml() {
   <link rel="manifest" href="/manifest.json">
   <title>Worker 智能中控 (${FRONTEND_VERSION})</title>
   <link rel="stylesheet" href="/app.css?v=${v}">
-  <script src="https://cdn.tailwindcss.com"></script>
   ${swScript}
   <script src="/app.js?v=${v}" defer></script>
 </head>

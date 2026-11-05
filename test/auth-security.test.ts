@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { generateRandomToken, timingSafeEqualStr, sha256Hex, sessionKey, requireCookie, checkCsrf, requireAccessCode, SESSION_TTL_SECONDS } from '../src/middleware/auth';
+import { describe, it, expect, vi } from 'vitest';
+import { authenticateRequest, generateRandomToken, timingSafeEqualStr, sha256Hex, sessionKey, requireCookie, checkCsrf, requireAccessCode, SESSION_TTL_SECONDS } from '../src/middleware/auth';
 import { handleLogin } from '../src/routes/login';
 import { loginResponse } from '../src/config/login-html';
 import { mockKV, mockEnv, jsonReq, joinSetCookies, type MockKV } from './helpers';
@@ -353,4 +353,20 @@ describe('loginResponse — CSP', () => {
         expect(res.headers.get('Referrer-Policy')).toBe('no-referrer');
         expect(res.headers.get('Cache-Control')).toContain('no-store');
     });
+});
+
+
+it('shares exactly one session read between login and CSRF checks without caching across requests', async () => {
+ const kv=mockKV(),env=mockEnv(kv);await kv.put(sessionKey('one'),'csrf-one');
+ const get=vi.spyOn(kv,'get');
+ const request=()=>new Request('https://panel.test/api/accounts',{method:'POST',headers:{cookie:'__Host-auth=one','x-csrf-token':'csrf-one',origin:'https://panel.test'}});
+ expect(await authenticateRequest(request(),env)).toBeNull();expect(get).toHaveBeenCalledTimes(1);
+ await kv.delete(sessionKey('one'));
+ expect((await authenticateRequest(request(),env))?.status).toBe(401);expect(get).toHaveBeenCalledTimes(2);
+ get.mockRestore();
+});
+it('rejects an HTTP Origin for an HTTPS write even when hostname and session tokens match', async () => {
+ const kv=mockKV();await kv.put(sessionKey('one'),'csrf-one');
+ const request=new Request('https://panel.test/api/accounts',{method:'POST',headers:{cookie:'__Host-auth=one','x-csrf-token':'csrf-one',origin:'http://panel.test'}});
+ expect((await checkCsrf(request,new URL(request.url),mockEnv(kv)))?.status).toBe(403);
 });

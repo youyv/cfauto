@@ -12,23 +12,34 @@ const WB_MAX_LINES = 500;
 const recentWbLogs = [];
 const WB_RECENT_MAX = 200;
 
+let workbenchOpener = null;
 function openWorkbench() {
+    if ($('workbench_modal').classList.contains('hidden')) workbenchOpener = document.activeElement;
     openModal('workbench_modal');
 }
 function closeWorkbench() {
+    const restore = $('workbench_modal').contains(document.activeElement);
     closeModal('workbench_modal');
+    if (restore) {
+        const opener = workbenchOpener;
+        if (opener && opener.isConnected && !opener.closest('[inert], .hidden') && !opener.disabled && opener.getClientRects().length) opener.focus();
+        else document.querySelector('[data-act="toggleTheme"]')?.focus();
+    }
+    workbenchOpener = null;
 }
 function wbLog(msg, colorClass) {
     recentWbLogs.push('[' + new Date().toLocaleTimeString() + '] ' + String(msg));
     if (recentWbLogs.length > WB_RECENT_MAX) recentWbLogs.shift();
     const log = $('workbench_log');
     if (!log) return;
+    // Follow new output only when the reader was already at the end.
+    const followOutput = log.scrollHeight - log.scrollTop - log.clientHeight <= 2;
     const div = document.createElement('div');
     if (colorClass) div.className = colorClass;
     renderWorkbenchMessage(div, String(msg));
     log.appendChild(div);
     while (log.childElementCount > WB_MAX_LINES) log.removeChild(log.firstElementChild);
-    log.scrollTop = log.scrollHeight;
+    if (followOutput) log.scrollTop = log.scrollHeight;
 }
 
 /** Decorate only a known leading status symbol, never scan account names or log payloads.
@@ -55,6 +66,19 @@ function renderWorkbenchMessage(element, message) {
         panel.style.left = Math.max(0, Math.min(left, window.innerWidth - panel.offsetWidth)) + 'px';
         panel.style.top = Math.max(0, Math.min(top, window.innerHeight - panel.offsetHeight)) + 'px';
     }
+    function movePanel(dx, dy) {
+        const panel = $('workbench_panel');
+        if (!panel || !panel.offsetWidth || dragState) return;
+        const rect = panel.getBoundingClientRect();
+        panel.style.transform = 'none';
+        positionPanel(panel, rect.left + dx, rect.top + dy);
+    }
+    registerActions({
+        moveWorkbenchLeft: () => movePanel(-10, 0),
+        moveWorkbenchRight: () => movePanel(10, 0),
+        moveWorkbenchUp: () => movePanel(0, -10),
+        moveWorkbenchDown: () => movePanel(0, 10)
+    });
     function endDrag(event) {
         if (!dragState || (event.pointerId !== undefined && event.pointerId !== dragState.pointerId)) return;
         const { handle, pointerId } = dragState;
@@ -62,6 +86,17 @@ function renderWorkbenchMessage(element, message) {
         handle.classList.remove('is-dragging');
         if (handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId);
     }
+    document.addEventListener('keydown', e => {
+        const handle = $('workbench_drag');
+        if (e.target !== handle || e.isComposing || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || dragState) return;
+        const delta = { ArrowLeft: [-10, 0], ArrowRight: [10, 0], ArrowUp: [0, -10], ArrowDown: [0, 10] }[e.key];
+        const panel = $('workbench_panel');
+        if (!delta || !panel || !panel.offsetWidth) return;
+        e.preventDefault();
+        const rect = panel.getBoundingClientRect();
+        panel.style.transform = 'none';
+        positionPanel(panel, rect.left + delta[0], rect.top + delta[1]);
+    });
     document.addEventListener('pointerdown', e => {
         if (e.button !== 0 || e.isPrimary === false || dragState) return;
         const handle = $('workbench_drag');

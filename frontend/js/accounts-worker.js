@@ -1,19 +1,23 @@
 // ===== Worker 管理弹窗 (子域名 & 删除) =====
 
-let currentManageAccIndex = -1;
+let currentManageAccountId = null;
+let manageReadId = 0;
 
 async function openAccountManage(i) {
-    currentManageAccIndex = i;
+    const readId = ++manageReadId;
     const acc = state.accounts[i];
     if (!acc) return;
     if (!acc.globalKey && !acc.apiToken) return Swal.fire('无法管理', '该账号未配置凭据（Global API Key 或 API Token）或解密失败，请先编辑账号重新填写', 'error');
 
+    const accountId = acc.accountId;
+    currentManageAccountId = accountId;
     const table = $('manage_table');
+    table.setAttribute('aria-busy', 'true');
     const tbody = $('manage_list_body');
     const loading = $('manage_loading');
     const subDisplay = $('manage_subdomain_display');
 
-    setUiIconText($('manage_modal_title'), '📂', ' 管理账号: ' + acc.alias);
+    setUiContent($('manage_modal_title'), 'folder-open', ' 管理账号: ' + acc.alias);
     subDisplay.innerText = '加载中...';
     openModal('account_manage_modal');
     table.classList.add('hidden');
@@ -26,6 +30,9 @@ async function openAccountManage(i) {
         apiFetch('/api/all_workers', { method: 'POST', body: JSON.stringify({ accountId: acc.accountId }) }),
         apiFetch('/api/get_subdomain', { method: 'POST', body: JSON.stringify({ accountId: acc.accountId }) })
     ]);
+
+    if (readId !== manageReadId || currentManageAccountId !== accountId) return;
+    table.setAttribute('aria-busy', 'false');
 
     if (subResult.status === 'fulfilled' && subResult.value && subResult.value.success) {
         subDisplay.innerText = subResult.value.subdomain || '未设置';
@@ -91,9 +98,14 @@ async function openAccountManage(i) {
         const tdAct = document.createElement('td');
         tdAct.className = 'text-right';
         const btn = document.createElement('button');
+        btn.type = 'button';
         btn.className = 'text-xs bg-red-100 text-red-600 px-2 py-1 rounded hover:bg-red-200';
-        btn.textContent = '🗑️ 删除';
-        btn.addEventListener('click', () => confirmDeleteWorker(w.id, i));
+        setUiContent(btn, 'trash-2', ' 删除');
+        btn.addEventListener('click', () => {
+            const index = state.accounts.findIndex(a => a.accountId === accountId);
+            if (index < 0) { void Swal.fire('账号已变化', '原账号已不在清单中，请重新读取。', 'warning'); return; }
+            void confirmDeleteWorker(w.id, index);
+        });
         tdAct.appendChild(btn);
         tr.appendChild(tdAct);
 
@@ -102,16 +114,19 @@ async function openAccountManage(i) {
 }
 
 async function promptChangeSubdomain() {
-    if (currentManageAccIndex < 0) return;
-    const acc = state.accounts[currentManageAccIndex];
+    const acc = state.accounts.find(a => a.accountId === currentManageAccountId);
     if (!acc) return;
+    const accountId = acc.accountId;
+    const accountAlias = acc.alias || '';
     const currentSub = $('manage_subdomain_display').innerText;
 
     const { value: newSub } = await Swal.fire({
         title: '修改 Workers.dev 子域名',
         html:
             '<div class="text-left text-sm space-y-2">' +
+            '<p>账号：' + safeHtml(accountAlias) + '（' + safeHtml(accountId) + '）</p>' +
             '<div class="bg-gray-50 p-2 rounded">当前: <b>' + safeHtml(currentSub) + '</b>.workers.dev</div>' +
+            '<label for="swal_new_subdomain">新子域名前缀</label>' +
             '<input id="swal_new_subdomain" class="swal2-input" placeholder="输入新子域名前缀" style="margin:0;width:100%">' +
             '<div class="text-xs text-gray-400"><span data-ui-icon="triangle-alert">⚠️</span> 修改子域名可能需要数分钟生效，且会影响该账号下所有 Worker 的访问地址。</div>' +
             '</div>',
@@ -136,40 +151,57 @@ async function promptChangeSubdomain() {
 
     const confirm2 = await Swal.fire({
         title: '二次确认',
-        html: '确定将子域名从 <b>' + safeHtml(currentSub) + '</b> 改为 <b>' + safeHtml(newSub) + '</b> 吗？<br><span class="text-xs text-red-500">此操作会影响所有使用 workers.dev 域名的 Worker！</span>',
+        html: '<p>账号：' + safeHtml(accountAlias) + '（' + safeHtml(accountId) + '）</p>确定将子域名从 <b>' + safeHtml(currentSub) + '</b> 改为 <b>' + safeHtml(newSub) + '</b> 吗？<br><span class="text-xs text-red-500">此操作会影响所有使用 workers.dev 域名的 Worker！</span>',
         icon: 'warning',
         showCancelButton: true,
         confirmButtonText: '确认修改',
         cancelButtonText: '取消',
-        confirmButtonColor: '#d33'
-    });
-
-    if (!confirm2.isConfirmed) return;
-
-    try {
-        Swal.fire({ title: '修改中...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
-        const data = await apiFetch('/api/change_subdomain', {
-            method: 'POST',
-            body: JSON.stringify({ accountId: acc.accountId, newSubdomain: newSub })
-        });
-        if (data.success) {
-            $('manage_subdomain_display').innerText = data.subdomain || newSub;
-            Swal.fire('修改成功', '子域名已更新为: ' + (data.subdomain || newSub) + '.workers.dev', 'success');
-        } else {
-            Swal.fire('修改失败', data.msg || '未知错误', 'error');
+        confirmButtonColor: '#d33',
+        input: 'text',
+        inputLabel: '精确输入新子域名前缀确认',
+        inputPlaceholder: newSub,
+        inputAttributes: { autocomplete: 'off', spellcheck: 'false' },
+        focusConfirm: false,
+        showLoaderOnConfirm: true,
+        allowOutsideClick: () => !Swal.isLoading(),
+        allowEscapeKey: () => !Swal.isLoading(),
+        preConfirm: async (value) => {
+            if (value !== newSub) {
+                Swal.showValidationMessage('请精确输入：' + safeHtml(newSub));
+                return false;
+            }
+            try {
+                const data = await apiFetch('/api/change_subdomain', {
+                    method: 'POST',
+                    body: JSON.stringify({ accountId, newSubdomain: newSub })
+                });
+                if (isAcceptedTask(data)) return data;
+                if (!data.success) throw new Error(data.msg || '修改失败');
+                return data;
+            } catch (error) {
+                Swal.showValidationMessage('修改失败：' + safeHtml(error.message || '未知错误'));
+                return false;
+            }
         }
-    } catch (e) {
-        Swal.fire('修改失败', e.message, 'error');
-    }
+    });
+    if (!confirm2.isConfirmed || !confirm2.value) return;
+    if (trackAcceptedTask(confirm2.value)) return;
+    const updated = confirm2.value.subdomain || newSub;
+    if (currentManageAccountId === accountId && state.accounts.some(a => a.accountId === accountId)) $('manage_subdomain_display').innerText = updated;
+    Swal.fire('修改成功', '子域名已更新为: ' + updated + '.workers.dev', 'success');
 }
 
 async function confirmDeleteWorker(workerId, accIndex) {
     const acc = state.accounts[accIndex];
     if (!acc) return;
+    // Freeze the target shown by this confirmation, even if account data refreshes.
+    const accountId = acc.accountId;
     const result = await Swal.fire({
         title: '危险操作',
         html:
-            '<p>确认要删除 <b>' + safeHtml(workerId) + '</b> 吗？</p>' +
+            '<p>账号：<b>' + safeHtml(acc.alias || '') + '</b>（' + safeHtml(accountId) + '）</p>' +
+            '<p>确认要删除 Worker <b>' + safeHtml(workerId) + '</b> 吗？</p>' +
+            '<p class="text-xs text-red-500 mt-2">若模板已无受管 Worker，相关部署配置、变量和收藏会重置；无剩余 Worker 的账号级变量覆盖也会清理。请先备份中控配置。</p>' +
             '<div class="mt-4 text-left bg-gray-50 p-2 rounded text-xs">' +
             '<label class="flex items-center space-x-2">' +
             '<input type="checkbox" id="del_kv_chk" class="form-checkbox text-red-600">' +
@@ -180,31 +212,45 @@ async function confirmDeleteWorker(workerId, accIndex) {
             '</div>',
         icon: 'warning',
         showCancelButton: true,
+        input: 'text',
+        inputLabel: '输入 Worker 名称确认删除',
+        inputPlaceholder: workerId,
+        inputAttributes: { autocomplete: 'off', spellcheck: 'false' },
+        focusConfirm: false,
         confirmButtonText: '确认删除',
         confirmButtonColor: '#d33',
         showLoaderOnConfirm: true,
         allowOutsideClick: () => !Swal.isLoading(),
-        preConfirm: async () => {
+        preConfirm: async (confirmedName) => {
+            if (confirmedName !== workerId) {
+                Swal.showValidationMessage('名称必须完全一致，请输入：' + safeHtml(workerId));
+                return false;
+            }
             const deleteKv = $('del_kv_chk').checked;
             try {
                 const data = await apiFetch('/api/delete_worker', {
                     method: 'POST',
-                    body: JSON.stringify({ accountId: acc.accountId, workerName: workerId, deleteKv: deleteKv })
+                    body: JSON.stringify({ accountId: accountId, workerName: workerId, deleteKv: deleteKv })
                 });
+                if (isAcceptedTask(data)) return data;
                 if (!data.success) throw new Error(data.msg || '删除失败');
                 return data;
             } catch (error) {
-                Swal.showValidationMessage('删除失败: ' + (error && error.message));
+                Swal.showValidationMessage('删除失败: ' + safeHtml((error && error.message) || '未知错误'));
                 return false;
             }
         }
     });
 
     if (result.isConfirmed && result.value) {
+        if (trackAcceptedTask(result.value)) return;
         const warn = result.value.kvWarnings;
-        Swal.fire(warn ? '已删除（有警告）' : '已删除', warn || 'Worker 及相关资源已清理', warn ? 'warning' : 'success');
+        const labels = { deleted: '已删除', updated: '已更新', reset: '已重置', retained: '已保留', failed: '失败', unknown: '结果未知' };
+        const outcomes = (result.value.results || []).map(item => item.resource + '：' + (labels[item.status] || item.status) + (item.detail ? '（' + item.detail + '）' : '')).join('\n');
+        Swal.fire({ title: warn ? '已删除（有警告）' : '已删除', text: (warn || 'Worker 已删除；KV 仅按勾选选项及共享检查结果处理。') + (outcomes ? '\n' + outcomes : ''), icon: warn ? 'warning' : 'success' });
         await loadAccounts();
-        openAccountManage(accIndex);
+        const currentIndex = state.accounts.findIndex(a => a.accountId === accountId);
+        if (currentManageAccountId === accountId && currentIndex >= 0) void openAccountManage(currentIndex);
     }
 }
 

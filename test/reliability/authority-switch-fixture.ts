@@ -1,0 +1,26 @@
+import {vi} from 'vitest';
+import {sqliteFixture} from './sqlite-fixture';
+import {ConfigStore} from '../../src/reliability/config-store';
+import {TaskDispatch} from '../../src/reliability/task-dispatch';
+import {CredentialAuthority} from '../../src/reliability/credential-authority';
+import {migrateCredentialAccounts} from '../../src/reliability/credential-accounts';
+import {manifestDigest,ReliabilityError} from '../../src/reliability/protocol';
+import {SealedStore} from '../../src/reliability/sealed-store';
+import {AuthorityArchive} from '../../src/reliability/authority-archive';
+import {archiveGenerationSource} from '../../src/reliability/archive-generation-source';
+import {GenerationImport} from '../../src/reliability/generation-import';
+import {GenerationActivation} from '../../src/reliability/generation-activation';
+import {AuthorityDrain} from '../../src/reliability/authority-drain';
+import {AccountQueue} from '../../src/reliability/account-queue';
+import {AccountCoordinatorRuntime} from '../../src/reliability/coordinator-runtime';
+import {CoordinatorRpc,accountObjectName} from '../../src/reliability/coordinator-rpc';
+import {CoordinatorEndpoint} from '../../src/reliability/coordinator-endpoint';
+export const oldRing={currentId:'old',keys:{old:'local-old-credential-key-never-production'}},ring={currentId:'new',keys:{...oldRing.keys,new:'local-new-credential-key-never-production'}},snapshotRing={currentId:'snapshot',keys:{snapshot:'local-only-independent-snapshot-material'}};
+export const account='a'.repeat(32),other='b'.repeat(32);
+export async function switchFixture(opened:ReturnType<typeof sqliteFixture>[],rotate=false){const f=sqliteFixture();opened.push(f);const config=new ConfigStore(f.db),dispatch=new TaskDispatch(f.db,new Uint8Array(32).fill(7)),authority=new CredentialAuthority(f.db,config,dispatch,ring,()=>1000),sealed=new SealedStore(f.db,snapshotRing);const records:any[]=[{domain:'accounts',revision:1,value:await migrateCredentialAccounts([{accountId:account,alias:'one',email:'',apiToken:'local-old-token',workers_cmliu:['one']},{accountId:other,alias:'two',email:'',apiToken:'local-second-token',workers_cmliu:['two']}],oldRing,'plaintext')},{domain:'vars:cmliu',revision:1,value:[{key:'UUID',value:'local-original'}]},{domain:'autoConfig',revision:1,value:{enabled:false,interval:30}}];config.beginImport('g1',await manifestDigest(records),records.length);records.forEach(r=>config.stage('g1',r));await config.activateInitial('g1',0);await authority.initialize('g1',1);config.setMaintenance(false,1);config.recordRuntime('g1_runtime',{lastCheck:123,lastGc:100});authority.revoke('g1',account,1);config.setMaintenance(true,2);
+ const rpc=new CoordinatorRpc('local-only-independent-rpc-material',()=>1000),accounts=new Map<string,{db:ReturnType<typeof sqliteFixture>['db'];queue:AccountQueue;endpoint:CoordinatorEndpoint;runtime:AccountCoordinatorRuntime}>(),transport=vi.fn();
+ const send=vi.fn(async(method:any,id:string,body:any)=>{let item=accounts.get(id);if(!item){const db=sqliteFixture();opened.push(db);const queue=new AccountQueue(db.db),runtime=new AccountCoordinatorRuntime(db.db,queue,new SealedStore(db.db,snapshotRing),id,vi.fn(),{admit:async f=>f(),arm:async()=>{}},{digestSecret:'local-independent-journal-secret-material',transport,execute:vi.fn(),businessEffects:true});const endpoint=new CoordinatorEndpoint(db.db,rpc,name=>name===accountObjectName(id),()=>runtime);item={db:db.db,queue,endpoint,runtime};accounts.set(id,item);}const response=await item.endpoint.fetch(await rpc.request(method,id,body)),data=await response.json() as any;if(response.status!==200)throw new ReliabilityError(data.error,response.status);return data.value;});
+ const drain=new AuthorityDrain(f.db,config,send),archive=new AuthorityArchive(f.db,sealed,'local_manager',{role:'global'},()=>1000),imports=new GenerationImport(f.db,config,sealed,ring,new Uint8Array(32).fill(8),id=>archiveGenerationSource(archive,id),()=>1000),activation=new GenerationActivation(f.db,config,imports,drain,()=>2000);
+ const prepare=async(source='backup',id='move',target='g2')=>{await archive.create(source,'g1',config.status().epoch);await imports.begin({id,target,source,baseGeneration:'g1',epoch:config.status().epoch,credentials:rotate?'migrate':'strict_v2'});await imports.resume(id,100);};
+ const certify=async(id='drain')=>{drain.begin(id);await drain.advance(id,100);};
+ return {...f,config,dispatch,authority,sealed,archive,imports,activation,drain,send,accounts,transport,prepare,certify,rpc};}

@@ -31,16 +31,18 @@ async function refreshHistory() {
         // 竞态守卫：已有更新的请求发出，本次结果作废（防止慢响应覆盖快响应显示错类型）
         if (myReqId !== _historyReqId) return;
 
+        if (favResult.status === 'fulfilled') acceptConfigView('favorites:' + type, favResult.value);
         state.favData = (favResult.status === 'fulfilled' && Array.isArray(favResult.value)) ? favResult.value : [];
 
         hList.innerHTML = '';
-        const latestBtn = document.createElement('div');
-        latestBtn.className = 'bg-green-50 hover:bg-green-100 p-2 rounded border border-green-200 cursor-pointer transition mb-2';
+        const latestBtn = document.createElement('button');
+        latestBtn.type = 'button';
+        latestBtn.className = 'w-full text-left bg-green-50 hover:bg-green-100 p-2 rounded border border-green-200 cursor-pointer transition mb-2';
         const latestInner = document.createElement('div');
         latestInner.className = 'flex justify-between items-center';
         const latestLabel = document.createElement('span');
         latestLabel.className = 'font-bold text-green-700 text-xs';
-        setUiIconText(latestLabel, '⚡', ' Always Latest (部署最新)');
+        setUiContent(latestLabel, 'zap', ' Always Latest (部署最新)');
         latestInner.appendChild(latestLabel);
         latestBtn.appendChild(latestInner);
         latestBtn.addEventListener('click', () => { closeModal('history_modal'); deploy(type, 'latest'); });
@@ -129,18 +131,22 @@ function renderHistoryItem(type, item, container, isFavSection, isFavInHist) {
         (isCurrent ? 'bg-orange-50 border-orange-300' : 'bg-white border-gray-100 hover:border-blue-200');
 
     const starBtn = document.createElement('button');
+
+    starBtn.type = 'button';
     starBtn.className = 'text-sm focus:outline-none ' + (isFav ? 'text-orange-400' : 'text-gray-300 hover:text-orange-400');
-    starBtn.textContent = isFav ? '★' : '☆';
+    setUiContent(starBtn, 'star', '', { filled: isFav, label: isFav ? '取消收藏' : '收藏此版本' });
     starBtn.title = isFav ? '取消收藏' : '收藏此版本';
     starBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         toggleFavorite(type, item, isFav);
     });
 
-    const content = document.createElement('div');
-    content.className = 'flex-1 cursor-pointer overflow-hidden';
+    const content = document.createElement('button');
+    content.type = 'button';
+    content.setAttribute('aria-label', '部署历史版本 ' + shortSha);
+    content.className = 'flex-1 text-left cursor-pointer overflow-hidden';
 
-    const head = document.createElement('div');
+    const head = document.createElement('span');
     head.className = 'flex justify-between items-center mb-0.5';
     const shaTag = document.createElement('span');
     shaTag.className = 'font-mono text-[10px] bg-slate-100 px-1 rounded text-slate-600';
@@ -159,8 +165,8 @@ function renderHistoryItem(type, item, container, isFavSection, isFavInHist) {
     head.appendChild(dateEl);
     content.appendChild(head);
 
-    const msg = document.createElement('div');
-    msg.className = 'text-[10px] text-gray-700 truncate';
+    const msg = document.createElement('span');
+    msg.className = 'block text-[10px] text-gray-700 truncate';
     msg.textContent = item.message || '(无提交信息)';
     msg.title = item.message || '';
     content.appendChild(msg);
@@ -176,8 +182,19 @@ function renderHistoryItem(type, item, container, isFavSection, isFavInHist) {
         deploy(type, item.sha);
     });
 
+    const previewBtn = document.createElement('button');
+    previewBtn.type = 'button';
+    previewBtn.className = 'text-xs text-secondary px-2 rounded border';
+    previewBtn.textContent = '预览差异';
+    previewBtn.setAttribute('aria-label', '预览历史版本 ' + shortSha + ' 的部署差异');
+    previewBtn.addEventListener('click', () => {
+        closeModal('history_modal');
+        void previewDeploy(type, item.sha);
+    });
+
     el.appendChild(starBtn);
     el.appendChild(content);
+    el.appendChild(previewBtn);
     container.appendChild(el);
 }
 
@@ -188,6 +205,7 @@ async function toggleFavorite(type, item, isRemove) {
             body: JSON.stringify({ action: isRemove ? 'remove' : 'add', item: item })
         });
         const d = await apiFetch('/api/favorites?type=' + encodeURIComponent(type));
+        acceptConfigView('favorites:' + type, d);
         state.favData = Array.isArray(d) ? d : [];
         if (!$('fav_panel_view').classList.contains('hidden')) {
             openFavoritesPanel();

@@ -1,5 +1,21 @@
+import type {ReliabilityEnv} from '../reliability/production-config';
 /** 环境变量类型定义 */
-export interface AppEnv {
+export interface AppEnv extends Partial<ReliabilityEnv> {
+    /** Explicit legacy distribution/migration mode only. Absence fails closed to DO. */
+    CFAUTO_STORAGE_MODE?: 'legacy' | 'authority';
+    /** Trusted DO snapshot read only; never selected from a request header. */
+    reliabilityReadOnly?: true;
+    /** Internal preview readers with complete inventory contracts; never public input. */
+    reliabilityPreview?: {
+        namespaces(account: import('../lib/types').AccountEntry): Promise<Array<{id:string;title:string}>>;
+        workers(account: import('../lib/types').AccountEntry): Promise<Array<{id:string}>>;
+        bindings(account: import('../lib/types').AccountEntry, worker: string): Promise<Array<Record<string, unknown>>>;
+    };
+    /** Trusted invocation-local policy supplied by the reliability coordinator only.
+     * NOT parsed from request body or automatically enabled by a Worker Secret. */
+    reliabilityCredentials?: import('../reliability/credential-accounts').CredentialPolicy;
+    /** Invocation-local diagnostic context; not a Worker binding or persistent task. */
+    traceContext?: import('../lib/trace').TraceContext;
     CONFIG_KV: KVNamespace;
     ACCESS_CODE?: string;
     GITHUB_TOKEN?: string;

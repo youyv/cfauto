@@ -5,6 +5,7 @@
  * 不再接受请求体中的 email/globalKey，防止已登录用户操作未授权账号。
  */
 
+import { redactDiagnosticText } from '../lib/redaction';
 import { KV_KEYS, TEMPLATES } from '../config/templates';
 import { readAccounts, writeAccounts, findAccount, removeWorkerName, hasAnyWorker, hasAccountCredentials } from '../lib/account-store';
 import { cf, getAuthHeaders, jsonError, json, fetchWithTimeout, readApiJson, readApiResult } from '../lib/cloudflare-api';
@@ -67,6 +68,8 @@ export async function handleGetAllWorkers(env: AppEnv, accountId: string) {
 }
 
 export async function handleDeleteWorker(env: AppEnv, accountId: string, workerName: string, deleteKv: boolean) {
+    const results: Array<{ resource: string; status: string; detail?: string }> = [];
+    let workerDeleted = false;
     try {
         if (!workerName || typeof workerName !== 'string') return jsonError('缺少 workerName', 400, 'VALIDATION_ERROR');
         const { headers, accountId: aid } = await resolveCredentials(env, accountId);
@@ -80,6 +83,7 @@ export async function handleDeleteWorker(env: AppEnv, accountId: string, workerN
                     .map((b) => b.namespace_id!);
             } else {
                 // 读不到绑定就跳过 KV 清理，而不是盲目删除所有命名空间
+                results.push({ resource: 'KV 绑定检查', status: 'unknown', detail: '无法读取绑定，保留所有 KV' });
                 logger.warn('deleteWorker: bindings 读取失败，跳过 KV 清理', { module: 'zones', workerName });
             }
         }
@@ -92,9 +96,13 @@ export async function handleDeleteWorker(env: AppEnv, accountId: string, workerN
             let msg = '删除失败 (HTTP ' + delWorkerRes.status + ')';
             try { const err: any = await delWorkerRes.json(); msg = err.errors?.[0]?.message || msg; }
             catch { logger.warn('deleteWorker: 错误响应非 JSON', { module: 'zones', status: delWorkerRes.status }); }
-            return json({ success: false, msg });
+            return json({ success: false, msg: redactDiagnosticText(msg), results: [{ resource: workerName, status: 'failed' }] });
         }
 
+        // HTTP 200 仍可能携带业务拒绝；确认前绝不清理本地记录或关联 KV。
+        await readApiResult(delWorkerRes, '删除 Worker');
+        workerDeleted = true;
+        results.push({ resource: workerName, status: 'deleted' });
         // Worker 已删除 → 同步账号记录，并在某模板彻底无部署时重置其配置
         const accounts = await readAccounts(env);
         let updated = false;
@@ -107,19 +115,26 @@ export async function handleDeleteWorker(env: AppEnv, accountId: string, workerN
 
         if (updated) {
             await writeAccounts(env, accounts);
+            results.push({ resource: '账号 Worker 清单', status: 'updated' });
             for (const t of Object.keys(TEMPLATES)) {
                 if (!hasAnyWorker(accounts, t)) {
                     await putJSON(env.CONFIG_KV, KV_KEYS.deployConfig(t), { mode: 'latest' });
                     await putJSON(env.CONFIG_KV, KV_KEYS.vars(t), []);
                     await putJSON(env.CONFIG_KV, KV_KEYS.favorites(t), []);
+                    results.push({ resource: t + ' 部署配置/变量/收藏', status: 'reset' });
                 }
             }
             // 清理该账号的账号级变量覆盖（若该模板在此账号下已无 Worker）
             for (const t of Object.keys(TEMPLATES)) {
                 const acc = accounts.find(a => a.accountId === aid);
                 if (acc && (acc[`workers_${t}`] || []).length === 0) {
-                    await env.CONFIG_KV.delete(KV_KEYS.accountVars(t, aid)).catch((e: unknown) =>
-                        logger.warn('deleteWorker: accountVars 清理失败', { module: 'zones', error: String(e) }));
+                    try {
+                        await env.CONFIG_KV.delete(KV_KEYS.accountVars(t, aid));
+                        results.push({ resource: t + ' 账号覆盖', status: 'deleted' });
+                    } catch (e) {
+                        results.push({ resource: t + ' 账号覆盖', status: 'unknown', detail: '清理未确认，请核对中控配置' });
+                        logger.warn('deleteWorker: accountVars 清理失败', { module: 'zones', error: String(e) });
+                    }
                 }
             }
         }
@@ -138,11 +153,13 @@ export async function handleDeleteWorker(env: AppEnv, accountId: string, workerN
                     if (!other.ok) throw new Error('无法确认其他 Worker 的绑定');
                     for (const b of other.bindings) if (b.namespace_id) shared.add(b.namespace_id);
                 }
+                for (const id of new Set(kvNamespaceIds)) if (shared.has(id)) results.push({ resource: 'KV ' + id, status: 'retained', detail: '与其他 Worker 共享' });
                 const safe = kvNamespaceIds.filter(id => !shared.has(id));
                 skippedKv = kvNamespaceIds.length - safe.length;
                 kvNamespaceIds = [...new Set(safe)];
             } catch (e) {
                 skippedKv = kvNamespaceIds.length;
+                for (const id of new Set(kvNamespaceIds)) results.push({ resource: 'KV ' + id, status: 'retained', detail: '无法确认是否共享' });
                 kvNamespaceIds = [];
                 logger.warn('共享检查失败，保留 KV', { error: String(e) });
             }
@@ -150,13 +167,22 @@ export async function handleDeleteWorker(env: AppEnv, accountId: string, workerN
         const kvDeleteErrors = deleteKv
             ? await deleteKvNamespaces(aid, kvNamespaceIds, headers)
             : [];
-        if (skippedKv > 0) return json({ success: true, kvWarnings: skippedKv + ' 个共享或无法确认归属的 KV 已保留；' + kvDeleteErrors.length + ' 个删除失败' });
+        for (const id of kvNamespaceIds) results.push({ resource: 'KV ' + id, status: kvDeleteErrors.includes(id) ? 'failed' : 'deleted' });
+        if (!deleteKv) results.push({ resource: 'KV 命名空间', status: 'retained', detail: '未选择删除 KV' });
+        if (skippedKv > 0) return json({ success: true, results, kvWarnings: skippedKv + ' 个共享或无法确认归属的 KV 已保留；' + kvDeleteErrors.length + ' 个删除失败' });
 
         if (kvDeleteErrors.length > 0) {
-            return json({ success: true, kvWarnings: kvDeleteErrors.length + ' 个 KV 命名空间删除失败，请到 Cloudflare Dashboard 手动清理' });
+            return json({ success: true, results, kvWarnings: kvDeleteErrors.length + ' 个 KV 命名空间删除失败，请到 Cloudflare Dashboard 手动清理' });
         }
-        return json({ success: true });
-    } catch (e) { return failure(e, 'handleDeleteWorker'); }
+        return json({ success: true, results, ...(results.some(r => r.status === 'unknown') ? { kvWarnings: '部分清理结果未确认，请查看逐项状态并到 Dashboard 核对；不要盲目重复删除' } : {}) });
+    } catch (e) {
+        if (workerDeleted) {
+            logger.error('deleteWorker partial cleanup', e instanceof Error ? e : new Error(String(e)));
+            results.push({ resource: '后续配置/KV 清理', status: 'unknown', detail: '已停止；之前的删除不会自动回滚' });
+            return json({ success: true, partial: true, results, kvWarnings: 'Worker 已删除，但后续清理未完成或结果未知。请核对中控配置及 Cloudflare Dashboard，必要时从备份恢复；不要盲目重试删除。' });
+        }
+        return failure(e, 'handleDeleteWorker');
+    }
 }
 
 export async function handleFetchBindings(env: AppEnv, accountId: string, workerName: string) {
@@ -180,7 +206,7 @@ export async function handleGetSubdomain(env: AppEnv, accountId: string) {
         if (res.status === 404) return json({ success: true, subdomain: '' });
         const data = await readApiJson<{ success?: boolean; result?: { subdomain?: string }; errors?: Array<{ message: string }> }>(res, '读取子域名');
         if (data.success) return json({ success: true, subdomain: data.result?.subdomain || '' });
-        return json({ success: false, msg: data.errors?.[0]?.message || '查询失败' });
+        return json({ success: false, msg: redactDiagnosticText(data.errors?.[0]?.message || '查询失败') });
     } catch (e) { return failure(e, 'handleGetSubdomain'); }
 }
 
@@ -188,6 +214,7 @@ export async function handleGetSubdomain(env: AppEnv, accountId: string) {
 const SUBDOMAIN_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 
 export async function handleChangeSubdomain(env: AppEnv, accountId: string, newSubdomain: string) {
+    let destructiveStepStarted = false;
     try {
         const sub = String(newSubdomain || '').trim().toLowerCase();
         if (!SUBDOMAIN_RE.test(sub)) {
@@ -200,7 +227,7 @@ export async function handleChangeSubdomain(env: AppEnv, accountId: string, newS
             body: JSON.stringify({ subdomain: sub })
         });
         let data: any = await res.json().catch(() => ({ success: false, errors: [{ message: 'HTTP ' + res.status }] }));
-        if (data.success) {
+        if (res.ok && data.success) {
             return json({ success: true, subdomain: data.result?.subdomain || sub });
         }
         const errMsg = data.errors?.[0]?.message || '修改失败';
@@ -210,7 +237,7 @@ export async function handleChangeSubdomain(env: AppEnv, accountId: string, newS
                 const getRes = await fetchWithTimeout(cf.acctSubdomain(aid), { headers });
                 if (getRes.ok) {
                     const getData: any = await getRes.json();
-                    oldSubdomain = getData.result?.subdomain || '';
+                    oldSubdomain = getData.success === true ? getData.result?.subdomain || '' : '';
                 }
             } catch (_) { logger.warn('changeSubdomain get old subdomain failed', { module: 'zones' }); }
 
@@ -218,10 +245,12 @@ export async function handleChangeSubdomain(env: AppEnv, accountId: string, newS
             if (!oldSubdomain) {
                 return json({ success: false, msg: '无法获取当前子域名，已中止修改（防止删除后无法自动恢复）。请到 Dashboard → Workers & Pages → 设置中手动修改。' });
             }
+            destructiveStepStarted = true;
             const delRes = await fetchWithTimeout(cf.acctSubdomain(aid), { method: 'DELETE', headers });
             if (!delRes.ok) {
                 return json({ success: false, msg: 'Cloudflare 不支持通过 API 修改已有子域名，请到 Dashboard → Workers & Pages → 设置中手动修改。' });
             }
+            await readApiResult(delRes, '删除旧子域名');
             logger.audit('subdomain delete for rename', { accountId: aid, from: oldSubdomain, to: sub });
 
             let putSuccess = false;
@@ -233,7 +262,7 @@ export async function handleChangeSubdomain(env: AppEnv, accountId: string, newS
                     body: JSON.stringify({ subdomain: sub })
                 });
                 data = await res.json().catch(() => ({ success: false }));
-                if (data.success) { putSuccess = true; break; }
+                if (res.ok && data.success) { putSuccess = true; break; }
             }
 
             if (putSuccess) {
@@ -241,17 +270,25 @@ export async function handleChangeSubdomain(env: AppEnv, accountId: string, newS
             }
 
             try {
+                const current = await readApiResult<{ subdomain?: string }>(await fetchWithTimeout(cf.acctSubdomain(aid), { headers }), '恢复前核对子域名');
+                if (!current || typeof current.subdomain !== 'string') throw new Error('当前子域名未知，未覆盖');
+                if (current.subdomain === sub) return json({ success: true, subdomain: sub });
+                if (current.subdomain) return json({ success: false, msg: '修改未确认；当前子域名为 ' + current.subdomain + '，未覆盖现有值，请到 Dashboard 核对。' });
                 const restoreRes = await fetchWithTimeout(cf.acctSubdomain(aid), {
                     method: 'PUT', headers,
                     body: JSON.stringify({ subdomain: oldSubdomain })
                 });
                 if (restoreRes.ok) {
+                    await readApiResult(restoreRes, '恢复旧子域名');
                     return json({ success: false, msg: '新子域名设置失败，已恢复原子域名: ' + oldSubdomain + '。请稍后重试。' });
                 }
                 logger.error('Failed to restore old subdomain', new Error('HTTP ' + restoreRes.status), { module: 'zones', oldSubdomain });
             } catch (e) { logger.error('Failed to restore old subdomain', e as Error, { module: 'zones', oldSubdomain }); }
-            return json({ success: false, msg: '子域名修改失败，且原子域名 ' + oldSubdomain + ' 恢复也失败。请到 Dashboard → Workers & Pages → 设置中手动设置。' });
+            return json({ success: false, msg: '子域名修改失败，且原子域名 ' + oldSubdomain + ' 恢复未确认。请到 Dashboard → Workers & Pages → 设置中手动设置。' });
         }
-        return json({ success: false, msg: errMsg });
-    } catch (e) { return failure(e, 'handleChangeSubdomain'); }
+        return json({ success: false, msg: redactDiagnosticText(errMsg) });
+    } catch (e) {
+        if (destructiveStepStarted) return json({ success: false, msg: '子域名修改请求已发出，最终状态未知；请到 Dashboard 核对，不保证自动回滚: ' + redactDiagnosticText((e as Error).message) });
+        return failure(e, 'handleChangeSubdomain');
+    }
 }

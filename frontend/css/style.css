@@ -223,6 +223,8 @@
       .tgl-input { position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none; }
       .tgl-switch { display: inline-block; width: 32px; height: 18px; border-radius: 9px; background: #d1d5db; cursor: pointer; position: relative; transition: background 0.3s; vertical-align: middle; }
       .tgl-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform 0.3s; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
+      .tgl-input:focus-visible + .tgl-switch { outline: 2px solid #6366f1; outline-offset: 3px; }
+      [data-theme="dark"] .tgl-input:focus-visible + .tgl-switch { outline-color: #a5b4fc; }
       .tgl-input:checked + .tgl-switch { background: #8b5cf6; }
       .tgl-input:checked + .tgl-switch::after { transform: translateX(14px); }
       /* 暗色 */
@@ -289,7 +291,7 @@ body { font-family: Inter, 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif;
 .dashboard-shell button:focus-visible, .dashboard-shell input:focus-visible, .dashboard-shell summary:focus-visible, .dashboard-shell select:focus-visible { outline: 2px solid #6366f1; outline-offset: 3px; }
 .upstream-card { border: 1px solid var(--border-color); background: var(--glass-3); border-radius: 12px; margin-bottom: 16px; color: var(--text-primary); }
 .upstream-card summary { cursor: pointer; padding: 12px 14px; font-size: 12px; font-weight: 650; }
-.upstream-card summary span { font-weight: 400; color: var(--text-secondary); margin-left: 8px; font-size: 11px; }
+.upstream-card summary span:not(.config-save-status) { font-weight: 400; color: var(--text-secondary); margin-left: 8px; font-size: 11px; }
 .upstream-content { padding: 0 14px 14px; display: grid; gap: 8px; }
 .upstream-content label { font-size: 11px; font-weight: 600; color: var(--text-secondary); }
 .upstream-status { overflow-wrap: anywhere; font-size: 11px; color: var(--text-secondary); }
@@ -452,7 +454,7 @@ button:focus-visible, summary:focus-visible {
     .automation-footer { padding: 14px 16px; }
 }
 @media (max-width: 480px) {
-    .automation-summary-hint { display: none; }
+    .automation-summary-hint { flex-basis: 100%; margin-left: 0; order: 2; overflow-wrap: anywhere; }
     .automation-chevron { margin-left: auto; }
     .control-quick-actions { gap: 8px; }
     .dashboard-shell .control-quick-actions button { padding: 8px 10px; }
@@ -477,3 +479,101 @@ button:focus-visible, summary:focus-visible {
 .account-ratio-content > span { min-width: 4.5ch; text-align: right; font-variant-numeric: tabular-nums; }
 .account-actions-content { display: inline-flex; align-items: center; justify-content: center; gap: 10px; }
 .account-actions-content button { margin: 0; }
+
+/* Saved state describes the server snapshot; inputs remain drafts until saved. */
+.automation-drawer > summary, .upstream-card > summary { flex-wrap: wrap; }
+.config-save-status { display: inline-block; flex-shrink: 0; padding: 2px 7px; border-radius: 5px; font-size: 10px; font-weight: 600; line-height: 1.5; color: #475569; background: #e2e8f0; }
+.config-save-status[data-dirty="true"] { color: #92400e; background: #fef3c7; }
+.upstream-card summary .config-save-status { margin-left: 6px; }
+[data-theme="dark"] .config-save-status { color: #cbd5e1; background: #334155; }
+[data-theme="dark"] .config-save-status[data-dirty="true"] { color: #fde68a; background: #713f12; }
+.automation-drawer input:disabled, .automation-drawer button:disabled, .upstream-card button:disabled { opacity: .6; cursor: wait; }
+
+.automation-runtime-details { color: var(--text-secondary); font-size: 11px; line-height: 1.7; padding: 12px 16px 0; overflow-wrap: anywhere; }
+
+/* Backup previews show keys/status only; long keys and IDs must wrap on mobile. */
+.restore-report { text-align: left; font-size: 0.875rem; overflow-wrap: anywhere; }
+.restore-report p { margin: 0.6rem 0; }
+.restore-items { max-height: 32vh; overflow-y: auto; padding-left: 1.25rem; list-style: disc; }
+.restore-snapshot-link { color: #2563eb; text-decoration: underline; }
+[data-theme="dark"] .restore-snapshot-link { color: #93c5fd; }
+
+/* Public build provenance stays compact and wraps on narrow displays. */
+.build-heading { min-width: 0; }
+.build-info { margin-top: 6px; max-width: 100%; font-size: 12px; color: var(--text-muted); }
+.build-info summary { cursor: pointer; width: fit-content; max-width: 100%; overflow-wrap: anywhere; }
+.build-info-body { margin-top: 8px; padding: 10px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--table-header-bg); line-height: 1.7; }
+.build-info-body code { overflow-wrap: anywhere; word-break: break-all; }
+
+
+/* Include dialogs/portals outside dashboard-shell; canvas is paused in JS. */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation: none !important;
+        transition: none !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+/* Token status is small informative text, including when injection is off. */
+#ech_token_status { color: var(--text-secondary); }
+#ech_token_status[data-enabled="true"] { color: #15803d; }
+[data-theme="dark"] #ech_token_status[data-enabled="true"] { color: #86efac; }
+
+/* A tab panel is the next keyboard stop after its selected project tab. */
+.dashboard-shell [role="tabpanel"]:focus-visible { outline: 2px solid #6366f1; outline-offset: -3px; }
+[data-theme="dark"] .dashboard-shell [role="tabpanel"]:focus-visible { outline-color: #a5b4fc; }
+
+/* Workbench keeps a dark surface in both themes. */
+#workbench_drag:focus-visible, #workbench_log:focus-visible {
+  outline: 2px solid #a5b4fc;
+  outline-offset: -3px;
+}
+
+/* Batch labels sit on dark modal surfaces, not the light tinted utility panels. */
+[data-theme="dark"] #batch_deploy_modal label[for="bd_use_saved_vars"] { color: #86efac; }
+[data-theme="dark"] #batch_deploy_modal label[for="bd_domain_prefix"] { color: #d8b4fe; }
+[data-theme="dark"] #batch_deploy_modal label[for="bd_admin_pass"] { color: #fca5a5; }
+[data-theme="dark"] #batch_deploy_modal label[for="bd_uuid"] { color: #93c5fd; }
+
+/* On-demand task drawer shares the dashboard's light/dark glass surfaces. */
+.dashboard-shell .control-quick-actions .task-toggle { position: relative; width: 38px; padding: 8px; color: var(--accent-purple); background: var(--glass-3); border: 1px solid var(--border-color); }
+.task-toggle:hover, .task-toggle[aria-expanded="true"] { box-shadow: 0 0 0 3px var(--border-glow); }
+.task-toggle[aria-expanded="true"] { border-color: var(--accent-purple) !important; }
+.task-toggle-dot { position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent-purple); box-shadow: 0 0 0 2px var(--glass-1); }
+.task-panel[hidden], .task-toggle-dot[hidden] { display: none; }
+.task-panel { grid-column: 1 / -1; min-width: 0; border: 1px solid var(--border-color); border-radius: 14px; padding: 18px; color: var(--text-primary); background: var(--glass-2); }
+.task-panel-heading, .task-panel-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.task-panel-heading h2 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 14px; font-weight: 700; }
+.task-panel-heading p, .task-panel-note { margin: 6px 0 0; font-size: 12px; line-height: 1.6; color: var(--text-secondary); }
+.task-panel-note { margin: 10px 0 14px; color: var(--text-muted); }
+.task-panel-actions { flex-shrink: 0; }
+.task-action { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 32px; padding: 6px 10px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--glass-input); color: var(--text-secondary); font-size: 12px; }
+.task-action:hover, .task-row:hover { background: var(--table-row-hover); color: var(--text-primary); border-color: var(--accent-purple); }
+.task-close { width: 32px; padding: 6px; }
+.task-panel-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 14px; }
+.task-catalog, .task-detail { min-width: 0; }
+#task_list { max-height: 340px; overflow-y: auto; scrollbar-gutter: stable; }
+.task-list-item + .task-list-item { margin-top: 8px; }
+.task-row { display: grid; width: 100%; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 10px; padding: 11px 12px; text-align: left; border: 1px solid var(--border-color); background: var(--glass-input); color: var(--text-primary); }
+.task-row-trigger { font-size: 12px; font-weight: 600; }
+.task-row-id { grid-column: 1 / -1; font-family: ui-monospace, monospace; font-size: 11px; color: var(--text-muted); overflow-wrap: anywhere; }
+.task-state { align-self: start; padding: 2px 7px; border-radius: 20px; font-size: 11px; color: var(--text-secondary); background: var(--table-header-bg); }
+.task-state[data-state="succeeded"] { color: #166534; background: #dcfce7; }
+.task-state[data-state="running"], .task-state[data-state="queued"] { color: #4338ca; background: #e0e7ff; }
+.task-state[data-state="needs_review"], .task-state[data-state="failed"], .task-state[data-state="partial_failed"] { color: #9a3412; background: #ffedd5; }
+[data-theme="dark"] .task-state[data-state="succeeded"] { color: #86efac; background: rgba(22,101,52,.3); }
+[data-theme="dark"] .task-state[data-state="running"], [data-theme="dark"] .task-state[data-state="queued"] { color: #c7d2fe; background: rgba(67,56,202,.3); }
+[data-theme="dark"] .task-state[data-state="needs_review"], [data-theme="dark"] .task-state[data-state="failed"], [data-theme="dark"] .task-state[data-state="partial_failed"] { color: #fdba74; background: rgba(154,52,18,.3); }
+.task-detail { max-height: 390px; overflow: auto; padding: 14px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--glass-3); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.task-detail h3 { margin: 0 0 10px; font-size: 13px; font-weight: 600; }
+.task-detail h4 { margin-top: 14px; font-weight: 600; }
+.task-detail p { margin: 6px 0; color: var(--text-secondary); }
+.task-detail .task-action { margin: 8px 6px 0 0; }
+.task-pending { margin-bottom: 14px; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--table-header-bg); font-size: 12px; overflow-wrap: anywhere; }
+.task-pending:empty { display: none; }
+.task-pending .task-action { margin-top: 6px; }
+.task-empty { padding: 18px 10px; text-align: center; color: var(--text-muted); font-size: 12px; }
+.task-more { width: 100%; margin-top: 10px; }
+@media (max-width: 760px) { .task-panel { padding: 14px; } .task-panel-grid { grid-template-columns: minmax(0, 1fr); } .task-panel-heading { align-items: flex-start; } .task-panel-heading p { max-width: 24em; } }
+@media (max-width: 480px) { .task-panel-heading { flex-wrap: wrap; } .task-panel-actions { margin-left: auto; } .task-row { padding: 10px; } }

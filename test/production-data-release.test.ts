@@ -1,0 +1,32 @@
+import {describe,it,expect,vi} from 'vitest';
+import {createRequire} from 'node:module';
+import fs from 'node:fs/promises';import path from 'node:path';import os from 'node:os';
+const req=createRequire(import.meta.url),{applicationOnce}=req('../scripts/production-data-release.cjs'),{privateDirectory}=req('../scripts/maintenance-client.cjs');
+async function fixture(){const root=await fs.mkdtemp(path.join(os.tmpdir(),'cfauto-prod-probe-')),stageDirectory=path.join(root,'stage');await privateDirectory(stageDirectory);const app=vi.fn(async()=>({status:200,bytes:Buffer.from('{"revision":2,"duplicate":false}'),value:{revision:2,duplicate:false},headers:{'content-type':'application/json'}}));return {stageDirectory,phase:'online_acceptance',stageId:'original-stage',app};}
+describe('production application probes preserve original known and uncertain requests',()=>{
+ it('reads the same original known response instead of resending on resume',async()=>{const c=await fixture(),body={key:'same',value:[]};expect((await applicationOnce(c,'config-original','/api/reliability/config',body)).status).toBe(200);expect((await applicationOnce(c,'config-original','/api/reliability/config',body)).value.revision).toBe(2);expect(c.app).toHaveBeenCalledTimes(1);},30000);
+ it('does not resend an uncertain original operation or replace its body',async()=>{const c=await fixture();c.app.mockImplementationOnce(async()=>{throw Error('SIMULATED_LOST_RESPONSE');});await expect(applicationOnce(c,'config-original','/api/reliability/config',{key:'same'})).rejects.toThrow('SIMULATED_LOST_RESPONSE');await expect(applicationOnce(c,'config-original','/api/reliability/config',{key:'same'})).rejects.toThrow('PRODUCTION_APPLICATION_ORIGINAL_RECONCILIATION_REQUIRED');await expect(applicationOnce(c,'config-original','/api/reliability/config',{key:'different'})).rejects.toThrow('PRODUCTION_IMMUTABLE_FILE_CONFLICT');expect(c.app).toHaveBeenCalledTimes(1);},30000);
+ it('rejects a changed captured response',async()=>{const c=await fixture();await applicationOnce(c,'config-original','/api/reliability/config',{key:'same'});await fs.writeFile(path.join(c.stageDirectory,'operation-config-original/response.bin'),'{}');await expect(applicationOnce(c,'config-original','/api/reliability/config',{key:'same'})).rejects.toThrow('PRODUCTION_APPLICATION_RECEIPT_CHANGED');expect(c.app).toHaveBeenCalledTimes(1);},30000);
+});
+
+
+describe('last-mile immutable production management request envelope',()=>{
+ const {verifyMutationEnvelope}=req('../scripts/production-data-release.cjs'),{TARGET}=req('../scripts/production-control-plane.cjs'),{hash,canonical}=req('../scripts/cutover-window.cjs'),url='https://api.cloudflare.com/client/v4/accounts/'+TARGET.account+'/workers/scripts/manager';
+ async function upload(){const source=Buffer.from('export default {};'),metadata={main_module:'worker.js',keep_bindings:['secret_text'],bindings:[{name:'CONFIG_KV',type:'inherit'}]},form=new FormData();form.append('metadata',JSON.stringify(metadata));form.append('worker.js',new Blob([source],{type:'application/javascript+module'}),'worker.js');const r=new Request(url,{method:'PUT',body:form});return {phase:'install_pin',url,contentType:r.headers.get('content-type'),body:Buffer.from(await r.arrayBuffer()),metadata,candidate:{workerSha256:hash(source),workerBytes:source.length}};}
+ it('checks the exact uploaded module and metadata, not only the separate metadata file',async()=>{const p=await upload();await expect(verifyMutationEnvelope(p)).resolves.toBeUndefined();await expect(verifyMutationEnvelope({...p,metadata:{...p.metadata,bindings:[]}})).rejects.toThrow('PRODUCTION_MUTATION_METADATA_INVALID');await expect(verifyMutationEnvelope({...p,candidate:{...p.candidate,workerSha256:'a'.repeat(64)}})).rejects.toThrow('PRODUCTION_MUTATION_CANDIDATE_CHANGED');});
+ it('rejects a target or phase change before dispatch',async()=>{const p=await upload();await expect(verifyMutationEnvelope({...p,url:url+'-wrong'})).rejects.toThrow();await expect(verifyMutationEnvelope({...p,phase:'source_backup'})).rejects.toThrow();});
+ it('allows only empty or exact original Cron payloads in their respective phases',async()=>{await expect(verifyMutationEnvelope({phase:'disable_cron',url:url+'/schedules',contentType:'application/json',body:Buffer.from('[]')})).resolves.toBeUndefined();await expect(verifyMutationEnvelope({phase:'restore_cron',url:url+'/schedules',contentType:'application/json',body:Buffer.from(canonical([{cron:'*/5 * * * *'}]))})).resolves.toBeUndefined();await expect(verifyMutationEnvelope({phase:'disable_cron',url:url+'/schedules',contentType:'application/json',body:Buffer.from('[{"cron":"* * * * *"}]')})).rejects.toThrow();});
+});
+
+
+describe('bounded logical read retries never resend a mutation',()=>{
+ const {retryReadOnly}=req('../scripts/production-data-release.cjs');
+ it('only retries known transport failures on explicitly named reads',async()=>{const read=vi.fn().mockRejectedValueOnce(Error('TRANSPORT_FAILED_OUTCOME_UNCERTAIN')).mockResolvedValueOnce('fresh'),pause=vi.fn(async()=>{});expect(await retryReadOnly('legacy_binding_read',read,pause)).toBe('fresh');expect(read.mock.calls.map(x=>x[0])).toEqual([0,1]);expect(pause).toHaveBeenCalledTimes(1);});
+ it.each(['worker_put','set_maintenance','initial_activate','task_submit','config_edit'])('rejects %s before calling the supplied transport',async kind=>{const read=vi.fn();await expect(retryReadOnly(kind,read,async()=>{})).rejects.toThrow('PRODUCTION_READ_RETRY_SCOPE_DENIED');expect(read).not.toHaveBeenCalled();});
+ it('does not retry a contract, authentication or response mismatch',async()=>{const read=vi.fn(async()=>{throw Error('INVALID_RESPONSE');});await expect(retryReadOnly('maintenance_status',read,async()=>{})).rejects.toThrow('INVALID_RESPONSE');expect(read).toHaveBeenCalledTimes(1);});
+});
+
+
+describe('retained private inherited backup files are read without ACL changes',()=>{
+ it('hashes a new inherited-private file and leaves its permissions unchanged',async()=>{const c=await fixture(),file=path.join(c.stageDirectory,'native.sqlite-journal');await fs.writeFile(file,'retained-native-output',{mode:0o600});const before=await fs.stat(file);const bytes=await req('../scripts/production-data-release.cjs').readArtifact(file);const after=await fs.stat(file);expect(bytes.toString()).toBe('retained-native-output');expect(after.ctimeMs).toBe(before.ctimeMs);expect(after.mtimeMs).toBe(before.mtimeMs);},30000);
+});

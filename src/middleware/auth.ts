@@ -61,14 +61,27 @@ export function requireAccessCode(env: AppEnv): Response | null {
 
 /** 检查 Cookie 会话是否有效 — 查 KV SESSION_<token>（TTL 自动过期，登出可撤销） */
 export async function requireCookie(request: Request, env: AppEnv): Promise<Response | null> {
-    const cookieValue = extractAuthCookie(request);
     // 无 cookie 或会话已失效 → 返回登录页。
     // API 请求返回 401 JSON 而不是 HTML：前端 apiFetch 会 r.json()，收到 HTML 会报
     // 「不是合法 JSON」这种误导性错误，而不是「请重新登录」。
-    if (!cookieValue) return unauthenticated(request);
-    const session = await env.CONFIG_KV.get(sessionKey(cookieValue));
-    if (!session) return unauthenticated(request);
-    return null;
+    return await readSession(request, env) ? null : unauthenticated(request);
+}
+
+type SessionReader = () => Promise<string | null>;
+function readSession(request: Request, env: AppEnv): Promise<string | null> {
+    const cookieValue = extractAuthCookie(request);
+    return cookieValue ? env.CONFIG_KV.get(sessionKey(cookieValue)) : Promise.resolve(null);
+}
+
+/** One request-local lookup shared by CSRF and login checks. Nothing is cached
+ * across requests, so a subsequent request still observes session revocation. */
+export async function authenticateRequest(request: Request, env: AppEnv): Promise<Response | null> {
+    const access = requireAccessCode(env);
+    if (access) return access;
+    let session: Promise<string | null> | undefined;
+    const lookup = () => session ??= readSession(request, env);
+    if (!await lookup()) return unauthenticated(request);
+    return validateCsrf(request, new URL(request.url), lookup);
 }
 
 /** 未认证响应：API 路径给 JSON 401，页面路径给登录页 */
@@ -86,6 +99,9 @@ function unauthenticated(request: Request): Response {
  *  2) 纵深：Sec-Fetch-Site / Origin 头存在时校验（头缺失由第 1 层兜底）
  */
 export async function checkCsrf(request: Request, url: URL, env: AppEnv): Promise<Response | null> {
+    return validateCsrf(request, url, () => readSession(request, env));
+}
+async function validateCsrf(request: Request, url: URL, lookup: SessionReader): Promise<Response | null> {
     const WRITE_METHODS = ['POST', 'PUT', 'DELETE', 'PATCH'];
     if (!WRITE_METHODS.includes(request.method)) return null;
 
@@ -94,13 +110,13 @@ export async function checkCsrf(request: Request, url: URL, env: AppEnv): Promis
     if (secSite && secSite !== 'same-origin' && secSite !== 'none') return jsonError('CSRF rejected (Sec-Fetch-Site)', 403);
     const origin = request.headers.get('Origin');
     try {
-        if (origin && new URL(origin).host !== url.host) return jsonError('CSRF rejected (Origin)', 403);
+        if (origin && new URL(origin).origin !== url.origin) return jsonError('CSRF rejected (Origin)', 403);
     } catch (e) { logger.error('Invalid Origin header', e instanceof Error ? e : new Error(String(e)), { module: 'auth' }); return jsonError('CSRF rejected (Invalid Origin)', 403); }
 
     // 主防线：X-CSRF-Token 与会话绑定值比对
     const cookieValue = extractAuthCookie(request);
     if (!cookieValue) return jsonError('CSRF rejected (no session)', 403);
-    const expected = await env.CONFIG_KV.get(sessionKey(cookieValue));
+    const expected = await lookup();
     const header = request.headers.get('X-CSRF-Token');
     if (!expected || !header || !timingSafeEqualStr(expected, header)) {
         return jsonError('CSRF rejected (token mismatch)', 403);
