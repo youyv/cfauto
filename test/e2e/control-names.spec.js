@@ -54,10 +54,15 @@ test('automation switches expose keyboard focus on their visible track', async (
     for (const id of ['auto_update_toggle', 'auto_cmliu_toggle', 'auto_joey_toggle', 'auto_ech_toggle']) {
         const input = page.locator('#' + id);
         const before = await input.isChecked();
+        // Return through the real tab order: programmatic focus after a mouse
+        // click does not enable Firefox's keyboard focus indicator.
         await input.focus();
+        await page.keyboard.press('Shift+Tab');
+        await page.keyboard.press('Tab');
+        await expect(input).toBeFocused();
         await page.keyboard.press('Space');
         await expect(input).toBeChecked({ checked: !before });
-        expect(await input.evaluate(el => {
+        await expect.poll(() => input.evaluate(el => {
             const style = getComputedStyle(el.nextElementSibling);
             return { width: style.outlineWidth, style: style.outlineStyle };
         })).toEqual({ width: '2px', style: 'solid' });
