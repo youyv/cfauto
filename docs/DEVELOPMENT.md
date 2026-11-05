@@ -84,7 +84,7 @@ pnpm.cmd exec playwright install firefox webkit
 pnpm.cmd exec playwright test -c playwright.cross-browser.config.cjs
 ```
 
-当前 CI 在 push / PR 中执行普通 check，并运行 Chromium 和跨引擎 mock 浏览器测试；默认本地 `check` 不运行浏览器。workflow 中的 `browser_regression` 输入目前只用于失败证据上传条件，不是测试步骤的开关。后续若调整，以 `.github/workflows/ci.yml` 为准。
+当前 CI 在 push / PR 中执行普通 check，并运行 Chromium 和跨引擎 mock 浏览器测试；默认本地 `check` 不运行浏览器。手动运行使用同一套步骤；任何触发方式失败都会保存已有浏览器报告、截图和 trace。后续若调整，以 `.github/workflows/ci.yml` 为准。
 
 ## 6. 构建身份和发布
 

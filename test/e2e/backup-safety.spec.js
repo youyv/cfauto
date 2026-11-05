@@ -78,3 +78,20 @@ test('lost restore response does not claim no writes and still exposes the known
     await page.locator('.swal2-confirm').click();
     await expect(page.locator('[data-act="restoreBackup"]')).toBeEnabled();
 });
+
+
+for (const [action, title] of [['backupAll', '完整权威备份'], ['restoreBackup', '受控权威恢复']]) {
+    test('authority ' + action + ' requires independent maintenance without using legacy data routes', async ({ page, mock }) => {
+        mock.recoveryMode = 'authority';
+        await openPanel(page);
+        await page.locator('.account-tools-drawer > summary').click();
+        await page.locator('[data-act="' + action + '"]').click();
+        await expect(page.locator('.swal2-title')).toHaveText(title);
+        await expect(page.locator('.swal2-html-container')).toContainText('独立维护 CLI');
+        await expect(page.locator('.swal2-html-container')).toContainText('旧 KV 备份不会覆盖 DO 权威');
+        expect(mock.requests.filter(r => r.path === '/api/backup' || r.path.startsWith('/api/restore'))).toHaveLength(0);
+        await noOverflow(page);
+        await page.locator('.swal2-confirm').click();
+        await expect(page.locator('[data-act="' + action + '"]')).toBeEnabled();
+    });
+}

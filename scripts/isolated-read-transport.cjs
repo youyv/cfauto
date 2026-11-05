@@ -40,10 +40,14 @@ async function createIsolatedReadTransport({out,run=runCurl,nativeFetch=fetch}){
   const u=new URL(url);if(u.hostname==='api.cloudflare.com'&&u.protocol==='https:'&&!u.port&&!u.username&&!u.password&&!u.hash&&(init.method||'GET')==='GET'&&u.pathname.startsWith('/client/v4/accounts/fb86300faed47e7052b380db19fe844d/'))return nativeFetch(url,{...init,redirect:'manual'});
   const s=requestSpec(url,init);if(init.signal?.aborted)throw Error('TRANSPORT_ABORTED');const dir=path.join(out,String(++sequence).padStart(4,'0'));await privateDirectory(dir);
   const bodyFile=path.join(dir,'request.bin'),headerFile=path.join(dir,'headers.bin'),responseFile=path.join(dir,'response.bin');if(s.body)await privateSave(dir,'request.bin',s.body);
+  // Create curl destinations privately before any response bytes are written.
+  // This preserves mode 0600 on POSIX regardless of the caller's umask.
+  await privateSave(dir,'headers.bin',Buffer.alloc(0));
+  await privateSave(dir,'response.bin',Buffer.alloc(0));
   await privateSave(dir,'intent.json',{url:s.url,method:s.method,automaticRetry:false,tlsVerifiedByCurl:true,credentialsInArguments:false});
   const quote=v=>JSON.stringify(v);let config='url = '+quote(s.url)+'\nrequest = '+quote(s.method)+'\n';for(const [k,v] of s.headers)config+='header = '+quote(k+': '+v)+'\n';if(s.body)config+='data-binary = '+quote('@'+bodyFile)+'\n';
   const args=['--disable','--ipv6','--silent','--show-error','--proto','=https','--max-time','25','--connect-timeout','10','--max-filesize','65536','--dump-header',headerFile,'--output',responseFile,'--write-out','%{http_code} %{ssl_verify_result}','--config','-'];
-  try{const stdout=await run(args,config,init.signal);for(const file of [headerFile,responseFile]){const stat=await fs.lstat(file);if(!stat.isFile()||stat.isSymbolicLink()||stat.size>65536)throw Error('TRANSPORT_RESPONSE_TOO_LARGE');if(process.platform==='win32')await require('./private-path.cjs').windowsPrivatePath(file,'file');await assertPrivate(file);}
+  try{const stdout=await run(args,config,init.signal);for(const file of [headerFile,responseFile]){const stat=await fs.lstat(file);if(!stat.isFile()||stat.isSymbolicLink()||stat.size>65536)throw Error('TRANSPORT_RESPONSE_TOO_LARGE');await assertPrivate(file);}
    if(init.signal?.aborted)throw Error('TRANSPORT_ABORTED');const response=parseReply(stdout,await fs.readFile(headerFile),await fs.readFile(responseFile));await privateSave(dir,'result.json',{status:response.status,tlsVerificationResult:0,automaticRetry:false});return response;
   }catch(e){await privateSave(dir,'failure.json',{error:/^[A-Z0-9_]+$/.test(e.message)?e.message:'TRANSPORT_FAILED',...(Number.isSafeInteger(e.curlExitCode)?{curlExitCode:e.curlExitCode}:{}),automaticRetry:false});throw e;}
  };

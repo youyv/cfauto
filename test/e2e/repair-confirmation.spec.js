@@ -15,5 +15,5 @@ test('repair shows frozen targets, requires project name and rejects duplicate e
     await page.locator('.swal2-input').fill('cmliu');
     await page.locator('.swal2-confirm').click();
     await expect.poll(() => writes.length).toBe(1);
-    expect(writes[0]).toEqual({ type: 'cmliu', expectedTargets: [{ accountId: 'account-one', workerName: 'worker-one' }] });
+    expect(writes[0]).toEqual({ type: 'cmliu', preserveProtectedSubdomains: true, expectedTargets: [{ accountId: 'account-one', workerName: 'worker-one' }] });
 });

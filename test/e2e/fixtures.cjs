@@ -7,6 +7,8 @@ const test = base.extend({
             auto: { enabled: true, interval: 30, autoCmliu: true, autoJoey: false, autoEch: true, fuseThreshold: 0, fuseWebhook: '' },
             upstream: Object.fromEntries(['cmliu', 'joey'].map(t => [t, { path: '', branch: '', repository: t + '/test-repo', defaultPath: '_worker.js', defaultBranch: 'main' }])),
             requests: [], unexpected: [], errors: [], allowedErrors: [],
+            // Most UI scenarios exercise the synchronous legacy adapters explicitly.
+            recoveryMode: 'legacy',
             invalidRestore: false, partialRestore: false, failRestore: false,
             failValidation: false,
             failAuto: false, failUpstream: false, failRead: false, failInit: false,
@@ -33,6 +35,11 @@ const test = base.extend({
                     if (mock.holdInit) await mock.holdInit;
                     if (mock.failInit) return fail();
                     return json({ accounts: [], autoConfig: mock.auto, vars: {}, deployConfigs: {} });
+                case '/api/reliability/recovery':
+                    return json({ format: 'cfauto.recovery-workflow', version: 1, mode: mock.recoveryMode, protocol: 1,
+                        ...(mock.recoveryMode === 'authority'
+                            ? { status: { generation: 'e2e-generation', epoch: 1, maintenance: false, protocol: 1 } }
+                            : { transactional: false }) });
                 case '/api/accounts': return json([]);
                 case '/api/settings': return json([]);
                 case '/api/stats': return json([]);

@@ -2,7 +2,7 @@
  * No production target, provider write, resource creation, migration or activation. */
 const fs=require('node:fs/promises'),path=require('node:path');
 const {HOST,runCurl,parseReply}=require('./isolated-read-transport.cjs');
-const {privateDirectory}=require('./maintenance-client.cjs');
+const {privateDirectory,assertPrivate}=require('./maintenance-client.cjs');
 const {privateSave}=require('./cutover-window.cjs');
 const GENERATION='initial_fee278d9d26748f3ba278dab9c010dcb';
 const GETS=['/api/accounts/export','/api/accounts','/api/init_data?types=cmliu','/api/settings?type=cmliu','/api/deploy_config?type=cmliu','/api/favorites?type=cmliu','/api/upstream?type=cmliu','/api/deploy_journal'];
@@ -26,10 +26,14 @@ async function createIsolatedApplicationTransport({out,run=runCurl}){
  return async(url,init={})=>{
   const s=applicationSpec(url,init);if(init.signal?.aborted)throw Error('APP_ABORTED');const dir=path.join(out,String(++sequence).padStart(4,'0'));await privateDirectory(dir);
   const bodyFile=path.join(dir,'request.bin'),headerFile=path.join(dir,'headers.bin'),responseFile=path.join(dir,'response.bin');if(s.body)await privateSave(dir,'request.bin',s.body);
+  // Create curl destinations privately before any response bytes are written.
+  // This preserves mode 0600 on POSIX regardless of the caller's umask.
+  await privateSave(dir,'headers.bin',Buffer.alloc(0));
+  await privateSave(dir,'response.bin',Buffer.alloc(0));
   await privateSave(dir,'intent.json',{url:s.url,method:s.method,responseLimit:s.limit,syntheticAcceptanceOnly:true,automaticRetry:false});
   let config='url = '+JSON.stringify(s.url)+'\nrequest = '+JSON.stringify(s.method)+'\n';for(const [k,v] of s.headers)config+='header = '+JSON.stringify(k+': '+v)+'\n';if(s.body)config+='data-binary = '+JSON.stringify('@'+bodyFile)+'\n';
   const args=['--disable','--ipv6','--silent','--show-error','--proto','=https','--max-time','25','--connect-timeout','10','--max-filesize',String(s.limit),'--dump-header',headerFile,'--output',responseFile,'--write-out','%{http_code} %{ssl_verify_result}','--config','-'];
-  try{const stdout=await run(args,config,init.signal);for(const [file,limit] of [[headerFile,65536],[responseFile,s.limit]]){const stat=await fs.lstat(file);if(!stat.isFile()||stat.isSymbolicLink()||stat.size>limit)throw Error('APP_RESPONSE_LIMIT');if(process.platform==='win32')await require('./private-path.cjs').windowsPrivatePath(file,'file');}
+  try{const stdout=await run(args,config,init.signal);for(const [file,limit] of [[headerFile,65536],[responseFile,s.limit]]){const stat=await fs.lstat(file);if(!stat.isFile()||stat.isSymbolicLink()||stat.size>limit)throw Error('APP_RESPONSE_LIMIT');await assertPrivate(file);}
    if(init.signal?.aborted)throw Error('APP_ABORTED');const response=parseReply(stdout,await fs.readFile(headerFile),await fs.readFile(responseFile),s.limit);await privateSave(dir,'result.json',{status:response.status,tlsVerificationResult:0,automaticRetry:false});return response;
   }catch(e){await privateSave(dir,'failure.json',{error:/^[A-Z0-9_]+$/.test(e.message)?e.message:'APP_TRANSPORT_FAILED',...(Number.isSafeInteger(e.curlExitCode)?{curlExitCode:e.curlExitCode}:{}),automaticRetry:false});throw e;}
  };

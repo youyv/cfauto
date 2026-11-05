@@ -1,10 +1,30 @@
 // Test-only loopback server. Never loads wrangler config, credentials, or real KV.
 const http = require('node:http');
 const fs = require('node:fs');
+const path = require('node:path');
+const Module = require('node:module');
+const { build } = require('esbuild');
 
 async function main() {
     const css = fs.readFileSync('test/e2e/rendering.css');
-    const worker = (await import('../../dist/worker.js')).default;
+    // Node does not implement cloudflare:workers. Adapt only the test copy in
+    // memory; production assets and dist/worker.js remain unchanged. Any attempt
+    // to instantiate a real coordinator in this static-only server must fail.
+    const bundle = await build({
+        entryPoints: [path.resolve('dist/worker.js')], bundle: true,
+        platform: 'node', format: 'cjs', write: false, logLevel: 'silent',
+        plugins: [{ name: 'static-only-cloudflare', setup(builder) {
+            builder.onResolve({ filter: /^cloudflare:workers$/ }, () => ({ path: 'cloudflare:workers', namespace: 'e2e-runtime' }));
+            builder.onLoad({ filter: /.*/, namespace: 'e2e-runtime' }, () => ({
+                contents: 'export class DurableObject { constructor() { throw new Error("Durable Objects are forbidden in the E2E static server"); } }', loader: 'js'
+            }));
+        } }]
+    });
+    const compiled = new Module(path.resolve('test/e2e/.worker-test.cjs'), module);
+    compiled.filename = path.resolve('test/e2e/.worker-test.cjs');
+    compiled.paths = module.paths;
+    compiled._compile(bundle.outputFiles[0].text, compiled.filename);
+    const worker = compiled.exports.default;
     // Static asset requests are the only Worker calls allowed; auth uses a dummy session.
     const env = { ACCESS_CODE: 'e2e-not-a-secret', CONFIG_KV: { get: async key => {
         if (key === 'SESSION_e2e') return 'e2e-csrf';

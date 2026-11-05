@@ -10,11 +10,6 @@ on:
     branches: ['**']
   pull_request:
   workflow_dispatch:
-    inputs:
-      browser_regression:
-        description: 'Run optional mock browser regressions (not production acceptance)'
-        type: boolean
-        default: false
 
 jobs:
   check:
@@ -55,7 +50,7 @@ jobs:
         run: pnpm exec playwright test -c playwright.cross-browser.config.cjs
 
       - name: Preserve browser failure evidence
-        if: failure() && github.event_name == 'workflow_dispatch' && inputs.browser_regression
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-failure-evidence
